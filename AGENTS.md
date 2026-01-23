@@ -1,4 +1,4 @@
-# File Converter - Workspace Instructions
+# File Forge - Workspace Instructions
 
 > **Note**: Always read and update the Change Log section BEFORE committing changes.
 
