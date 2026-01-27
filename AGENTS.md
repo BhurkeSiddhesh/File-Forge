@@ -26,6 +26,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-25
+
+- **perf**: Implemented directory batch processing to amortize startup costs
+- **feat**: Added support for processing all `.pdf` files in a directory
+- **test**: Added benchmark infrastructure in `tests/`
+- **Files**: `pdf_password_remover.py`, `tests/benchmark_setup.py`, `tests/run_benchmark.sh`
+- **Verification**: `tests/run_benchmark.sh` shows ~5x speedup (2.2s -> 0.4s) for 10 files.
+
 ### 2026-01-24
 
 - **feat**: Added `inputs` folder and interactive input prompts for file path and password
