@@ -62,13 +62,14 @@ def main():
 Examples:
   python pdf_password_remover.py document.pdf mypassword
   python pdf_password_remover.py document.pdf mypassword -o unlocked.pdf
+  python pdf_password_remover.py /path/to/directory mypassword
         """
     )
     
     parser.add_argument(
         "input_pdf",
         nargs='?',
-        help="Path to the PDF file"
+        help="Path to the PDF file or directory"
     )
     
     parser.add_argument(
@@ -79,7 +80,7 @@ Examples:
     
     parser.add_argument(
         "-o", "--output",
-        help="Output file path (default: input_unlocked.pdf)",
+        help="Output file path (for single file) or directory (for batch)",
         default=None
     )
     
@@ -90,41 +91,95 @@ Examples:
     password = args.password
     
     if not input_pdf:
-        input_pdf = input("Enter path to PDF file: ").strip().strip('"')
+        input_pdf = input("Enter path to PDF file or directory: ").strip().strip('"')
     
     if not password:
         password = input("Enter password: ").strip()
 
-    try:
-        output_path = remove_pdf_password(input_pdf, password, args.output)
-        print(f"✓ Password removed successfully!")
-        print(f"  Output: {output_path}")
-    except FileNotFoundError as e:
-        print(f"✗ Error: {e}")
-        sys.exit(1)
-    except ImportError as e:
-        if e.name == 'pikepdf':
-            print("Error: pikepdf is not installed.")
-            print("Install it with: pip install pikepdf")
-            sys.exit(1)
-        raise
-    except Exception as e:
-        # Check if it's a PasswordError (handle deferred import)
-        is_password_error = False
-        if type(e).__name__ == 'PasswordError':
+    input_path_obj = Path(input_pdf)
+
+    if input_path_obj.is_dir():
+        # Directory Batch Processing
+        print(f"Processing directory: {input_path_obj}")
+        pdf_files = sorted(list(input_path_obj.glob("*.pdf")))
+
+        if not pdf_files:
+            print("No PDF files found in the directory.")
+            sys.exit(0)
+
+        success_count = 0
+        fail_count = 0
+
+        # Handle output directory logic
+        output_dir = None
+        if args.output:
+            output_dir = Path(args.output)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        for pdf_file in pdf_files:
             try:
-                import pikepdf
-                if isinstance(e, pikepdf.PasswordError):
-                    is_password_error = True
-            except ImportError:
-                pass
+                # Determine output path for this file
+                file_output_path = None
+                if output_dir:
+                    file_output_path = output_dir / pdf_file.name
 
-        if is_password_error:
-            print(f"✗ Error: Incorrect password")
+                # Process the file
+                out_path = remove_pdf_password(str(pdf_file), password, str(file_output_path) if file_output_path else None)
+                print(f"✓ {pdf_file.name}")
+                success_count += 1
+            except Exception as e:
+                # Check if it's a PasswordError (handle deferred import)
+                is_password_error = False
+                if type(e).__name__ == 'PasswordError':
+                    try:
+                        import pikepdf
+                        if isinstance(e, pikepdf.PasswordError):
+                            is_password_error = True
+                    except ImportError:
+                        pass
+
+                if is_password_error:
+                    print(f"✗ {pdf_file.name}: Incorrect password")
+                else:
+                    print(f"✗ {pdf_file.name}: Error: {e}")
+                fail_count += 1
+
+        print(f"\nBatch processing complete.")
+        print(f"Successful: {success_count}")
+        print(f"Failed: {fail_count}")
+
+    else:
+        # Single File Processing
+        try:
+            output_path = remove_pdf_password(input_pdf, password, args.output)
+            print(f"✓ Password removed successfully!")
+            print(f"  Output: {output_path}")
+        except FileNotFoundError as e:
+            print(f"✗ Error: {e}")
             sys.exit(1)
+        except ImportError as e:
+            if e.name == 'pikepdf':
+                print("Error: pikepdf is not installed.")
+                print("Install it with: pip install pikepdf")
+                sys.exit(1)
+            raise
+        except Exception as e:
+            # Check if it's a PasswordError (handle deferred import)
+            is_password_error = False
+            if type(e).__name__ == 'PasswordError':
+                try:
+                    import pikepdf
+                    if isinstance(e, pikepdf.PasswordError):
+                        is_password_error = True
+                except ImportError:
+                    pass
 
-        print(f"✗ Error: {e}")
-        sys.exit(1)
+            if is_password_error:
+                print(f"✗ Error: Incorrect password")
+                sys.exit(1)
+
+            print(f"✗ Error: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
