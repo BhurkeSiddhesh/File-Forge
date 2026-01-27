@@ -87,7 +87,14 @@ document.getElementById('convert-word-btn').onclick = async () => {
         alert('Please select a file first.');
         return;
     }
-    processAction('/api/pdf/convert-to-word', 'Converting PDF to Word...');
+
+    const useAI = document.getElementById('ai-mode-toggle').checked;
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('use_ai', useAI);
+
+    const statusMsg = useAI ? 'Analyzing layout with AI (this may take a while)...' : 'Converting PDF to Word...';
+    processAction('/api/pdf/convert-to-word', statusMsg, formData);
 };
 
 document.getElementById('process-password-btn').onclick = () => {

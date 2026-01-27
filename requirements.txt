@@ -5,4 +5,9 @@ python-multipart
 pdf2docx
 pytest
 httpx
+paddlepaddle
+paddleocr==2.8.0
+opencv-python-headless
+docxcompose
+PyMuPDF
 reportlab

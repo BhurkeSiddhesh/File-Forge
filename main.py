@@ -4,9 +4,21 @@ from fastapi.responses import FileResponse
 import shutil
 import os
 from pathlib import Path
-from pdf_utils import remove_pdf_password, pdf_to_docx
+from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
 
 app = FastAPI(title="File Forge API")
+
+@app.on_event("startup")
+async def startup_event():
+    """Warmup AI models to avoid timeout on first request."""
+    print("Initializing AI Models... This may take a while on first run.")
+    try:
+        from paddleocr import PPStructure
+        # Initialize to trigger download if needed
+        PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False)
+        print("AI Models initialized successfully.")
+    except Exception as e:
+        print(f"Warning: AI Model initialization failed: {e}")
 
 # Ensure directories exist
 BASE_DIR = Path(__file__).parent
@@ -39,15 +51,23 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
             os.remove(temp_path)
 
 @app.post("/api/pdf/convert-to-word")
-async def api_convert_to_word(file: UploadFile = File(...)):
+async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False)):
     temp_path = UPLOAD_DIR / file.filename
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR))
-        return {"status": "success", "message": "Converted to Word", "filename": Path(output_path).name}
+        if use_ai:
+            output_path = pdf_to_word_paddle(str(temp_path), str(OUTPUT_DIR))
+            message = "Converted to Word with AI Layout Recovery"
+        else:
+            output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR))
+            message = "Converted to Word (Standard)"
+
+        return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
