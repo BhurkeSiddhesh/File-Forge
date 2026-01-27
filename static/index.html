@@ -111,6 +111,13 @@
                         </div>
                     </div>
 
+                    <!-- Convert to Word Password (optional, for protected PDFs) -->
+                    <div id="convert-password-area" class="password-area hidden">
+                        <p class="helper-text">If the PDF is password-protected, enter the password:</p>
+                        <input type="password" id="convert-password" placeholder="Enter PDF Password (optional)">
+                        <button id="process-convert-btn" class="primary-btn">Convert Now</button>
+                    </div>
+
                     <!-- Password Modal-style Input (inline) -->
                     <div id="password-input-area" class="password-area hidden">
                         <input type="password" id="pdf-password" placeholder="Enter PDF Password">

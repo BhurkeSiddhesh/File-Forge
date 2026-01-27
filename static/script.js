@@ -65,7 +65,7 @@ function handleFile(file) {
     selectedFile = file;
     filenameDisplay.textContent = file.name;
     fileInfo.classList.remove('hidden');
-    
+
     // Reset displays
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
@@ -79,19 +79,31 @@ document.getElementById('remove-password-btn').onclick = () => {
         return;
     }
     document.getElementById('password-input-area').classList.remove('hidden');
+    document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 };
 
-document.getElementById('convert-word-btn').onclick = async () => {
+document.getElementById('convert-word-btn').onclick = () => {
     if (!selectedFile) {
         alert('Please select a file first.');
         return;
     }
+    // Show the optional password input for conversion
+    document.getElementById('convert-password-area').classList.remove('hidden');
+    document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('result-display').classList.add('hidden');
+};
 
+document.getElementById('process-convert-btn').onclick = async () => {
     const useAI = document.getElementById('ai-mode-toggle').checked;
+    const password = document.getElementById('convert-password').value || null;
+
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('use_ai', useAI);
+    if (password) {
+        formData.append('password', password);
+    }
 
     const statusMsg = useAI ? 'Analyzing layout with AI (this may take a while)...' : 'Converting PDF to Word...';
     processAction('/api/pdf/convert-to-word', statusMsg, formData);
@@ -106,7 +118,7 @@ document.getElementById('process-password-btn').onclick = () => {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('password', password);
-    
+
     processAction('/api/pdf/remove-password', 'Removing password...', formData);
 };
 
@@ -132,18 +144,26 @@ async function processAction(url, text, formData = null) {
             body: formData
         });
 
-        const data = await response.json();
-
         if (response.ok) {
+            const data = await response.json();
             showResult(data.filename, data.message);
         } else {
-            alert('Error: ' + data.detail);
+            // Try to parse as JSON first, fall back to text
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const data = await response.json();
+                alert('Error: ' + data.detail);
+            } else {
+                const text = await response.text();
+                alert('Error: ' + text);
+            }
         }
     } catch (error) {
         alert('Error: ' + error.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
+
 }
 
 function showResult(filename, message) {
@@ -163,6 +183,7 @@ function resetUI() {
     filenameDisplay.textContent = 'No file selected';
     fileInfo.classList.add('hidden');
     document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 }

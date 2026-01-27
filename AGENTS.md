@@ -34,6 +34,7 @@
 - **feat**: Merged all feature and performance branches into `pdf_updates`.
 - **feat**: Resolved conflicts in `requirements.txt`, `.gitignore`, `AGENTS.md`, and `pdf_password_remover.py`.
 - **feat**: Added `@jules` comments for missing features (language support, page breaks).
+- **fix**: Added missing `requests` dependency required by `paddleocr`.
 - **feat**: Cleaned up merged remote branches.
 - **Files**: `pdf_utils.py`, `main.py`, `requirements.txt`, `.gitignore`, `AGENTS.md`
 

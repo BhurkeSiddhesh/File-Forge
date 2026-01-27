@@ -2,6 +2,16 @@ import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
 import os
+
+# Disable MKL-DNN/OneDNN to fix compatibility issues on Windows
+# Must be set BEFORE importing paddle/paddleocr
+os.environ['FLAGS_use_mkldnn'] = '0'
+os.environ['MKLDNN_VERBOSE'] = '0'
+os.environ['PADDLE_DISABLE_MKLDNN'] = '1'
+os.environ['FLAGS_enable_mkldnn'] = '0'
+# Force CPU-only mode with basic backend
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
 import fitz
 import cv2
 import numpy as np
@@ -10,6 +20,8 @@ from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes, 
 from docxcompose.composer import Composer
 from docx import Document as Document_docx
 import shutil
+
+
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     """Removes password from PDF and saves to output_dir."""
@@ -21,35 +33,101 @@ def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     
     return str(output_file)
 
-def pdf_to_docx(input_path: str, output_dir: str) -> str:
+def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Path = None) -> tuple:
+    """
+    Returns (path_to_use, needs_cleanup).
+    If encrypted and password provided, decrypts to temp file.
+    If encrypted and no password, raises ValueError.
+    If not encrypted, returns original path.
+    """
+    input_file = Path(input_path)
+    
+    # Check if PDF is encrypted
+    try:
+        with pikepdf.open(input_file) as pdf:
+            # PDF is not encrypted or has no password
+            return str(input_file), False
+    except pikepdf.PasswordError:
+        # PDF is encrypted
+        if not password:
+            raise ValueError(f"PDF is password-protected. Please provide a password.")
+        
+        # Decrypt to temp file
+        if temp_dir is None:
+            temp_dir = input_file.parent
+        
+        temp_file = temp_dir / f"{input_file.stem}_temp_decrypted.pdf"
+        
+        with pikepdf.open(input_file, password=password) as pdf:
+            pdf.save(temp_file)
+        
+        return str(temp_file), True
+
+def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}.docx"
     
-    cv = Converter(str(input_file))
-    cv.convert(str(output_file))
-    cv.close()
+    # Handle encrypted PDFs
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+    
+    try:
+        cv = Converter(decrypted_path)
+        cv.convert(str(output_file))
+        cv.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
     
     return str(output_file)
 
-def pdf_to_word_paddle(input_path: str, output_dir: str) -> str:
+def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
+    print(f"[AI] Starting AI conversion for: {input_path}")
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
 
     # Create a temp directory for intermediate files
     temp_dir = Path(output_dir) / f"temp_{input_file.stem}"
     temp_dir.mkdir(exist_ok=True)
+    
+    # Handle encrypted PDFs
+    print(f"[AI] Checking encryption...")
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password, temp_dir)
+    print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
 
     try:
         # Initialize PaddleOCR engine
-        # use_gpu=False for safety, though it handles it automatically
+        print(f"[AI] Initializing PaddleOCR engine...")
+        # Define explicit model paths to ensure ONNX models are found
+        # These must match what fix_models.py downloaded/converted (now copied to local models dir)
+        base_dir = Path(__file__).parent
+        paddle_dir = base_dir / "models"
+        layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
+        table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
+        det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
+        rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
+
+        # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
+        # usage of use_onnx=True to bypass Paddle OneDNN issues
         # @jules: Should we detect the language instead of hardcoding 'en'?
         # Potential fix: Use a language detection library or add a UI selector.
-        table_engine = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False)
+        table_engine = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False, 
+                                   enable_mkldnn=False, use_onnx=True,
+                                   layout_model_dir=str(layout_dir),
+                                   table_model_dir=str(table_dir),
+                                   det_model_dir=str(det_dir),
+                                   rec_model_dir=str(rec_dir))
 
-        doc = fitz.open(str(input_file))
+
+
+
+        print(f"[AI] PaddleOCR engine initialized")
+
+        doc = fitz.open(decrypted_path)
+        print(f"[AI] Opened PDF with {len(doc)} pages")
         docx_files = []
+
 
         for i, page in enumerate(doc):
             # Render page to image
@@ -98,10 +176,15 @@ def pdf_to_word_paddle(input_path: str, output_dir: str) -> str:
             composer.append(Document_docx(str(docx_path)))
 
         composer.save(str(output_file))
+        doc.close()
 
     finally:
-        # Cleanup
+        # Cleanup - on Windows, files might still be locked
         if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+            try:
+                shutil.rmtree(temp_dir)
+            except PermissionError:
+                # Windows file locking - schedule for manual cleanup
+                print(f"Warning: Could not fully clean up {temp_dir} - some files may be locked")
 
     return str(output_file)
