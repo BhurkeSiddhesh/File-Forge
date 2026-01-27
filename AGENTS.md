@@ -4,13 +4,16 @@
 
 ## 1. Tech Stack
 
-- **Backend**: Python 3.10+
-- **PDF Processing**: pikepdf
+- **Backend**: Python 3.10+ (FastAPI)
+- **Frontend**: Vanilla HTML/CSS/JS (Modern/Premium)
+- **PDF Processing**: pikepdf, pdf2docx
 
 ## 2. Project Structure & File Placement
 
-- **Root**: Configs only (`requirements.txt`).
-- **Scripts**: Python scripts in root directory.
+- **Root**: Configs (`requirements.txt`), main application (`main.py`).
+- **Scripts**: Utility modules like `pdf_utils.py`.
+- **Static**: Frontend assets in `/static`.
+- **Data**: Uploads in `/uploads`, processed files in `/outputs`.
 
 ## 3. Code Patterns
 
@@ -20,11 +23,20 @@
 
 ## 4. Active Context
 
-- **Current Sprint**: PDF password removal utility
+- **Current Sprint**: Modern Web UI and expanded PDF tools (Word conversion).
 
 ## 5. Change Log (Reverse Chronological)
 
 > **CRITICAL**: Add entry here BEFORE every commit.
+
+### 2026-01-27
+
+- **feat**: Implemented premium Web UI with FastAPI backend.
+- **feat**: Added PDF to DOCX conversion using `pdf2docx`.
+- **feat**: Created `outputs/` folder for processed files.
+- **feat**: Refactored logic into `pdf_utils.py` and `main.py`.
+- **Files**: `main.py`, `pdf_utils.py`, `static/`, `outputs/`, `requirements.txt`
+- **Verification**: FastAPI server running on port 8001; verified index serving.
 
 ### 2026-01-24
 

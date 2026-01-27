@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Forge | All-in-One File Tools</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="app-container">
+        <!-- Main Page -->
+        <section id="home-page" class="view active">
+            <header class="hero">
+                <h1>File <span class="accent">Forge</span></h1>
+                <p>The ultimate sanctuary for your documents. Fast, secure, and beautiful.</p>
+            </header>
+
+            <div class="tool-grid">
+                <div class="tool-card active" onclick="showDrillDown('pdf')">
+                    <div class="icon-wrapper pdf">
+                        <i class="fas fa-file-pdf"></i>
+                    </div>
+                    <h3>PDF Tools</h3>
+                    <p>Unlock, convert, and compress PDF files effortlessly.</p>
+                    <div class="badge">Available</div>
+                </div>
+
+                <div class="tool-card disabled">
+                    <div class="icon-wrapper word">
+                        <i class="fas fa-file-word"></i>
+                    </div>
+                    <h3>Word Tools</h3>
+                    <p>Coming soon: Convert Word to PDF, merge docx, and more.</p>
+                    <div class="badge">Soon</div>
+                </div>
+
+                <div class="tool-card disabled">
+                    <div class="icon-wrapper excel">
+                        <i class="fas fa-file-excel"></i>
+                    </div>
+                    <h3>Excel Tools</h3>
+                    <p>Coming soon: Excel to PDF, CSV to XLSX conversion.</p>
+                    <div class="badge">Soon</div>
+                </div>
+
+                <div class="tool-card disabled">
+                    <div class="icon-wrapper ppt">
+                        <i class="fas fa-file-powerpoint"></i>
+                    </div>
+                    <h3>PPT Tools</h3>
+                    <p>Coming soon: PDF to PPT, PPT compression.</p>
+                    <div class="badge">Soon</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Drill Down Page (PDF) -->
+        <section id="pdf-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="drop-zone" class="drop-zone">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your PDF or <span class="browse-text">browse</span></p>
+                        <input type="file" id="file-input" accept=".pdf" hidden>
+                        <div id="file-info" class="file-info hidden">
+                            <i class="fas fa-file-pdf"></i>
+                            <span id="filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for PDF</h2>
+                    <div class="action-buttons">
+                        <div class="action-card" id="remove-password-btn">
+                            <i class="fas fa-unlock"></i>
+                            <div class="action-text">
+                                <h4>Remove Password</h4>
+                                <p>Unlock protected PDF files</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="convert-word-btn">
+                            <i class="fas fa-file-word"></i>
+                            <div class="action-text">
+                                <h4>Convert to Word</h4>
+                                <p>Transform PDF into editable DOCX</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Password Modal-style Input (inline) -->
+                    <div id="password-input-area" class="password-area hidden">
+                        <input type="password" id="pdf-password" placeholder="Enter PDF Password">
+                        <button id="process-password-btn" class="primary-btn">Unlock Now</button>
+                    </div>
+
+                    <div id="status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="status-text">Processing...</p>
+                    </div>
+
+                    <div id="result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="result-message"></p>
+                        <a id="download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
