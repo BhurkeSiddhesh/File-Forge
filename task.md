@@ -1,23 +1,21 @@
-# Task: Implement Modern Web UI for File Forge
+# Task: Merge Jules' Branches into pdf_updates
 
-The user wants a premium-looking web interface for File Forge with a main menu for file types and a drill-down page for PDF actions.
+## Plan
+1. [ ] Analyze changes in each branch to understand what's missing or needs @jules attention.
+    - [ ] origin/feature-add-tests-and-readme-...
+    - [ ] origin/feature-ai-pdf-to-word-paddle-...
+    - [ ] origin/perf/defer-pikepdf-import-...
+    - [ ] origin/perf/directory-batch-processing-...
+2. [ ] Merge each branch into `pdf_updates`.
+    - [ ] Merge origin/feature-add-tests-and-readme-...
+    - [ ] Merge origin/feature-ai-pdf-to-word-paddle-...
+    - [ ] Merge origin/perf/defer-pikepdf-import-...
+    - [ ] Merge origin/perf/directory-batch-processing-...
+3. [ ] Identify missing parts and add comments with @jules.
+4. [ ] Run tests to ensure no regressions.
+5. [ ] Update `AGENTS.md` and commit.
 
-## Steps
-- [x] Initialize FastAPI backend
-    - [x] Install `fastapi` and `uvicorn`
-    - [x] Create `main.py` to serve the API and static files
-    - [x] Refactor `pdf_password_remover.py` functionality into a reusable module/function
-- [x] Create Modern Frontend
-    - [x] Design and implement `index.html` with a grid layout for file types (PDF, DOC, etc.)
-    - [x] Implement `style.css` with premium aesthetics (dark mode, glassmorphism, transitions)
-    - [x] Create the "Drill-down" view for PDF actions
-    - [x] Implement JavaScript logic for navigation and API calls
-- [x] Implement File Handling Workflow
-    - [x] Create an `outputs` folder if it doesn't exist
-    - [x] Implement file upload and processing logic
-    - [x] Save processed files to the `outputs` directory
-- [x] Verification
-    - [x] VERIFY: Run the FastAPI server and navigate the UI
-    - [x] VERIFY: Upload a protected PDF and remove its password through the UI
-    - [x] VERIFY: Check if the file is correctly saved in the `outputs` folder
-- [x] Update `AGENTS.md` and Change Log
+## Verification Strategy
+- git diff to see merged changes.
+- `npm run test` or equivalent if available.
+- Manual inspection of the merged code.

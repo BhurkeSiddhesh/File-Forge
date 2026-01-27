@@ -44,6 +44,8 @@ def pdf_to_word_paddle(input_path: str, output_dir: str) -> str:
     try:
         # Initialize PaddleOCR engine
         # use_gpu=False for safety, though it handles it automatically
+        # @jules: Should we detect the language instead of hardcoding 'en'?
+        # Potential fix: Use a language detection library or add a UI selector.
         table_engine = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False)
 
         doc = fitz.open(str(input_file))
@@ -91,9 +93,8 @@ def pdf_to_word_paddle(input_path: str, output_dir: str) -> str:
         composer = Composer(master)
 
         for docx_path in docx_files[1:]:
-            # Add a page break before appending new document?
-            # docxcompose handles this, but usually appends directly.
-            # PaddleOCR pages usually start with a fresh layout.
+            # @jules: Append usually doesn't include a page break. 
+            # We might want to explicitly add one if the pages are getting merged into one long stream.
             composer.append(Document_docx(str(docx_path)))
 
         composer.save(str(output_file))

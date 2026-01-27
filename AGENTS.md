@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-28
+
+- **feat**: Merged all feature and performance branches into `pdf_updates`.
+- **feat**: Resolved conflicts in `requirements.txt`, `.gitignore`, `AGENTS.md`, and `pdf_password_remover.py`.
+- **feat**: Added `@jules` comments for missing features (language support, page breaks).
+- **feat**: Cleaned up merged remote branches.
+- **Files**: `pdf_utils.py`, `main.py`, `requirements.txt`, `.gitignore`, `AGENTS.md`
+
 ### 2026-01-27
 
 - **feat**: Implemented premium Web UI with FastAPI backend.
