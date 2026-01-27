@@ -336,6 +336,60 @@ body {
 
 .hidden { display: none; }
 
+/* Toggle Switch */
+.options-panel {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+}
+
+.toggle-control {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    gap: 1rem;
+    user-select: none;
+}
+
+.toggle-control input {
+    display: none;
+}
+
+.toggle-control .control {
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    position: relative;
+    transition: background 0.3s;
+}
+
+.toggle-control .control:after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+.toggle-control input:checked + .control {
+    background: var(--primary);
+}
+
+.toggle-control input:checked + .control:after {
+    transform: translateX(20px);
+}
+
+.toggle-control .label {
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
 @media (max-width: 768px) {
     .drill-down-content { grid-template-columns: 1fr; }
     .hero h1 { font-size: 2.5rem; }
