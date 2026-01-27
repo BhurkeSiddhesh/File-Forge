@@ -1,0 +1,84 @@
+from fastapi.testclient import TestClient
+from main import app
+from unittest.mock import patch
+import pytest
+import os
+
+client = TestClient(app)
+
+@pytest.fixture
+def mock_dirs(tmp_path):
+    """Patches UPLOAD_DIR and OUTPUT_DIR to use temporary directories."""
+    upload_dir = tmp_path / "uploads"
+    output_dir = tmp_path / "outputs"
+    upload_dir.mkdir()
+    output_dir.mkdir()
+
+    # Patch the variables in main.py
+    with patch("main.UPLOAD_DIR", upload_dir), patch("main.OUTPUT_DIR", output_dir):
+        yield {"upload": upload_dir, "output": output_dir}
+
+def test_read_index():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+def test_api_remove_password(locked_pdf, mock_dirs):
+    file_path = locked_pdf["path"]
+    password = locked_pdf["password"]
+
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f, "application/pdf")}
+        data = {"password": password}
+        response = client.post("/api/pdf/remove-password", files=files, data=data)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+
+    # Verify file exists in mock output dir
+    output_filename = data["filename"]
+    assert (mock_dirs["output"] / output_filename).exists()
+
+def test_api_remove_password_wrong_password(locked_pdf, mock_dirs):
+    file_path = locked_pdf["path"]
+    wrong_password = "wrong"
+
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f, "application/pdf")}
+        data = {"password": wrong_password}
+        response = client.post("/api/pdf/remove-password", files=files, data=data)
+
+    assert response.status_code == 400
+
+def test_api_convert_to_word(sample_pdf, mock_dirs):
+    file_path = sample_pdf
+
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f, "application/pdf")}
+        response = client.post("/api/pdf/convert-to-word", files=files)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+
+    # Verify file exists in mock output dir
+    output_filename = data["filename"]
+    assert (mock_dirs["output"] / output_filename).exists()
+
+def test_download_file(sample_pdf, mock_dirs):
+    # First generate the file
+    with open(sample_pdf, "rb") as f:
+        files = {"file": (sample_pdf.name, f, "application/pdf")}
+        response = client.post("/api/pdf/convert-to-word", files=files)
+
+    filename = response.json()["filename"]
+
+    # Download it
+    response = client.get(f"/api/download/{filename}")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == f'attachment; filename="{filename}"'
+
+def test_download_file_not_found(mock_dirs):
+    response = client.get("/api/download/nonexistent.file")
+    assert response.status_code == 404

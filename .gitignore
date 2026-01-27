@@ -1,4 +1,8 @@
-Download Report_Aai_unlocked.pdf
-Download Report_Aai.pdf
-Download_Report_Baba_unlocked.pdf
-Download_Report_Baba.pdf
+__pycache__/
+*.pyc
+.pytest_cache/
+test_artifacts/
+.env
+venv/
+outputs/
+uploads/
