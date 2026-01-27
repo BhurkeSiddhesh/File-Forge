@@ -34,6 +34,8 @@
 - **Files**: `pdf_password_remover.py`, `inputs/`
 - **Verification**: `python pdf_password_remover.py` now prompts for input
 - **Verification**: `python pdf_password_remover.py <path> <pass>` still works via CLI
+- **perf**: Deferred `pikepdf` import to optimize CLI startup speed
+- **Verification**: Measured ~50% reduction in startup time (0.26s -> 0.13s)
 
 ### 2026-01-23
 

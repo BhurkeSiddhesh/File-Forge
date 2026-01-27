@@ -8,12 +8,6 @@ import argparse
 import sys
 from pathlib import Path
 
-try:
-    import pikepdf
-except ImportError:
-    print("Error: pikepdf is not installed.")
-    print("Install it with: pip install pikepdf")
-    sys.exit(1)
 
 
 def remove_pdf_password(input_path: str, password: str, output_path: str = None) -> str:
@@ -46,6 +40,12 @@ def remove_pdf_password(input_path: str, password: str, output_path: str = None)
     else:
         output_file = Path(output_path)
     
+    try:
+        import pikepdf
+    except ImportError:
+        # Let the caller handle this or fail with standard ImportError
+        raise
+
     # Open the PDF with password and save without encryption
     with pikepdf.open(input_file, password=password) as pdf:
         # Save without encryption
@@ -102,10 +102,27 @@ Examples:
     except FileNotFoundError as e:
         print(f"✗ Error: {e}")
         sys.exit(1)
-    except pikepdf.PasswordError:
-        print(f"✗ Error: Incorrect password")
-        sys.exit(1)
+    except ImportError as e:
+        if e.name == 'pikepdf':
+            print("Error: pikepdf is not installed.")
+            print("Install it with: pip install pikepdf")
+            sys.exit(1)
+        raise
     except Exception as e:
+        # Check if it's a PasswordError (handle deferred import)
+        is_password_error = False
+        if type(e).__name__ == 'PasswordError':
+            try:
+                import pikepdf
+                if isinstance(e, pikepdf.PasswordError):
+                    is_password_error = True
+            except ImportError:
+                pass
+
+        if is_password_error:
+            print(f"✗ Error: Incorrect password")
+            sys.exit(1)
+
         print(f"✗ Error: {e}")
         sys.exit(1)
 
