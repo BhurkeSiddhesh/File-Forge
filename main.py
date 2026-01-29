@@ -130,6 +130,81 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
                 pass  # Windows file locking - will be cleaned up later
 
 
+@app.post("/api/image/resize")
+async def api_resize_image(
+    file: UploadFile = File(...),
+    mode: str = Form(...),
+    width: int = Form(None),
+    height: int = Form(None),
+    percentage: int = Form(None),
+    target_size_kb: int = Form(None)
+):
+    """Resize image based on parameters."""
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        from image_utils import resize_image
+        output_path = resize_image(
+            str(temp_path), 
+            str(OUTPUT_DIR), 
+            mode,
+            width=width,
+            height=height,
+            percentage=percentage,
+            target_size_kb=target_size_kb
+        )
+        return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Image resize failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/image/crop")
+async def api_crop_image(
+    file: UploadFile = File(...),
+    x: int = Form(...),
+    y: int = Form(...),
+    width: int = Form(...),
+    height: int = Form(...)
+):
+    """Crop image based on coordinates."""
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        from image_utils import crop_image
+        output_path = crop_image(
+            str(temp_path), 
+            str(OUTPUT_DIR), 
+            x=x, y=y, width=width, height=height
+        )
+        return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Image crop failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
     file_path = OUTPUT_DIR / filename

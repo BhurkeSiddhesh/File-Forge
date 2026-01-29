@@ -29,6 +29,20 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-30
+
+- **feat**: Added comprehensive Image Resizer
+- **feat**: Supported resize modes: Dimensions, Percentage, and Target File Size (KB)
+- **feat**: Added new API endpoint `/api/image/resize`
+- **feat**: Implemented iterative compression algorithm for target file size
+- **feat**: Updated frontend with "Resize" mode and dynamic input controls
+- **Files**: `image_utils.py`, `main.py`, `static/index.html`, `static/script.js`, `static/style.css`, `tests/test_image_resize.py`
+- **feat**: Added Manual Image Cropping with visual UI (Cropper.js)
+- **fix**: Solved "white-on-white" visibility issue in dropdowns
+- **feat**: Added new API endpoint `/api/image/crop`
+- **Files**: `image_utils.py`, `main.py`, `static/index.html`, `static/script.js`, `static/style.css`, `tests/test_image_crop.py`
+- **Verification**: `pytest tests/test_image_crop.py` passed (3/3 tests)
+
 ### 2026-01-29
 
 - **feat**: Added HEIC to JPEG conversion feature

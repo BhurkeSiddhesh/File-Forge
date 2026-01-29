@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </head>
 
 <body>
@@ -164,10 +166,63 @@
                     <h2>Select Action for Image</h2>
 
                     <div class="options-panel">
-                        <label class="quality-control">
-                            <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
-                            <input type="range" id="quality-slider" min="50" max="100" value="95">
-                        </label>
+                        <div class="switch-toggle">
+                            <input type="radio" id="mode-convert" name="image-mode" checked
+                                onchange="toggleImageMode()">
+                            <label for="mode-convert">Convert</label>
+
+                            <input type="radio" id="mode-resize" name="image-mode" onchange="toggleImageMode()">
+                            <label for="mode-resize">Resize</label>
+
+                            <input type="radio" id="mode-crop" name="image-mode" onchange="toggleImageMode()">
+                            <label for="mode-crop">Crop</label>
+                        </div>
+
+                        <!-- Options for Convert Mode -->
+                        <div id="convert-options" class="mode-options">
+                            <label class="quality-control">
+                                <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
+                                <input type="range" id="quality-slider" min="50" max="100" value="95">
+                            </label>
+                        </div>
+
+                        <!-- Options for Resize Mode -->
+                        <div id="resize-options" class="mode-options hidden">
+                            <label class="select-control">
+                                <span class="label">Resize Method</span>
+                                <select id="resize-method" onchange="toggleResizeInputs()">
+                                    <option value="dimensions">Dimensions (Width/Height)</option>
+                                    <option value="percentage">Percentage (Scale)</option>
+                                    <option value="target_size">Target File Size</option>
+                                </select>
+                            </label>
+
+                            <div id="input-dimensions" class="resize-inputs">
+                                <input type="number" id="resize-width" placeholder="Width (px)">
+                                <span class="separator">x</span>
+                                <input type="number" id="resize-height" placeholder="Height (px)">
+                            </div>
+
+                            <div id="input-percentage" class="resize-inputs hidden">
+                                <label class="quality-control">
+                                    <span class="label">Scale: <span id="scale-value">50</span>%</span>
+                                    <input type="range" id="scale-slider" min="1" max="200" value="50"
+                                        oninput="document.getElementById('scale-value').innerText = this.value">
+                                </label>
+                            </div>
+
+                            <div id="input-target-size" class="resize-inputs hidden">
+                                <input type="number" id="target-size-kb" placeholder="Max Size (KB)">
+                            </div>
+                        </div>
+
+                        <!-- Options for Crop Mode -->
+                        <div id="crop-options" class="mode-options hidden">
+                            <p class="helper-text">Drag handles to crop the image.</p>
+                            <div id="crop-editor-container" class="crop-editor-container hidden">
+                                <img id="crop-image-preview" src="" alt="Image to crop">
+                            </div>
+                        </div>
                     </div>
 
                     <div class="action-buttons">
@@ -176,6 +231,22 @@
                             <div class="action-text">
                                 <h4>Convert to JPEG</h4>
                                 <p>Transform HEIC to standard JPEG format</p>
+                            </div>
+                        </div>
+
+                        <div class="action-card hidden" id="resize-btn" onclick="resizeImage()">
+                            <i class="fas fa-compress-arrows-alt"></i>
+                            <div class="action-text">
+                                <h4>Resize Image</h4>
+                                <p>Change dimensions or file size</p>
+                            </div>
+                        </div>
+
+                        <div class="action-card hidden" id="crop-btn" onclick="cropImage()">
+                            <i class="fas fa-crop-alt"></i>
+                            <div class="action-text">
+                                <h4>Crop Image</h4>
+                                <p>Apply cropping selection</p>
                             </div>
                         </div>
                     </div>

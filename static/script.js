@@ -325,3 +325,235 @@ function showImageResult(filename, message) {
     resultMessage.textContent = message + ': ' + filename;
     downloadLink.href = `/api/download/${filename}`;
 }
+
+// --- Image Resize & Crop Functions ---
+
+let cropper = null;
+
+function toggleImageMode() {
+    const isResize = document.getElementById('mode-resize').checked;
+    const isCrop = document.getElementById('mode-crop').checked;
+
+    const convertOptions = document.getElementById('convert-options');
+    const resizeOptions = document.getElementById('resize-options');
+    const cropOptions = document.getElementById('crop-options');
+
+    const convertBtn = document.getElementById('convert-jpeg-btn');
+    const resizeBtn = document.getElementById('resize-btn');
+    const cropBtn = document.getElementById('crop-btn');
+
+    // Hide all first
+    convertOptions.classList.add('hidden');
+    resizeOptions.classList.add('hidden');
+    cropOptions.classList.add('hidden');
+
+    convertBtn.classList.add('hidden');
+    resizeBtn.classList.add('hidden');
+    cropBtn.classList.add('hidden');
+
+    if (isResize) {
+        resizeOptions.classList.remove('hidden');
+        resizeBtn.classList.remove('hidden');
+        destroyCropper();
+    } else if (isCrop) {
+        cropOptions.classList.remove('hidden');
+        cropBtn.classList.remove('hidden');
+        initCropper();
+    } else {
+        convertOptions.classList.remove('hidden');
+        convertBtn.classList.remove('hidden');
+        destroyCropper();
+    }
+}
+
+function destroyCropper() {
+    if (cropper) {
+        cropper.destroy();
+        cropper = null;
+    }
+}
+
+function initCropper() {
+    if (!selectedImageFile) return;
+
+    const image = document.getElementById('crop-image-preview');
+    const container = document.getElementById('crop-editor-container');
+
+    // Read file and set to image src
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        image.src = e.target.result;
+        container.classList.remove('hidden');
+
+        // Destroy existing to avoid duplicates
+        destroyCropper();
+
+        cropper = new Cropper(image, {
+            viewMode: 1,
+            autoCropArea: 0.8,
+            movable: false,
+            zoomable: true,
+            rotatable: false,
+            scalable: false,
+        });
+    };
+    reader.readAsDataURL(selectedImageFile);
+}
+
+// Hook into existing handleImageFile to trigger cropper if in crop mode
+const originalHandleImageFile = handleImageFile;
+handleImageFile = function (file) {
+    // Call original logic
+    const validTypes = ['image/heic', 'image/heif', 'image/jpeg', 'image/png', 'image/webp'];
+    const validExts = ['.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
+        alert('Please select a valid image file (HEIC, JPG, PNG).');
+        return;
+    }
+    selectedImageFile = file;
+    document.getElementById('image-filename-display').textContent = file.name;
+    document.getElementById('image-file-info').classList.remove('hidden');
+    document.getElementById('image-status-display').classList.add('hidden');
+    document.getElementById('image-result-display').classList.add('hidden');
+
+    // If currently in crop mode, init cropper
+    if (document.getElementById('mode-crop').checked) {
+        initCropper();
+    }
+};
+
+function toggleResizeInputs() {
+    const method = document.getElementById('resize-method').value;
+    document.getElementById('input-dimensions').classList.add('hidden');
+    document.getElementById('input-percentage').classList.add('hidden');
+    document.getElementById('input-target-size').classList.add('hidden');
+
+    if (method === 'dimensions') {
+        document.getElementById('input-dimensions').classList.remove('hidden');
+    } else if (method === 'percentage') {
+        document.getElementById('input-percentage').classList.remove('hidden');
+    } else if (method === 'target_size') {
+        document.getElementById('input-target-size').classList.remove('hidden');
+    }
+}
+
+async function resizeImage() {
+    if (!selectedImageFile) {
+        alert("Please select an image file first.");
+        return;
+    }
+    const file = selectedImageFile;
+
+    const mode = document.getElementById('resize-method').value;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('mode', mode);
+
+    if (mode === 'dimensions') {
+        const width = document.getElementById('resize-width').value;
+        const height = document.getElementById('resize-height').value;
+        if (!width && !height) {
+            alert("Please enter at least width or height.");
+            return;
+        }
+        if (width) formData.append('width', width);
+        if (height) formData.append('height', height);
+    } else if (mode === 'percentage') {
+        const percentage = document.getElementById('scale-slider').value;
+        formData.append('percentage', percentage);
+    } else if (mode === 'target_size') {
+        const targetSize = document.getElementById('target-size-kb').value;
+        if (!targetSize) {
+            alert("Please enter a target size.");
+            return;
+        }
+        formData.append('target_size_kb', targetSize);
+    }
+
+    const statusDisplay = document.getElementById('image-status-display');
+    const resultDisplay = document.getElementById('image-result-display');
+    const statusText = document.getElementById('image-status-text');
+    const resultMessage = document.getElementById('image-result-message');
+    const downloadLink = document.getElementById('image-download-link');
+
+    // Reset UI
+    statusDisplay.classList.remove('hidden');
+    resultDisplay.classList.add('hidden');
+    statusText.innerText = "Resizing image...";
+
+    try {
+        const response = await fetch('/api/image/resize', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            statusDisplay.classList.add('hidden');
+            resultDisplay.classList.remove('hidden');
+            resultMessage.innerText = `${data.message}: ${data.filename}`;
+            downloadLink.href = `/api/download/${data.filename}`;
+            downloadLink.innerText = `Download ${data.filename}`;
+        } else {
+            throw new Error(data.detail || 'Resize failed');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        statusDisplay.classList.add('hidden');
+        alert("An error occurred: " + error.message);
+    }
+}
+
+async function cropImage() {
+    if (!cropper) {
+        alert("Please start cropping first.");
+        return;
+    }
+
+    // Get crop data (x, y, width, height)
+    const data = cropper.getData(true); // true for rounded integers
+
+    const formData = new FormData();
+    formData.append('file', selectedImageFile);
+    formData.append('x', data.x);
+    formData.append('y', data.y);
+    formData.append('width', data.width);
+    formData.append('height', data.height);
+
+    const statusDisplay = document.getElementById('image-status-display');
+    const resultDisplay = document.getElementById('image-result-display');
+    const statusText = document.getElementById('image-status-text');
+    const resultMessage = document.getElementById('image-result-message');
+    const downloadLink = document.getElementById('image-download-link');
+
+    // Reset UI
+    statusDisplay.classList.remove('hidden');
+    resultDisplay.classList.add('hidden');
+    statusText.innerText = "Cropping image...";
+
+    try {
+        const response = await fetch('/api/image/crop', {
+            method: 'POST',
+            body: formData
+        });
+
+        const respData = await response.json();
+
+        if (response.ok) {
+            statusDisplay.classList.add('hidden');
+            resultDisplay.classList.remove('hidden');
+            resultMessage.innerText = `${respData.message}: ${respData.filename}`;
+            downloadLink.href = `/api/download/${respData.filename}`;
+            downloadLink.innerText = `Download ${respData.filename}`;
+        } else {
+            throw new Error(respData.detail || 'Crop failed');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        statusDisplay.classList.add('hidden');
+        alert("An error occurred: " + error.message);
+    }
+}
