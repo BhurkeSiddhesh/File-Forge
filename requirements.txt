@@ -12,3 +12,4 @@ docxcompose
 PyMuPDF
 reportlab
 requests
+pillow-heif

@@ -82,3 +82,23 @@ def test_download_file(sample_pdf, mock_dirs):
 def test_download_file_not_found(mock_dirs):
     response = client.get("/api/download/nonexistent.file")
     assert response.status_code == 404
+
+
+def test_api_heic_to_jpeg(sample_heic, mock_dirs):
+    """Test HEIC to JPEG conversion endpoint."""
+    file_path = sample_heic
+
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f, "image/heic")}
+        data = {"quality": 90}
+        response = client.post("/api/image/heic-to-jpeg", files=files, data=data)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["filename"].endswith(".jpg")
+
+    # Verify file exists in mock output dir
+    output_filename = data["filename"]
+    assert (mock_dirs["output"] / output_filename).exists()
+

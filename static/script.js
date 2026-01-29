@@ -1,24 +1,28 @@
 let selectedFile = null;
+let selectedImageFile = null;
 let currentTool = null;
 
 // Navigation
 function showDrillDown(tool) {
     currentTool = tool;
+    const pageId = tool === 'pdf' ? 'pdf-page' : 'image-page';
+
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {
         document.getElementById('home-page').style.display = 'none';
-        document.getElementById('pdf-page').style.display = 'block';
+        document.getElementById(pageId).style.display = 'block';
         setTimeout(() => {
-            document.getElementById('pdf-page').classList.add('active');
+            document.getElementById(pageId).classList.add('active');
         }, 50);
     }, 500);
 }
 
 function showHome() {
-    document.getElementById('pdf-page').classList.remove('active');
+    const pageId = currentTool === 'pdf' ? 'pdf-page' : 'image-page';
+    document.getElementById(pageId).classList.remove('active');
     resetUI();
     setTimeout(() => {
-        document.getElementById('pdf-page').style.display = 'none';
+        document.getElementById(pageId).style.display = 'none';
         document.getElementById('home-page').style.display = 'block';
         setTimeout(() => {
             document.getElementById('home-page').classList.add('active');
@@ -178,6 +182,7 @@ function showResult(filename, message) {
 
 function resetUI() {
     selectedFile = null;
+    selectedImageFile = null;
     currentTool = null;
     fileInput.value = '';
     filenameDisplay.textContent = 'No file selected';
@@ -186,4 +191,137 @@ function resetUI() {
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
+
+    // Reset image tools
+    const imageFileInput = document.getElementById('image-file-input');
+    const imageFilenameDisplay = document.getElementById('image-filename-display');
+    const imageFileInfo = document.getElementById('image-file-info');
+    if (imageFileInput) imageFileInput.value = '';
+    if (imageFilenameDisplay) imageFilenameDisplay.textContent = 'No file selected';
+    if (imageFileInfo) imageFileInfo.classList.add('hidden');
+    document.getElementById('image-status-display')?.classList.add('hidden');
+    document.getElementById('image-result-display')?.classList.add('hidden');
+}
+
+// === Image Tools ===
+
+const imageDropZone = document.getElementById('image-drop-zone');
+const imageFileInput = document.getElementById('image-file-input');
+const imageFilenameDisplay = document.getElementById('image-filename-display');
+const imageFileInfo = document.getElementById('image-file-info');
+const qualitySlider = document.getElementById('quality-slider');
+const qualityValue = document.getElementById('quality-value');
+
+if (imageDropZone) {
+    imageDropZone.onclick = () => imageFileInput.click();
+
+    imageFileInput.onchange = (e) => {
+        if (e.target.files.length > 0) {
+            handleImageFile(e.target.files[0]);
+        }
+    };
+
+    imageDropZone.ondragover = (e) => {
+        e.preventDefault();
+        imageDropZone.classList.add('drag-over');
+    };
+
+    imageDropZone.ondragleave = () => {
+        imageDropZone.classList.remove('drag-over');
+    };
+
+    imageDropZone.ondrop = (e) => {
+        e.preventDefault();
+        imageDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+            handleImageFile(e.dataTransfer.files[0]);
+        }
+    };
+}
+
+if (qualitySlider) {
+    qualitySlider.oninput = () => {
+        qualityValue.textContent = qualitySlider.value;
+    };
+}
+
+function handleImageFile(file) {
+    const validTypes = ['image/heic', 'image/heif'];
+    const validExts = ['.heic', '.heif'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
+        alert('Please select a HEIC or HEIF file.');
+        return;
+    }
+    selectedImageFile = file;
+    imageFilenameDisplay.textContent = file.name;
+    imageFileInfo.classList.remove('hidden');
+
+    // Reset displays
+    document.getElementById('image-status-display').classList.add('hidden');
+    document.getElementById('image-result-display').classList.add('hidden');
+}
+
+// Convert to JPEG
+const convertJpegBtn = document.getElementById('convert-jpeg-btn');
+if (convertJpegBtn) {
+    convertJpegBtn.onclick = () => {
+        if (!selectedImageFile) {
+            alert('Please select a file first.');
+            return;
+        }
+
+        const quality = qualitySlider ? parseInt(qualitySlider.value) : 95;
+        const formData = new FormData();
+        formData.append('file', selectedImageFile);
+        formData.append('quality', quality);
+
+        processImageAction('/api/image/heic-to-jpeg', 'Converting HEIC to JPEG...', formData);
+    };
+}
+
+async function processImageAction(url, text, formData) {
+    const statusDisplay = document.getElementById('image-status-display');
+    const statusText = document.getElementById('image-status-text');
+    const resultDisplay = document.getElementById('image-result-display');
+
+    statusDisplay.classList.remove('hidden');
+    statusText.textContent = text;
+    resultDisplay.classList.add('hidden');
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showImageResult(data.filename, data.message);
+        } else {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const data = await response.json();
+                alert('Error: ' + data.detail);
+            } else {
+                const text = await response.text();
+                alert('Error: ' + text);
+            }
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    } finally {
+        statusDisplay.classList.add('hidden');
+    }
+}
+
+function showImageResult(filename, message) {
+    const resultDisplay = document.getElementById('image-result-display');
+    const resultMessage = document.getElementById('image-result-message');
+    const downloadLink = document.getElementById('image-download-link');
+
+    resultDisplay.classList.remove('hidden');
+    resultMessage.textContent = message + ': ' + filename;
+    downloadLink.href = `/api/download/${filename}`;
 }

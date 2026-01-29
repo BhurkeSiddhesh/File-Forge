@@ -35,13 +35,13 @@
                     <div class="badge">Available</div>
                 </div>
 
-                <div class="tool-card disabled">
-                    <div class="icon-wrapper word">
-                        <i class="fas fa-file-word"></i>
+                <div class="tool-card active" onclick="showDrillDown('image')">
+                    <div class="icon-wrapper image">
+                        <i class="fas fa-image"></i>
                     </div>
-                    <h3>Word Tools</h3>
-                    <p>Coming soon: Convert Word to PDF, merge docx, and more.</p>
-                    <div class="badge">Soon</div>
+                    <h3>Image Tools</h3>
+                    <p>Convert HEIC to JPEG and more image transformations.</p>
+                    <div class="badge">Available</div>
                 </div>
 
                 <div class="tool-card disabled">
@@ -134,6 +134,62 @@
                         <h3>Process Complete!</h3>
                         <p id="result-message"></p>
                         <a id="download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Drill Down Page (Image) -->
+        <section id="image-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="image-drop-zone" class="drop-zone">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
+                        <input type="file" id="image-file-input" accept=".heic,.heif" hidden>
+                        <div id="image-file-info" class="file-info hidden">
+                            <i class="fas fa-image"></i>
+                            <span id="image-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Image</h2>
+
+                    <div class="options-panel">
+                        <label class="quality-control">
+                            <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
+                            <input type="range" id="quality-slider" min="50" max="100" value="95">
+                        </label>
+                    </div>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="convert-jpeg-btn">
+                            <i class="fas fa-file-image"></i>
+                            <div class="action-text">
+                                <h4>Convert to JPEG</h4>
+                                <p>Transform HEIC to standard JPEG format</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="image-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="image-status-text">Processing...</p>
+                    </div>
+
+                    <div id="image-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="image-result-message"></p>
+                        <a id="image-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
                     </div>

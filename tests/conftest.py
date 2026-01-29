@@ -35,3 +35,24 @@ def locked_pdf(tmp_path_factory, sample_pdf):
         )
 
     return {"path": file_path, "password": password}
+
+
+@pytest.fixture(scope="session")
+def sample_heic(tmp_path_factory):
+    """Creates a sample HEIC file for testing."""
+    try:
+        import pillow_heif
+        from PIL import Image
+        
+        pillow_heif.register_heif_opener()
+        
+        d = tmp_path_factory.mktemp("images")
+        file_path = d / "test_image.heic"
+        
+        # Create a simple RGB image and save as HEIC
+        img = Image.new('RGB', (100, 100), color='blue')
+        img.save(file_path, format='HEIF')
+        
+        return file_path
+    except Exception as e:
+        pytest.skip(f"Could not create test HEIC: {e}")

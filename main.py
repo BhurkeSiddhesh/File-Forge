@@ -5,6 +5,7 @@ import shutil
 import os
 from pathlib import Path
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
+from image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
 
@@ -97,6 +98,30 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass  # Windows file locking - will be cleaned up later
+
+
+@app.post("/api/image/heic-to-jpeg")
+async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
+    """Convert HEIC/HEIF image to JPEG format."""
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
+        return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] HEIC conversion failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
             try:

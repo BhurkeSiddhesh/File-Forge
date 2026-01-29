@@ -23,11 +23,21 @@
 
 ## 4. Active Context
 
-- **Current Sprint**: Modern Web UI and expanded PDF tools (Word conversion).
+- **Current Sprint**: Modern Web UI, PDF tools, and Image tools (HEIC to JPEG).
 
 ## 5. Change Log (Reverse Chronological)
 
 > **CRITICAL**: Add entry here BEFORE every commit.
+
+### 2026-01-29
+
+- **feat**: Added HEIC to JPEG conversion feature
+- **feat**: Created `image_utils.py` with `heic_to_jpeg()` function using `pillow-heif`
+- **feat**: Added `/api/image/heic-to-jpeg` endpoint in `main.py`
+- **feat**: Added Image Tools section in frontend with quality slider
+- **feat**: Added unit tests in `tests/test_image_utils.py` and API tests in `tests/test_main.py`
+- **Files**: `image_utils.py`, `main.py`, `requirements.txt`, `static/index.html`, `static/script.js`, `static/style.css`, `tests/conftest.py`, `tests/test_main.py`, `tests/test_image_utils.py`
+- **Verification**: `pytest -v` - All tests passed
 
 ### 2026-01-28
 
