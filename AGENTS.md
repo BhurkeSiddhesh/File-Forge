@@ -31,6 +31,30 @@
 
 ### 2026-01-30
 
+- **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator
+- **feat**: New Workflow card on home page with project-diagram icon
+- **feat**: Drag-and-drop step palette (Unlock PDF, PDF→Word, HEIC→JPEG, Resize)
+- **feat**: Workflow canvas with arrow connectors between steps
+- **feat**: Step configuration modal for password and resize settings
+- **feat**: Backend `/api/workflow/execute` endpoint for chained processing
+- **Files**: `main.py`, `static/index.html`, `static/script.js`, `static/style.css`, `AGENTS.md`
+- **Verification**: Manual browser testing
+
+### 2026-01-30
+
+- **fix**: Implemented backend-assisted HEIC preview for image cropping.
+- **fix**: Resolved "broken image" icon in cropping UI for HEIC files.
+- **Files**: `static/script.js`
+
+### 2026-01-30
+
+- **fix**: Fixed image cropping issue for photos with EXIF orientation (e.g., from smartphones).
+- **feat**: Added `ImageOps.exif_transpose` to `image_utils.py` to auto-rotate images before processing.
+- **Files**: `image_utils.py`
+- **Verification**: `pytest tests/test_image_crop.py` passed.
+
+### 2026-01-30
+
 - **feat**: Added comprehensive Image Resizer
 - **feat**: Supported resize modes: Dimensions, Percentage, and Target File Size (KB)
 - **feat**: Added new API endpoint `/api/image/resize`

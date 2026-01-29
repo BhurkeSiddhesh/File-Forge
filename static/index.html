@@ -46,6 +46,15 @@
                     <div class="badge">Available</div>
                 </div>
 
+                <div class="tool-card active" onclick="showDrillDown('workflow')">
+                    <div class="icon-wrapper workflow">
+                        <i class="fas fa-project-diagram"></i>
+                    </div>
+                    <h3>Workflow</h3>
+                    <p>Chain operations: PDF unlock → Word and more pipelines.</p>
+                    <div class="badge">New</div>
+                </div>
+
                 <div class="tool-card disabled">
                     <div class="icon-wrapper excel">
                         <i class="fas fa-file-excel"></i>
@@ -264,6 +273,109 @@
                             <i class="fas fa-download"></i> Download File
                         </a>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Workflow Builder Page -->
+        <section id="workflow-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="workflow-builder">
+                <div class="workflow-header">
+                    <h2><i class="fas fa-project-diagram"></i> Workflow Builder</h2>
+                    <p class="helper-text">Drag steps from the palette to build your pipeline</p>
+                </div>
+
+                <div class="workflow-layout">
+                    <!-- File Input -->
+                    <div class="workflow-input-section">
+                        <h3>1. Input File</h3>
+                        <div id="workflow-drop-zone" class="drop-zone workflow-drop">
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                            <p>Drop your file here or <span class="browse-text">browse</span></p>
+                            <input type="file" id="workflow-file-input" hidden>
+                            <div id="workflow-file-info" class="file-info hidden">
+                                <i class="fas fa-file"></i>
+                                <span id="workflow-filename-display">No file selected</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step Palette -->
+                    <div class="workflow-palette-section">
+                        <h3>2. Available Steps</h3>
+                        <div class="step-palette">
+                            <div class="step-item" draggable="true" data-step-type="remove_password"
+                                data-step-label="Unlock PDF" data-step-icon="fa-unlock">
+                                <i class="fas fa-unlock"></i>
+                                <span>Unlock PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="pdf_to_word"
+                                data-step-label="PDF to Word" data-step-icon="fa-file-word">
+                                <i class="fas fa-file-word"></i>
+                                <span>PDF → Word</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="heic_to_jpeg"
+                                data-step-label="HEIC to JPEG" data-step-icon="fa-file-image">
+                                <i class="fas fa-file-image"></i>
+                                <span>HEIC → JPEG</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="resize_image"
+                                data-step-label="Resize Image" data-step-icon="fa-compress-arrows-alt">
+                                <i class="fas fa-compress-arrows-alt"></i>
+                                <span>Resize Image</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Workflow Canvas -->
+                <div class="workflow-canvas-section">
+                    <h3>3. Your Pipeline</h3>
+                    <div id="workflow-canvas" class="workflow-canvas">
+                        <div class="canvas-placeholder">
+                            <i class="fas fa-arrow-down"></i>
+                            <p>Drop steps here to build your workflow</p>
+                        </div>
+                        <div id="workflow-steps-container" class="workflow-steps hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Step Config Modal (appears when step needs config) -->
+                <div id="step-config-modal" class="step-config-modal hidden">
+                    <div class="modal-content">
+                        <h4 id="config-modal-title">Configure Step</h4>
+                        <div id="config-modal-body"></div>
+                        <div class="modal-actions">
+                            <button class="secondary-btn" onclick="closeConfigModal()">Cancel</button>
+                            <button class="primary-btn" onclick="saveStepConfig()">Save</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Run Workflow -->
+                <div class="workflow-run-section">
+                    <button id="run-workflow-btn" class="primary-btn large-btn" onclick="runWorkflow()">
+                        <i class="fas fa-play"></i> Run Workflow
+                    </button>
+                </div>
+
+                <!-- Status & Result -->
+                <div id="workflow-status-display" class="status-display hidden">
+                    <div class="loader"></div>
+                    <p id="workflow-status-text">Processing workflow...</p>
+                </div>
+
+                <div id="workflow-result-display" class="result-display hidden">
+                    <i class="fas fa-check-circle success-icon"></i>
+                    <h3>Workflow Complete!</h3>
+                    <p id="workflow-result-message"></p>
+                    <a id="workflow-download-link" href="#" class="primary-btn download-btn">
+                        <i class="fas fa-download"></i> Download Result
+                    </a>
                 </div>
             </div>
         </section>

@@ -5,7 +5,11 @@ let currentTool = null;
 // Navigation
 function showDrillDown(tool) {
     currentTool = tool;
-    const pageId = tool === 'pdf' ? 'pdf-page' : 'image-page';
+    let pageId;
+    if (tool === 'pdf') pageId = 'pdf-page';
+    else if (tool === 'image') pageId = 'image-page';
+    else if (tool === 'workflow') pageId = 'workflow-page';
+    else return;
 
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {
@@ -18,7 +22,12 @@ function showDrillDown(tool) {
 }
 
 function showHome() {
-    const pageId = currentTool === 'pdf' ? 'pdf-page' : 'image-page';
+    let pageId;
+    if (currentTool === 'pdf') pageId = 'pdf-page';
+    else if (currentTool === 'image') pageId = 'image-page';
+    else if (currentTool === 'workflow') pageId = 'workflow-page';
+    else pageId = 'pdf-page';
+
     document.getElementById(pageId).classList.remove('active');
     resetUI();
     setTimeout(() => {
@@ -373,31 +382,87 @@ function destroyCropper() {
     }
 }
 
-function initCropper() {
+async function initCropper() {
     if (!selectedImageFile) return;
 
     const image = document.getElementById('crop-image-preview');
     const container = document.getElementById('crop-editor-container');
+    const statusDisplay = document.getElementById('image-status-display');
+    const statusText = document.getElementById('image-status-text');
 
-    // Read file and set to image src
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        image.src = e.target.result;
-        container.classList.remove('hidden');
+    // Check for HEIC/HEIF
+    const ext = '.' + selectedImageFile.name.split('.').pop().toLowerCase();
+    const isHeic = ext === '.heic' || ext === '.heif' || selectedImageFile.type === 'image/heic' || selectedImageFile.type === 'image/heif';
 
-        // Destroy existing to avoid duplicates
-        destroyCropper();
+    if (isHeic) {
+        // Show loading state
+        if (statusDisplay) {
+            statusDisplay.classList.remove('hidden');
+            statusText.innerText = "Generating preview...";
+        }
+        container.classList.add('hidden'); // Hide until ready
 
-        cropper = new Cropper(image, {
-            viewMode: 1,
-            autoCropArea: 0.8,
-            movable: false,
-            zoomable: true,
-            rotatable: false,
-            scalable: false,
-        });
-    };
-    reader.readAsDataURL(selectedImageFile);
+        try {
+            const formData = new FormData();
+            formData.append('file', selectedImageFile);
+            formData.append('quality', 80); // Faster preview
+
+            const response = await fetch('/api/image/heic-to-jpeg', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || "Preview generation failed");
+            }
+
+            const data = await response.json();
+
+            // Set up onload before setting src
+            image.onload = () => {
+                if (statusDisplay) statusDisplay.classList.add('hidden');
+                container.classList.remove('hidden');
+
+                destroyCropper();
+                cropper = new Cropper(image, {
+                    viewMode: 1,
+                    autoCropArea: 0.8,
+                    movable: false,
+                    zoomable: true,
+                    rotatable: false,
+                    scalable: false,
+                });
+            };
+            image.src = `/api/download/${data.filename}`;
+
+        } catch (e) {
+            console.error(e);
+            alert("Could not load HEIC preview: " + e.message);
+            if (statusDisplay) statusDisplay.classList.add('hidden');
+        }
+
+    } else {
+        // Standard flow for supported images (JPG, PNG)
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            image.src = e.target.result;
+            container.classList.remove('hidden');
+
+            // Destroy existing to avoid duplicates
+            destroyCropper();
+
+            cropper = new Cropper(image, {
+                viewMode: 1,
+                autoCropArea: 0.8,
+                movable: false,
+                zoomable: true,
+                rotatable: false,
+                scalable: false,
+            });
+        };
+        reader.readAsDataURL(selectedImageFile);
+    }
 }
 
 // Hook into existing handleImageFile to trigger cropper if in crop mode
@@ -557,3 +622,286 @@ async function cropImage() {
         alert("An error occurred: " + error.message);
     }
 }
+
+// === Workflow Builder ===
+
+let workflowFile = null;
+let workflowSteps = [];
+let currentConfigStepIndex = null;
+
+// Initialize workflow builder when DOM is ready
+document.addEventListener('DOMContentLoaded', initWorkflowBuilder);
+
+function initWorkflowBuilder() {
+    const dropZone = document.getElementById('workflow-drop-zone');
+    const fileInput = document.getElementById('workflow-file-input');
+    const canvas = document.getElementById('workflow-canvas');
+    const stepItems = document.querySelectorAll('.step-item');
+
+    if (!dropZone || !fileInput || !canvas) return;
+
+    // File drop handling
+    dropZone.onclick = () => fileInput.click();
+
+    fileInput.onchange = (e) => {
+        if (e.target.files.length > 0) {
+            handleWorkflowFile(e.target.files[0]);
+        }
+    };
+
+    dropZone.ondragover = (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    };
+
+    dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+
+    dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+            handleWorkflowFile(e.dataTransfer.files[0]);
+        }
+    };
+
+    // Step palette drag start
+    stepItems.forEach(item => {
+        item.ondragstart = (e) => {
+            e.dataTransfer.setData('step-type', item.dataset.stepType);
+            e.dataTransfer.setData('step-label', item.dataset.stepLabel);
+            e.dataTransfer.setData('step-icon', item.dataset.stepIcon);
+            item.style.opacity = '0.5';
+        };
+        item.ondragend = () => {
+            item.style.opacity = '1';
+        };
+    });
+
+    // Canvas drop handling
+    canvas.ondragover = (e) => {
+        e.preventDefault();
+        canvas.classList.add('drag-over');
+    };
+
+    canvas.ondragleave = () => canvas.classList.remove('drag-over');
+
+    canvas.ondrop = (e) => {
+        e.preventDefault();
+        canvas.classList.remove('drag-over');
+
+        const stepType = e.dataTransfer.getData('step-type');
+        const stepLabel = e.dataTransfer.getData('step-label');
+        const stepIcon = e.dataTransfer.getData('step-icon');
+
+        if (stepType) {
+            addStepToWorkflow(stepType, stepLabel, stepIcon);
+        }
+    };
+}
+
+function handleWorkflowFile(file) {
+    workflowFile = file;
+    document.getElementById('workflow-filename-display').textContent = file.name;
+    document.getElementById('workflow-file-info').classList.remove('hidden');
+
+    // Reset status displays
+    document.getElementById('workflow-status-display').classList.add('hidden');
+    document.getElementById('workflow-result-display').classList.add('hidden');
+}
+
+function addStepToWorkflow(type, label, icon) {
+    const step = {
+        id: Date.now(),
+        type: type,
+        label: label,
+        icon: icon,
+        config: {}
+    };
+
+    // Steps that need configuration
+    if (type === 'remove_password') {
+        step.config.password = '';
+    } else if (type === 'resize_image') {
+        step.config.mode = 'percentage';
+        step.config.percentage = 50;
+    }
+
+    workflowSteps.push(step);
+    renderWorkflowSteps();
+
+    // If step needs config, open modal
+    if (type === 'remove_password' || type === 'resize_image') {
+        openConfigModal(workflowSteps.length - 1);
+    }
+}
+
+function renderWorkflowSteps() {
+    const container = document.getElementById('workflow-steps-container');
+    const placeholder = document.querySelector('.canvas-placeholder');
+
+    if (workflowSteps.length === 0) {
+        container.classList.add('hidden');
+        placeholder.style.display = 'flex';
+        return;
+    }
+
+    placeholder.style.display = 'none';
+    container.classList.remove('hidden');
+    container.innerHTML = '';
+
+    workflowSteps.forEach((step, index) => {
+        // Add arrow before step (except first)
+        if (index > 0) {
+            const arrow = document.createElement('span');
+            arrow.className = 'step-arrow';
+            arrow.innerHTML = '<i class="fas fa-arrow-right"></i>';
+            container.appendChild(arrow);
+        }
+
+        const stepCard = document.createElement('div');
+        stepCard.className = 'workflow-step-card';
+        stepCard.innerHTML = `
+            <i class="fas ${step.icon}"></i>
+            <span class="step-label">${step.label}</span>
+            ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})"><i class="fas fa-cog"></i></button>` : ''}
+            <button class="remove-step" onclick="removeStep(${index})"><i class="fas fa-times"></i></button>
+        `;
+        container.appendChild(stepCard);
+    });
+}
+
+function needsConfig(type) {
+    return ['remove_password', 'resize_image'].includes(type);
+}
+
+function removeStep(index) {
+    workflowSteps.splice(index, 1);
+    renderWorkflowSteps();
+}
+
+function openConfigModal(index) {
+    currentConfigStepIndex = index;
+    const step = workflowSteps[index];
+    const modal = document.getElementById('step-config-modal');
+    const title = document.getElementById('config-modal-title');
+    const body = document.getElementById('config-modal-body');
+
+    title.textContent = `Configure: ${step.label}`;
+
+    if (step.type === 'remove_password') {
+        body.innerHTML = `
+            <label>
+                <span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">PDF Password</span>
+                <input type="password" id="config-password" placeholder="Enter password" value="${step.config.password || ''}">
+            </label>
+        `;
+    } else if (step.type === 'resize_image') {
+        body.innerHTML = `
+            <label>
+                <span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Resize Percentage</span>
+                <input type="number" id="config-percentage" placeholder="e.g., 50" value="${step.config.percentage || 50}" min="1" max="200">
+            </label>
+        `;
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeConfigModal() {
+    document.getElementById('step-config-modal').classList.add('hidden');
+    currentConfigStepIndex = null;
+}
+
+function saveStepConfig() {
+    if (currentConfigStepIndex === null) return;
+
+    const step = workflowSteps[currentConfigStepIndex];
+
+    if (step.type === 'remove_password') {
+        step.config.password = document.getElementById('config-password').value;
+    } else if (step.type === 'resize_image') {
+        step.config.percentage = parseInt(document.getElementById('config-percentage').value) || 50;
+    }
+
+    closeConfigModal();
+    renderWorkflowSteps();
+}
+
+async function runWorkflow() {
+    if (!workflowFile) {
+        alert('Please select an input file first.');
+        return;
+    }
+
+    if (workflowSteps.length === 0) {
+        alert('Please add at least one step to your workflow.');
+        return;
+    }
+
+    // Validate required configs
+    for (const step of workflowSteps) {
+        if (step.type === 'remove_password' && !step.config.password) {
+            alert(`Please configure the password for "${step.label}" step.`);
+            return;
+        }
+    }
+
+    const statusDisplay = document.getElementById('workflow-status-display');
+    const statusText = document.getElementById('workflow-status-text');
+    const resultDisplay = document.getElementById('workflow-result-display');
+
+    statusDisplay.classList.remove('hidden');
+    resultDisplay.classList.add('hidden');
+    statusText.textContent = 'Processing workflow...';
+
+    const formData = new FormData();
+    formData.append('file', workflowFile);
+    formData.append('steps', JSON.stringify(workflowSteps.map(s => ({
+        type: s.type,
+        config: s.config
+    }))));
+
+    try {
+        const response = await fetch('/api/workflow/execute', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            statusDisplay.classList.add('hidden');
+            resultDisplay.classList.remove('hidden');
+            document.getElementById('workflow-result-message').textContent = `${data.message}: ${data.filename}`;
+            document.getElementById('workflow-download-link').href = `/api/download/${data.filename}`;
+        } else {
+            throw new Error(data.detail || 'Workflow execution failed');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        statusDisplay.classList.add('hidden');
+        alert('Workflow error: ' + error.message);
+    }
+}
+
+// Reset workflow UI
+function resetWorkflowUI() {
+    workflowFile = null;
+    workflowSteps = [];
+    const fileInput = document.getElementById('workflow-file-input');
+    if (fileInput) fileInput.value = '';
+    const filenameDisplay = document.getElementById('workflow-filename-display');
+    if (filenameDisplay) filenameDisplay.textContent = 'No file selected';
+    const fileInfo = document.getElementById('workflow-file-info');
+    if (fileInfo) fileInfo.classList.add('hidden');
+    renderWorkflowSteps();
+    document.getElementById('workflow-status-display')?.classList.add('hidden');
+    document.getElementById('workflow-result-display')?.classList.add('hidden');
+}
+
+// Extend resetUI to include workflow reset
+const originalResetUI = resetUI;
+resetUI = function () {
+    originalResetUI();
+    resetWorkflowUI();
+};
