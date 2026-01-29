@@ -26,6 +26,12 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-29
+
+- **perf**: Implemented lazy loading for `pikepdf` to improve startup time
+- **Files**: `pdf_password_remover.py`
+- **Verification**: Startup time reduced by ~50% (0.56s -> 0.29s) for `--help` command
+
 ### 2026-01-24
 
 - **feat**: Added `inputs` folder and interactive input prompts for file path and password

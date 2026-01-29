@@ -8,14 +8,6 @@ import argparse
 import sys
 from pathlib import Path
 
-try:
-    import pikepdf
-except ImportError:
-    print("Error: pikepdf is not installed.")
-    print("Install it with: pip install pikepdf")
-    sys.exit(1)
-
-
 def remove_pdf_password(input_path: str, password: str, output_path: str = None) -> str:
     """
     Remove password protection from a PDF file.
@@ -46,6 +38,8 @@ def remove_pdf_password(input_path: str, password: str, output_path: str = None)
     else:
         output_file = Path(output_path)
     
+    import pikepdf
+
     # Open the PDF with password and save without encryption
     with pikepdf.open(input_file, password=password) as pdf:
         # Save without encryption
@@ -94,6 +88,13 @@ Examples:
     
     if not password:
         password = input("Enter password: ").strip()
+
+    try:
+        import pikepdf
+    except ImportError:
+        print("Error: pikepdf is not installed.")
+        print("Install it with: pip install pikepdf")
+        sys.exit(1)
 
     try:
         output_path = remove_pdf_password(input_pdf, password, args.output)
