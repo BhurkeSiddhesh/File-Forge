@@ -102,3 +102,31 @@ def test_api_heic_to_jpeg(sample_heic, mock_dirs):
     output_filename = data["filename"]
     assert (mock_dirs["output"] / output_filename).exists()
 
+
+def test_api_resize_image(sample_image_file, mock_dirs):
+    """Test image resizing endpoint."""
+    with open(sample_image_file, "rb") as f:
+        files = {"file": (sample_image_file.name, f, "image/jpeg")}
+        data = {"mode": "dimensions", "width": 50, "height": 50}
+        response = client.post("/api/image/resize", files=files, data=data)
+
+    assert response.status_code == 200
+    resp_data = response.json()
+    assert resp_data["status"] == "success"
+    assert "resized" in resp_data["filename"]
+    assert (mock_dirs["output"] / resp_data["filename"]).exists()
+
+
+def test_api_crop_image(sample_image_file, mock_dirs):
+    """Test image cropping endpoint."""
+    with open(sample_image_file, "rb") as f:
+        files = {"file": (sample_image_file.name, f, "image/jpeg")}
+        data = {"x": 10, "y": 10, "width": 30, "height": 30}
+        response = client.post("/api/image/crop", files=files, data=data)
+
+    assert response.status_code == 200
+    resp_data = response.json()
+    assert resp_data["status"] == "success"
+    assert "cropped" in resp_data["filename"]
+    assert (mock_dirs["output"] / resp_data["filename"]).exists()
+

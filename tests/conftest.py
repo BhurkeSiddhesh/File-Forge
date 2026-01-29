@@ -56,3 +56,13 @@ def sample_heic(tmp_path_factory):
         return file_path
     except Exception as e:
         pytest.skip(f"Could not create test HEIC: {e}")
+
+@pytest.fixture(scope="session")
+def sample_image_file(tmp_path_factory):
+    """Creates a sample JPEG image for testing."""
+    d = tmp_path_factory.mktemp("img_gen")
+    file_path = d / "test.jpg"
+    from PIL import Image
+    img = Image.new('RGB', (100, 100), color='green')
+    img.save(file_path, "JPEG")
+    return file_path
