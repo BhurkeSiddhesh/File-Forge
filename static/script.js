@@ -630,7 +630,32 @@ let workflowSteps = [];
 let currentConfigStepIndex = null;
 
 // Initialize workflow builder when DOM is ready
-document.addEventListener('DOMContentLoaded', initWorkflowBuilder);
+document.addEventListener('DOMContentLoaded', () => {
+    initWorkflowBuilder();
+    setupKeyboardNavigation();
+});
+
+function setupKeyboardNavigation() {
+    const interactiveElements = document.querySelectorAll('.tool-card, .action-card, .drop-zone');
+    interactiveElements.forEach(element => {
+        addKeyboardSupport(element);
+    });
+}
+
+function addKeyboardSupport(element) {
+    if (!element) return;
+
+    element.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            // Check if disabled
+            if (element.classList.contains('disabled') || element.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
+            element.click();
+        }
+    });
+}
 
 function initWorkflowBuilder() {
     const dropZone = document.getElementById('workflow-drop-zone');

@@ -962,3 +962,16 @@ body {
         justify-content: center;
     }
 }
+
+/* Accessibility Focus Styles */
+.tool-card:focus-visible,
+.action-card:focus-visible,
+.drop-zone:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3);
+}
+
+.tool-card.disabled:focus-visible {
+    outline-color: var(--text-muted);
+}

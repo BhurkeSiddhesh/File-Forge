@@ -31,6 +31,14 @@
 
 ### 2026-01-30
 
+- **feat**: Added keyboard accessibility support for all tool cards and action buttons.
+- **feat**: Added visible focus styles for keyboard navigation.
+- **feat**: Implemented `Enter` and `Space` key support for div-based interactive elements.
+- **Files**: `static/index.html`, `static/script.js`, `static/style.css`
+- **Verification**: Verified with Playwright script (focus states and navigation).
+
+### 2026-01-30
+
 - **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator
 - **feat**: New Workflow card on home page with project-diagram icon
 - **feat**: Drag-and-drop step palette (Unlock PDF, PDF→Word, HEIC→JPEG, Resize)
