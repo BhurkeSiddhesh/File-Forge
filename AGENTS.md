@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-31
+
+- **feat**: Added accessibility support for keyboard navigation
+- **fix**: Added ARIA labels and keyboard listeners for interactive cards
+- **Files**: `static/index.html`, `static/script.js`, `AGENTS.md`
+- **Verification**: Manual review
+
 ### 2026-01-30
 
 - **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator
