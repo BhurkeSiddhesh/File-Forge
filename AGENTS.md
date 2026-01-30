@@ -31,6 +31,13 @@
 
 ### 2026-01-30
 
+- **perf**: Optimized PaddleOCR initialization using Singleton pattern.
+- **fix**: Switched `use_onnx=False` for PaddleOCR to resolve `INVALID_PROTOBUF` error with local models.
+- **Files**: `pdf_utils.py`, `main.py`
+- **Verification**: `reproduce_optimization.py` showed ~5.6x speedup on warm run (4.66s -> 0.83s). Tests passed.
+
+### 2026-01-30
+
 - **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator
 - **feat**: New Workflow card on home page with project-diagram icon
 - **feat**: Drag-and-drop step palette (Unlock PDF, PDF→Word, HEIC→JPEG, Resize)
