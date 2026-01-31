@@ -28,7 +28,7 @@
             </header>
 
             <div class="tool-grid">
-                <div class="tool-card active" onclick="showDrillDown('pdf')">
+                <div class="tool-card active" onclick="showDrillDown('pdf')" role="button" tabindex="0">
                     <div class="icon-wrapper pdf">
                         <i class="fas fa-file-pdf"></i>
                     </div>
@@ -37,7 +37,7 @@
                     <div class="badge">Available</div>
                 </div>
 
-                <div class="tool-card active" onclick="showDrillDown('image')">
+                <div class="tool-card active" onclick="showDrillDown('image')" role="button" tabindex="0">
                     <div class="icon-wrapper image">
                         <i class="fas fa-image"></i>
                     </div>
@@ -46,7 +46,7 @@
                     <div class="badge">Available</div>
                 </div>
 
-                <div class="tool-card active" onclick="showDrillDown('workflow')">
+                <div class="tool-card active" onclick="showDrillDown('workflow')" role="button" tabindex="0">
                     <div class="icon-wrapper workflow">
                         <i class="fas fa-project-diagram"></i>
                     </div>
@@ -83,7 +83,7 @@
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
-                    <div id="drop-zone" class="drop-zone">
+                    <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PDF file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
                         <p>Drag & drop your PDF or <span class="browse-text">browse</span></p>
                         <input type="file" id="file-input" accept=".pdf" hidden>
@@ -106,14 +106,14 @@
                     </div>
 
                     <div class="action-buttons">
-                        <div class="action-card" id="remove-password-btn">
+                        <div class="action-card" id="remove-password-btn" role="button" tabindex="0">
                             <i class="fas fa-unlock"></i>
                             <div class="action-text">
                                 <h4>Remove Password</h4>
                                 <p>Unlock protected PDF files</p>
                             </div>
                         </div>
-                        <div class="action-card" id="convert-word-btn">
+                        <div class="action-card" id="convert-word-btn" role="button" tabindex="0">
                             <i class="fas fa-file-word"></i>
                             <div class="action-text">
                                 <h4>Convert to Word</h4>
@@ -160,7 +160,7 @@
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
-                    <div id="image-drop-zone" class="drop-zone">
+                    <div id="image-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload Image file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
                         <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
                         <input type="file" id="image-file-input" accept=".heic,.heif" hidden>
@@ -235,7 +235,7 @@
                     </div>
 
                     <div class="action-buttons">
-                        <div class="action-card" id="convert-jpeg-btn">
+                        <div class="action-card" id="convert-jpeg-btn" role="button" tabindex="0">
                             <i class="fas fa-file-image"></i>
                             <div class="action-text">
                                 <h4>Convert to JPEG</h4>
@@ -243,7 +243,7 @@
                             </div>
                         </div>
 
-                        <div class="action-card hidden" id="resize-btn" onclick="resizeImage()">
+                        <div class="action-card hidden" id="resize-btn" onclick="resizeImage()" role="button" tabindex="0">
                             <i class="fas fa-compress-arrows-alt"></i>
                             <div class="action-text">
                                 <h4>Resize Image</h4>
@@ -251,7 +251,7 @@
                             </div>
                         </div>
 
-                        <div class="action-card hidden" id="crop-btn" onclick="cropImage()">
+                        <div class="action-card hidden" id="crop-btn" onclick="cropImage()" role="button" tabindex="0">
                             <i class="fas fa-crop-alt"></i>
                             <div class="action-text">
                                 <h4>Crop Image</h4>
@@ -293,7 +293,7 @@
                     <!-- File Input -->
                     <div class="workflow-input-section">
                         <h3>1. Input File</h3>
-                        <div id="workflow-drop-zone" class="drop-zone workflow-drop">
+                        <div id="workflow-drop-zone" class="drop-zone workflow-drop" role="button" tabindex="0" aria-label="Upload file for workflow">
                             <i class="fas fa-cloud-upload-alt upload-icon"></i>
                             <p>Drop your file here or <span class="browse-text">browse</span></p>
                             <input type="file" id="workflow-file-input" hidden>

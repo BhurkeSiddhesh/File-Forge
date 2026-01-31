@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-01-31
+
+- **feat**: Improved accessibility by making tool cards and action buttons keyboard accessible.
+- **feat**: Added `role="button"`, `tabindex="0"`, and global keydown listener for interactive `div` elements.
+- **feat**: Added visible focus indicators (`:focus-visible`) for keyboard navigation.
+- **Files**: `static/index.html`, `static/script.js`, `static/style.css`
+- **Verification**: Verified code changes and ensuring keyboard events trigger click actions.
+
 ### 2026-01-30
 
 - **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator

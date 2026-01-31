@@ -905,3 +905,11 @@ resetUI = function () {
     originalResetUI();
     resetWorkflowUI();
 };
+
+// Global Accessibility: Handle keyboard activation for role="button"
+document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute('role') === 'button') {
+        e.preventDefault();
+        e.target.click();
+    }
+});
