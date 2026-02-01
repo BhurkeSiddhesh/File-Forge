@@ -905,3 +905,26 @@ resetUI = function () {
     originalResetUI();
     resetWorkflowUI();
 };
+
+// === Accessibility ===
+
+document.addEventListener('DOMContentLoaded', () => {
+    setupKeyboardAccessibility();
+});
+
+function setupKeyboardAccessibility() {
+    // Select all interactive elements that act as buttons
+    const interactiveElements = document.querySelectorAll('[role="button"]');
+
+    interactiveElements.forEach(el => {
+        el.addEventListener('keydown', (e) => {
+            // Check for Enter or Space
+            if (e.key === 'Enter' || e.key === ' ') {
+                // For drop zones (file inputs), space might not be ideal if they are native buttons,
+                // but here they are divs.
+                e.preventDefault(); // Prevent scrolling for Space
+                el.click(); // Trigger the click handler
+            }
+        });
+    });
+}
