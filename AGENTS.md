@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-05-24
+
+- **perf**: Implemented singleton pattern for PaddleOCR `PPStructure` engine in `pdf_utils.py` to prevent reloading heavy models (4.5s+) on every request.
+- **fix**: Changed `use_onnx=False` for PaddleOCR to support local PaddlePaddle models and avoid `INVALID_PROTOBUF` errors.
+- **perf**: Updated `main.py` startup event to properly warm up the shared singleton engine.
+- **Files**: `pdf_utils.py`, `main.py`
+- **Verification**: `tests/test_main.py` passed. Verified ~4.5s initialization time saved per subsequent request using manual script.
+
 ### 2026-01-30
 
 - **feat**: Added Workflow Builder - visual drag-and-drop pipeline creator

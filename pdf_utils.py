@@ -81,23 +81,13 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     
     return str(output_file)
 
-def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
-    """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
-    print(f"[AI] Starting AI conversion for: {input_path}")
-    input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
 
-    # Create a temp directory for intermediate files
-    temp_dir = Path(output_dir) / f"temp_{input_file.stem}"
-    temp_dir.mkdir(exist_ok=True)
-    
-    # Handle encrypted PDFs
-    print(f"[AI] Checking encryption...")
-    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password, temp_dir)
-    print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
+_PADDLE_ENGINE_INSTANCE = None
 
-    try:
-        # Initialize PaddleOCR engine
+def get_paddle_engine():
+    """Returns a singleton instance of the PaddleOCR PPStructure engine."""
+    global _PADDLE_ENGINE_INSTANCE
+    if _PADDLE_ENGINE_INSTANCE is None:
         print(f"[AI] Initializing PaddleOCR engine...")
         # Define explicit model paths to ensure ONNX models are found
         # These must match what fix_models.py downloaded/converted (now copied to local models dir)
@@ -110,19 +100,33 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
 
         # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
         # usage of use_onnx=True to bypass Paddle OneDNN issues
-        # @jules: Should we detect the language instead of hardcoding 'en'?
-        # Potential fix: Use a language detection library or add a UI selector.
-        table_engine = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False, 
-                                   enable_mkldnn=False, use_onnx=True,
+        _PADDLE_ENGINE_INSTANCE = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False,
+                                   enable_mkldnn=False, use_onnx=False,
                                    layout_model_dir=str(layout_dir),
                                    table_model_dir=str(table_dir),
                                    det_model_dir=str(det_dir),
                                    rec_model_dir=str(rec_dir))
-
-
-
-
         print(f"[AI] PaddleOCR engine initialized")
+    return _PADDLE_ENGINE_INSTANCE
+
+
+def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
+    """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
+    print(f"[AI] Starting AI conversion for: {input_path}")
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
+
+    # Create a temp directory for intermediate files
+    temp_dir = Path(output_dir) / f"temp_{input_file.stem}"
+    temp_dir.mkdir(exist_ok=True)
+
+    # Handle encrypted PDFs
+    print(f"[AI] Checking encryption...")
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password, temp_dir)
+    print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
+
+    try:
+        table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
         print(f"[AI] Opened PDF with {len(doc)} pages")
