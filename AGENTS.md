@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Implemented Singleton pattern for PaddleOCR engine to prevent re-initialization on every request.
+- **perf**: Warmed up PaddleOCR engine on application startup.
+- **Files**: `pdf_utils.py`, `main.py`, `.jules/bolt.md`, `tests/test_perf_caching.py`
+- **Verification**: `pytest tests/test_perf_caching.py` passed.
+
 ### 2026-02-03
 
 - **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
