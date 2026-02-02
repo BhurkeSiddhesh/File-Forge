@@ -234,7 +234,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 password = config.get('password', '')
                 if not password:
                     raise HTTPException(status_code=400, detail="Password required for unlock step")
-                output_path = remove_pdf_password(str(current_file), str(OUTPUT_DIR), password)
+                output_path = remove_pdf_password(str(current_file), password, str(OUTPUT_DIR))
                 current_file = Path(output_path)
                 
             elif step_type == 'pdf_to_word':

@@ -13,3 +13,4 @@ PyMuPDF
 reportlab
 requests
 pillow-heif
+onnxruntime

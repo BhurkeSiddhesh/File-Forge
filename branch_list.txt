@@ -1,0 +1,9 @@
+﻿  origin/HEAD -> origin/main
+  origin/Image_conversions
+  origin/bolt-optimize-paddle-ocr-singleton-16001389551104762028
+  origin/bolt-perf-paddleocr-cache-8477283179269706897
+  origin/main
+  origin/palette-a11y-improvements-165165724785101163
+  origin/palette-ux-a11y-keyboard-13559492536277204798
+  origin/palette/a11y-keyboard-nav-10813663869546876657
+  origin/pdf_updates

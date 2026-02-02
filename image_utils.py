@@ -2,7 +2,7 @@
 Image conversion utilities for File Forge.
 """
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 import pillow_heif
 
 # Register HEIF opener with Pillow
@@ -25,6 +25,9 @@ def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
     output_file = Path(output_dir) / f"{input_file.stem}.jpg"
     
     with Image.open(input_file) as img:
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+        
         # Convert RGBA or palette mode to RGB for JPEG compatibility
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
@@ -57,6 +60,9 @@ def resize_image(input_path: str, output_dir: str, mode: str,
     output_file = Path(output_dir) / f"{input_file.stem}_resized.jpg"
     
     with Image.open(input_file) as img:
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+
         # Convert to RGB if needed
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
@@ -152,6 +158,9 @@ def crop_image(input_path: str, output_dir: str,
     output_file = Path(output_dir) / f"{input_file.stem}_cropped.jpg"
     
     with Image.open(input_file) as img:
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+
         # Convert to RGB if needed
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")

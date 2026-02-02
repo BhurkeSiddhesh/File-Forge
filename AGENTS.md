@@ -29,12 +29,31 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-03
+
+- **fix**: Fixed workflow password remover bug - arguments to `remove_pdf_password` were passed in wrong order (password and output_dir were swapped)
+- **Files**: `main.py`
+- **Verification**: Manual testing with workflow
+
+### 2026-02-02
+
+- **chore**: Verified and cleanup up merged branches (`perf-lazy-import-pikepdf`, `palette-a11y-improvements`).
+- **fix**: Installed missing `pikepdf` dependency.
+- **Files**: `requirements.txt`, `tests/`
+- **Verification**: `python -c "import pikepdf..."` success.
+
 ### 2026-01-31
 
 - **feat**: Added accessibility support for keyboard navigation
 - **fix**: Added ARIA labels and keyboard listeners for interactive cards
 - **Files**: `static/index.html`, `static/script.js`, `AGENTS.md`
 - **Verification**: Manual review
+
+### 2026-01-30
+
+- **feat**: Merged `palette-a11y-improvements` (Accessibility fixes)
+- **feat**: Merged `perf-lazy-import-pikepdf` (Lazy loading optimization)
+- **Files**: `pdf_password_remover.py`, `static/style.css`
 
 ### 2026-01-30
 
