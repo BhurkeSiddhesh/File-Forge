@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **feat**: Improved accessibility by adding focus styles for custom toggles and global focus indicators.
+- **fix**: Added ARIA labels to workflow builder buttons.
+- **Files**: `static/style.css`, `static/script.js`
+- **Verification**: Playwright script verified focus states and ARIA labels.
+
 ### 2026-02-03
 
 - **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
