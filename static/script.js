@@ -754,12 +754,14 @@ function renderWorkflowSteps() {
         if (index > 0) {
             const arrow = document.createElement('span');
             arrow.className = 'step-arrow';
+            arrow.dataset.arrowIndex = index - 1; // Arrow between step[index-1] and step[index]
             arrow.innerHTML = '<i class="fas fa-arrow-right"></i>';
             container.appendChild(arrow);
         }
 
         const stepCard = document.createElement('div');
         stepCard.className = 'workflow-step-card';
+        stepCard.dataset.stepIndex = index;
         stepCard.innerHTML = `
             <i class="fas ${step.icon}"></i>
             <span class="step-label">${step.label}</span>
@@ -852,12 +854,16 @@ async function runWorkflow() {
 
     statusDisplay.classList.remove('hidden');
     resultDisplay.classList.add('hidden');
-    statusText.textContent = 'Processing workflow...';
+
+    // Initialize all steps as pending
+    setAllStepsPending();
+    updateStatusText('Starting workflow...', 0, workflowSteps.length);
 
     const formData = new FormData();
     formData.append('file', workflowFile);
     formData.append('steps', JSON.stringify(workflowSteps.map(s => ({
         type: s.type,
+        label: s.label,
         config: s.config
     }))));
 
@@ -867,21 +873,140 @@ async function runWorkflow() {
             body: formData
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-            statusDisplay.classList.add('hidden');
-            resultDisplay.classList.remove('hidden');
-            document.getElementById('workflow-result-message').textContent = `${data.message}: ${data.filename}`;
-            document.getElementById('workflow-download-link').href = `/api/download/${data.filename}`;
-        } else {
+        if (!response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
+            const data = await response.json();
             throw new Error(data.detail || 'Workflow execution failed');
+        }
+
+        // Read SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE messages
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop(); // Keep incomplete message in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        console.log("Workflow Event:", data); // Debug log
+                        handleWorkflowEvent(data, statusDisplay, resultDisplay);
+                    } catch (e) {
+                        console.error('Failed to parse SSE data:', e);
+                    }
+                }
+            }
         }
     } catch (error) {
         console.error('Error:', error);
         statusDisplay.classList.add('hidden');
+        clearStepStates();
         alert('Workflow error: ' + error.message);
     }
+}
+
+function handleWorkflowEvent(data, statusDisplay, resultDisplay) {
+    switch (data.event) {
+        case 'step_start':
+            setStepProcessing(data.step);
+            updateStatusText(`Processing: ${data.label}`, data.step + 1, data.total);
+            break;
+
+        case 'step_complete':
+            setStepCompleted(data.step);
+            break;
+
+        case 'complete':
+            statusDisplay.classList.add('hidden');
+            resultDisplay.classList.remove('hidden');
+            document.getElementById('workflow-result-message').textContent = `${data.message}: ${data.filename}`;
+            document.getElementById('workflow-download-link').href = `/api/download/${data.filename}`;
+            // Keep completed states visible for a moment
+            setTimeout(() => clearStepStates(), 3000);
+            break;
+
+        case 'error':
+            statusDisplay.classList.add('hidden');
+            clearStepStates();
+            alert('Workflow error: ' + data.detail);
+            break;
+    }
+}
+
+function setAllStepsPending() {
+    const cards = document.querySelectorAll('.workflow-step-card');
+    const arrows = document.querySelectorAll('.step-arrow');
+
+    cards.forEach(card => {
+        card.classList.remove('processing', 'completed');
+        card.classList.add('pending');
+    });
+
+    arrows.forEach(arrow => {
+        arrow.classList.remove('processing', 'completed');
+    });
+}
+
+function setStepProcessing(index) {
+    const card = document.querySelector(`.workflow-step-card[data-step-index="${index}"]`);
+    if (card) {
+        card.classList.remove('pending', 'completed');
+        card.classList.add('processing');
+    }
+
+    // Highlight arrow leading to this step
+    if (index > 0) {
+        const arrow = document.querySelector(`.step-arrow[data-arrow-index="${index - 1}"]`);
+        if (arrow) {
+            arrow.classList.add('processing');
+        }
+    }
+}
+
+function setStepCompleted(index) {
+    const card = document.querySelector(`.workflow-step-card[data-step-index="${index}"]`);
+    if (card) {
+        card.classList.remove('pending', 'processing');
+        card.classList.add('completed');
+    }
+
+    // Mark arrow as completed
+    if (index > 0) {
+        const arrow = document.querySelector(`.step-arrow[data-arrow-index="${index - 1}"]`);
+        if (arrow) {
+            arrow.classList.remove('processing');
+            arrow.classList.add('completed');
+        }
+    }
+}
+
+function clearStepStates() {
+    const cards = document.querySelectorAll('.workflow-step-card');
+    const arrows = document.querySelectorAll('.step-arrow');
+
+    cards.forEach(card => {
+        card.classList.remove('pending', 'processing', 'completed');
+    });
+
+    arrows.forEach(arrow => {
+        arrow.classList.remove('processing', 'completed');
+    });
+}
+
+function updateStatusText(message, currentStep, totalSteps) {
+    const statusText = document.getElementById('workflow-status-text');
+    statusText.innerHTML = `
+        <span>${message}</span>
+        <span class="workflow-step-progress">Step ${currentStep} of ${totalSteps}</span>
+    `;
 }
 
 // Reset workflow UI

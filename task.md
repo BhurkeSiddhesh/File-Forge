@@ -1,21 +1,17 @@
-# Task: Merge Jules' Branches into pdf_updates
+# Task: Check Stitch Integration and Add Design
 
 ## Plan
-1. [ ] Analyze changes in each branch to understand what's missing or needs @jules attention.
-    - [ ] origin/feature-add-tests-and-readme-...
-    - [ ] origin/feature-ai-pdf-to-word-paddle-...
-    - [ ] origin/perf/defer-pikepdf-import-...
-    - [ ] origin/perf/directory-batch-processing-...
-2. [ ] Merge each branch into `pdf_updates`.
-    - [ ] Merge origin/feature-add-tests-and-readme-...
-    - [ ] Merge origin/feature-ai-pdf-to-word-paddle-...
-    - [ ] Merge origin/perf/defer-pikepdf-import-...
-    - [ ] Merge origin/perf/directory-batch-processing-...
-3. [ ] Identify missing parts and add comments with @jules.
-4. [ ] Run tests to ensure no regressions.
-5. [ ] Update `AGENTS.md` and commit.
-
-## Verification Strategy
-- git diff to see merged changes.
-- `npm run test` or equivalent if available.
-- Manual inspection of the merged code.
+1. [x] **Jules Watchdog Protocol** (Mandatory Pre-Flight)
+    - [x] Fetch all branches (`git fetch --all`)
+    - [x] Check for `jules/` branches (None found)
+    - [x] Update `JULES_LOG.json`
+2. [x] **Check Stitch Availability**
+    - [x] Call `list_projects` (Failed - Connection Closed)
+3. [ ] **Add Design**
+    - [ ] **BLOCKED**: Stitch MCP is unavailable.
+    - [ ] Waiting for user direction (Standard CSS vs Retry Stitch).
+4. [x] **Workflow Visual Progress**
+    - [x] **Fix Backend Blocking**: Wrap synchronous PDF/Image tasks in `run_in_threadpool` to unleash SSE stream.
+    - [x] **Frontend SSE**: `runWorkflow` consumes `step_start`/`step_complete` events.
+    - [x] **Visual Feedback**: Apply `.processing` (pulse) and `.completed` (green) classes dynamically.
+    - [x] **Status Text**: Update "Step X of Y" real-time.

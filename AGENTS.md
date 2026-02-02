@@ -31,8 +31,15 @@
 
 ### 2026-02-03
 
+- **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
+- **feat**: Enhanced workflow UI with pulsing animations for processing steps and green gradients for completed steps.
+- **fix**: Added `timestamp` version query to CSS link to force cache refresh.
 - **fix**: Fixed workflow password remover bug - arguments to `remove_pdf_password` were passed in wrong order (password and output_dir were swapped)
-- **Files**: `main.py`
+- **feat**: Added real-time workflow progress visualization with SSE streaming
+- **feat**: Step cards now show animated states: pending (dimmed), processing (pulsing orange glow), completed (green)
+- **fix**: Added explicit `await asyncio.sleep(1.0)` in workflow loop to ensure processing animations are visible for fast tasks.
+- **feat**: Status text shows current step name and progress (e.g., "Step 1 of 3")
+- **Files**: `main.py`, `static/script.js`, `static/style.css`
 - **Verification**: Manual testing with workflow
 
 ### 2026-02-02
