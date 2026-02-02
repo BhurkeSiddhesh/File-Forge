@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **feat**: Improved accessibility by adding focus styles for custom toggles and global focus indicators.
+- **fix**: Added ARIA labels to workflow builder buttons.
+- **Files**: `static/style.css`, `static/script.js`
+- **Verification**: Playwright script verified focus states and ARIA labels.
+
 ### 2026-02-03
 
 - **fix**: Fixed workflow password remover bug - arguments to `remove_pdf_password` were passed in wrong order (password and output_dir were swapped)

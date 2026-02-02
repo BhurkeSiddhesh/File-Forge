@@ -763,8 +763,8 @@ function renderWorkflowSteps() {
         stepCard.innerHTML = `
             <i class="fas ${step.icon}"></i>
             <span class="step-label">${step.label}</span>
-            ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})"><i class="fas fa-cog"></i></button>` : ''}
-            <button class="remove-step" onclick="removeStep(${index})"><i class="fas fa-times"></i></button>
+            ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})" aria-label="Configure ${step.label}"><i class="fas fa-cog"></i></button>` : ''}
+            <button class="remove-step" onclick="removeStep(${index})" aria-label="Remove ${step.label}"><i class="fas fa-times"></i></button>
         `;
         container.appendChild(stepCard);
     });
