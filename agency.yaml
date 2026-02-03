@@ -1,0 +1,25 @@
+project_name: "File Forge"
+project_description: "A premium, high-performance file conversion and manipulation suite featuring advanced PDF tools, image processing, and a visual workflow builder."
+
+# Specialized Skills and Agents for File Forge
+# Each entry below defines the core competencies and responsibilities for agents 
+# involved in the project's development, maintenance, and quality assurance.
+
+required_agents:
+  - role: "Lead Architect"
+    description: "Responsible for high-level system design, cross-component integration, and ensuring scalable architecture. Oversees the interaction between the FastAPI backend and Vanilla JS frontend."
+
+  - role: "PDF Manipulation Specialist"
+    description: "Expert in PDF internals. Responsible for implementing and optimizing tools such as password removal (pikepdf), conversion to editable formats (pdf2docx), and maintaining security protocols during processing."
+
+  - role: "Image Processing Engineer"
+    description: "Handles complex image transformations, including HEIC/HEIF to JPEG conversion, intelligent resizing based on target file sizes, and integrating visual cropping tools like Cropper.js."
+
+  - role: "Frontend UI/UX Developer"
+    description: "Focuses on delivering a premium, modern user experience. Expert in Vanilla CSS/JS, real-time updates via Server-Sent Events (SSE), and creating interactive components like the visual Workflow Builder."
+
+  - role: "Quality Assurance & Watchdog"
+    description: "Maintains the 'No-Regression' policy. Oversees automated test suites, monitors asynchronous contributions (Jules integration), and ensures 100% logic coverage for new features."
+
+  - role: "Workflow Orchestrator"
+    description: "Manages the complex logic of chaining multiple file operations. Ensures that the backend correctly interprets and executes multi-step pipelines constructed via the drag-and-drop UI."
