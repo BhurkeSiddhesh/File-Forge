@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Implemented singleton pattern for `PaddleOCR` engine to eliminate model reload overhead per request.
+- **refactor**: Centralized `PPStructure` initialization in `pdf_utils.py` and updated `main.py` to use it during startup.
+- **test**: Added unit test `tests/test_paddle_singleton.py` to verify singleton behavior.
+- **Files**: `pdf_utils.py`, `main.py`, `tests/test_paddle_singleton.py`
+- **Verification**: `python tests/test_paddle_singleton.py` passed; full test suite passed.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
