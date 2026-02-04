@@ -29,6 +29,16 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-03 (Palette)
+
+- **feat**: Added click-to-add support for workflow builder steps to improve accessibility for keyboard users.
+- **fix**: Added keyboard accessibility attributes (`role="button"`, `tabindex="0"`) to workflow step items.
+- **fix**: Added explicit `keydown` handler to workflow steps to prevent conflicts and ensure robust keyboard interaction.
+- **fix**: Added `aria-live` region to workflow container for screen reader feedback.
+- **style**: Added `:focus-visible` styles to workflow steps for better focus indication.
+- **Files**: `static/index.html`, `static/script.js`, `static/style.css`, `.Jules/palette.md`
+- **Verification**: Playwright verification (`verify_workflow_v2.py`) and manual keyboard testing.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).

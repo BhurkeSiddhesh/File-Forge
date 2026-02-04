@@ -704,10 +704,16 @@ body {
     user-select: none;
 }
 
-.step-item:hover {
+.step-item:hover,
+.step-item:focus-visible {
     border-color: var(--accent-workflow);
     background: rgba(139, 92, 246, 0.1);
     transform: translateY(-2px);
+}
+
+.step-item:focus-visible {
+    outline: 2px solid var(--accent-workflow);
+    outline-offset: 2px;
 }
 
 .step-item:active {
