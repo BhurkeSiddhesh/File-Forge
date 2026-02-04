@@ -1085,3 +1085,12 @@ body {
     font-size: 0.9rem;
     color: var(--text-muted);
 }
+/* Accessibility Focus Styles */
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+}
+
+.view:focus {
+    outline: none;
+}
