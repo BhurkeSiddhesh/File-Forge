@@ -312,22 +312,26 @@
                         <h3>2. Available Steps</h3>
                         <div class="step-palette">
                             <div class="step-item" draggable="true" data-step-type="remove_password"
-                                data-step-label="Unlock PDF" data-step-icon="fa-unlock">
+                                data-step-label="Unlock PDF" data-step-icon="fa-unlock" role="button" tabindex="0"
+                                aria-label="Add Unlock PDF step to workflow">
                                 <i class="fas fa-unlock"></i>
                                 <span>Unlock PDF</span>
                             </div>
                             <div class="step-item" draggable="true" data-step-type="pdf_to_word"
-                                data-step-label="PDF to Word" data-step-icon="fa-file-word">
+                                data-step-label="PDF to Word" data-step-icon="fa-file-word" role="button" tabindex="0"
+                                aria-label="Add PDF to Word step to workflow">
                                 <i class="fas fa-file-word"></i>
                                 <span>PDF → Word</span>
                             </div>
                             <div class="step-item" draggable="true" data-step-type="heic_to_jpeg"
-                                data-step-label="HEIC to JPEG" data-step-icon="fa-file-image">
+                                data-step-label="HEIC to JPEG" data-step-icon="fa-file-image" role="button" tabindex="0"
+                                aria-label="Add HEIC to JPEG step to workflow">
                                 <i class="fas fa-file-image"></i>
                                 <span>HEIC → JPEG</span>
                             </div>
                             <div class="step-item" draggable="true" data-step-type="resize_image"
-                                data-step-label="Resize Image" data-step-icon="fa-compress-arrows-alt">
+                                data-step-label="Resize Image" data-step-icon="fa-compress-arrows-alt" role="button"
+                                tabindex="0" aria-label="Add Resize Image step to workflow">
                                 <i class="fas fa-compress-arrows-alt"></i>
                                 <span>Resize Image</span>
                             </div>
@@ -341,9 +345,10 @@
                     <div id="workflow-canvas" class="workflow-canvas">
                         <div class="canvas-placeholder">
                             <i class="fas fa-arrow-down"></i>
-                            <p>Drop steps here to build your workflow</p>
+                            <p>Drop steps here (or click above) to build your workflow</p>
                         </div>
-                        <div id="workflow-steps-container" class="workflow-steps hidden"></div>
+                        <div id="workflow-steps-container" class="workflow-steps hidden" aria-live="polite"
+                            aria-label="Current Workflow Pipeline"></div>
                     </div>
                 </div>
 
