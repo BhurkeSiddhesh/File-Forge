@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Implemented Singleton pattern for PaddleOCR engine in `pdf_utils.py` and `main.py` to prevent reloading models on every request.
+- **fix**: Updated `pdf_utils.py` to explicitly point to ONNX files when `use_onnx=True`, resolving `INVALID_PROTOBUF` errors with newer PaddleOCR versions.
+- **Files**: `pdf_utils.py`, `main.py`, `.gitignore`
+- **Verification**: `tests/benchmark_paddle_init.py` (deleted) showed 135,000x speedup on second call. `python -m pytest tests/` passed.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
