@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, get_paddle_engine
 from image_utils import heic_to_jpeg
+from utils import process_uploaded_file, cleanup_temp_file
 
 app = FastAPI(title="File Forge API")
 
@@ -39,79 +40,47 @@ async def read_index():
 
 @app.post("/api/pdf/remove-password")
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    temp_path = UPLOAD_DIR / file.filename
-    try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        output_path = remove_pdf_password(str(temp_path), password, str(OUTPUT_DIR))
-        return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except PermissionError:
-                pass  # Windows file locking - will be cleaned up later
+    """Remove password protection from a PDF file."""
+    def processor(temp_path: str) -> str:
+        return remove_pdf_password(temp_path, password, str(OUTPUT_DIR))
+    
+    result = await process_uploaded_file(
+        file, UPLOAD_DIR, processor, "Password removal"
+    )
+    result["message"] = "Password removed"
+    return result
 
 @app.post("/api/pdf/convert-to-word")
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
-    try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
+    """Convert PDF to Word document."""
+    def processor(temp_path: str) -> str:
         print(f"[DEBUG] File saved to: {temp_path}")
-        
         if use_ai:
             # @jules: This can be very slow for large PDFs. 
             # We should probably implement a progress bar or background task with polling.
-            output_path = pdf_to_word_paddle(str(temp_path), str(OUTPUT_DIR), password)
-            message = "Converted to Word with AI Layout Recovery"
+            return pdf_to_word_paddle(temp_path, str(OUTPUT_DIR), password)
         else:
-            output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
-            message = "Converted to Word (Standard)"
-
-        print(f"[DEBUG] Conversion successful: {output_path}")
-        return {"status": "success", "message": message, "filename": Path(output_path).name}
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Conversion failed: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
-
-    finally:
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except PermissionError:
-                pass  # Windows file locking - will be cleaned up later
+            return pdf_to_docx(temp_path, str(OUTPUT_DIR), password)
+    
+    result = await process_uploaded_file(
+        file, UPLOAD_DIR, processor, 
+        f"Converting (use_ai={use_ai}, password={'***' if password else 'None'})"
+    )
+    result["message"] = "Converted to Word with AI Layout Recovery" if use_ai else "Converted to Word (Standard)"
+    return result
 
 
 @app.post("/api/image/heic-to-jpeg")
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
-    try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
-        return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] HEIC conversion failed: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except PermissionError:
-                pass  # Windows file locking - will be cleaned up later
+    def processor(temp_path: str) -> str:
+        return heic_to_jpeg(temp_path, str(OUTPUT_DIR), quality)
+    
+    result = await process_uploaded_file(
+        file, UPLOAD_DIR, processor, f"HEIC conversion (quality={quality})"
+    )
+    result["message"] = "Converted to JPEG"
+    return result
 
 
 @app.post("/api/image/resize")
@@ -124,15 +93,11 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
-    try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        from image_utils import resize_image
-        output_path = resize_image(
-            str(temp_path), 
+    from image_utils import resize_image
+    
+    def processor(temp_path: str) -> str:
+        return resize_image(
+            temp_path, 
             str(OUTPUT_DIR), 
             mode,
             width=width,
@@ -140,18 +105,12 @@ async def api_resize_image(
             percentage=percentage,
             target_size_kb=target_size_kb
         )
-        return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Image resize failed: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except PermissionError:
-                pass
+    
+    result = await process_uploaded_file(
+        file, UPLOAD_DIR, processor, f"Image resize (mode={mode})"
+    )
+    result["message"] = "Image Resized"
+    return result
 
 
 @app.post("/api/image/crop")
@@ -163,30 +122,21 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
-    try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        from image_utils import crop_image
-        output_path = crop_image(
-            str(temp_path), 
+    from image_utils import crop_image
+    
+    def processor(temp_path: str) -> str:
+        return crop_image(
+            temp_path, 
             str(OUTPUT_DIR), 
             x=x, y=y, width=width, height=height
         )
-        return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Image crop failed: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except PermissionError:
-                pass
+    
+    result = await process_uploaded_file(
+        file, UPLOAD_DIR, processor, 
+        f"Image crop (x={x}, y={y}, w={width}, h={height})"
+    )
+    result["message"] = "Image Cropped"
+    return result
 
 
 @app.post("/api/workflow/execute")
@@ -298,11 +248,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
         
         finally:
             # Clean up temp file
-            if temp_path.exists():
-                try:
-                    os.remove(temp_path)
-                except PermissionError:
-                    pass
+            cleanup_temp_file(temp_path)
     
     return StreamingResponse(
         generate_progress(),
