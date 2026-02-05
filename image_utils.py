@@ -9,6 +9,26 @@ import pillow_heif
 pillow_heif.register_heif_opener()
 
 
+def _preprocess_image(img: Image.Image) -> Image.Image:
+    """
+    Common preprocessing for images: normalize orientation and convert to RGB.
+    
+    Args:
+        img: PIL Image object
+    
+    Returns:
+        Preprocessed PIL Image (oriented correctly, RGB mode)
+    """
+    # Normalize orientation (handle EXIF tags)
+    img = ImageOps.exif_transpose(img)
+    
+    # Convert RGBA or palette mode to RGB for JPEG compatibility
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    
+    return img
+
+
 def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
     """
     Converts HEIC/HEIF image to JPEG format.
@@ -25,12 +45,7 @@ def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
     output_file = Path(output_dir) / f"{input_file.stem}.jpg"
     
     with Image.open(input_file) as img:
-        # Normalize orientation (handle EXIF tags)
-        img = ImageOps.exif_transpose(img)
-        
-        # Convert RGBA or palette mode to RGB for JPEG compatibility
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
+        img = _preprocess_image(img)
         img.save(output_file, "JPEG", quality=quality)
     
     return str(output_file)
@@ -60,13 +75,7 @@ def resize_image(input_path: str, output_dir: str, mode: str,
     output_file = Path(output_dir) / f"{input_file.stem}_resized.jpg"
     
     with Image.open(input_file) as img:
-        # Normalize orientation (handle EXIF tags)
-        img = ImageOps.exif_transpose(img)
-
-        # Convert to RGB if needed
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-            
+        img = _preprocess_image(img)
         original_width, original_height = img.size
 
         if mode == 'dimensions':
@@ -158,13 +167,8 @@ def crop_image(input_path: str, output_dir: str,
     output_file = Path(output_dir) / f"{input_file.stem}_cropped.jpg"
     
     with Image.open(input_file) as img:
-        # Normalize orientation (handle EXIF tags)
-        img = ImageOps.exif_transpose(img)
-
-        # Convert to RGB if needed
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-            
+        img = _preprocess_image(img)
+        
         # Ensure crop box is within bounds
         img_width, img_height = img.size
         x = max(0, x)
