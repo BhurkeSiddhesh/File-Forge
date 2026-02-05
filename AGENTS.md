@@ -29,6 +29,12 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-05
+
+- **fix**: Merged fix for transparent image conversion (RGBA/P modes) in `image_utils.py` from `palette/a11y` branch.
+- **Files**: `image_utils.py`
+- **Verification**: `pytest tests/test_image_utils.py` passed.
+
 ### 2026-02-04
 
 - **perf**: Implemented singleton pattern for `PaddleOCR` engine to eliminate model reload overhead per request.

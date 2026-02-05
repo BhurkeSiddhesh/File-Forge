@@ -83,7 +83,7 @@
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
-                    <div id="drop-zone" class="drop-zone" role="button" tabindex="0">
+                    <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PDF file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
                         <p>Drag & drop your PDF or <span class="browse-text">browse</span></p>
                         <input type="file" id="file-input" accept=".pdf" hidden>
@@ -162,7 +162,8 @@
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
-                    <div id="image-drop-zone" class="drop-zone" role="button" tabindex="0">
+                    <div id="image-drop-zone" class="drop-zone" role="button" tabindex="0"
+                        aria-label="Upload Image file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
                         <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
                         <input type="file" id="image-file-input" accept=".heic,.heif" hidden>
@@ -296,7 +297,8 @@
                     <!-- File Input -->
                     <div class="workflow-input-section">
                         <h3>1. Input File</h3>
-                        <div id="workflow-drop-zone" class="drop-zone workflow-drop" role="button" tabindex="0">
+                        <div id="workflow-drop-zone" class="drop-zone workflow-drop" role="button" tabindex="0"
+                            aria-label="Upload file for workflow">
                             <i class="fas fa-cloud-upload-alt upload-icon"></i>
                             <p>Drop your file here or <span class="browse-text">browse</span></p>
                             <input type="file" id="workflow-file-input" hidden>
