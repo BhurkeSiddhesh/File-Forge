@@ -31,6 +31,14 @@
 
 ### 2026-02-05
 
+- **feat**: Added click-to-add functionality for workflow steps to support keyboard users (replacing drag-and-drop dependency).
+- **fix**: Added `role="button"`, `tabindex="0"`, and `aria-label` to workflow palette items.
+- **fix**: Added focus visibility styles for step items in palette.
+- **Files**: `static/index.html`, `static/script.js`, `static/style.css`
+- **Verification**: Verified via Playwright script `verification/verify_workflow_a11y.py`.
+
+### 2026-02-05
+
 - **fix**: Merged fix for transparent image conversion (RGBA/P modes) in `image_utils.py` from `palette/a11y` branch.
 - **Files**: `image_utils.py`
 - **Verification**: `pytest tests/test_image_utils.py` passed.
