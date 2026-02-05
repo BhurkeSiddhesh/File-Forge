@@ -675,6 +675,11 @@ function initWorkflowBuilder() {
         item.ondragend = () => {
             item.style.opacity = '1';
         };
+
+        // A11y: Click to add step
+        item.onclick = () => {
+            addStepToWorkflow(item.dataset.stepType, item.dataset.stepLabel, item.dataset.stepIcon);
+        };
     });
 
     // Canvas drop handling
