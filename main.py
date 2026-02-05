@@ -44,7 +44,7 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = remove_pdf_password(str(temp_path), password, str(OUTPUT_DIR))
+        output_path = await run_in_threadpool(remove_pdf_password, str(temp_path), password, str(OUTPUT_DIR))
         return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -68,10 +68,10 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
         if use_ai:
             # @jules: This can be very slow for large PDFs. 
             # We should probably implement a progress bar or background task with polling.
-            output_path = pdf_to_word_paddle(str(temp_path), str(OUTPUT_DIR), password)
+            output_path = await run_in_threadpool(pdf_to_word_paddle, str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word with AI Layout Recovery"
         else:
-            output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
+            output_path = await run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word (Standard)"
 
         print(f"[DEBUG] Conversion successful: {output_path}")
@@ -99,7 +99,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
+        output_path = await run_in_threadpool(heic_to_jpeg, str(temp_path), str(OUTPUT_DIR), quality)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         import traceback
@@ -131,7 +131,8 @@ async def api_resize_image(
             shutil.copyfileobj(file.file, buffer)
         
         from image_utils import resize_image
-        output_path = resize_image(
+        output_path = await run_in_threadpool(
+            resize_image,
             str(temp_path), 
             str(OUTPUT_DIR), 
             mode,
@@ -170,7 +171,8 @@ async def api_crop_image(
             shutil.copyfileobj(file.file, buffer)
         
         from image_utils import crop_image
-        output_path = crop_image(
+        output_path = await run_in_threadpool(
+            crop_image,
             str(temp_path), 
             str(OUTPUT_DIR), 
             x=x, y=y, width=width, height=height
