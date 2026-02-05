@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-06
+
+- **perf**: Unblocked main event loop by wrapping heavy synchronous calls in `run_in_threadpool` across all endpoints (`api_convert_to_word`, `api_resize_image`, etc.).
+- **fix**: Added thread-safe double-checked locking to `get_paddle_engine` singleton initialization.
+- **Files**: `main.py`, `pdf_utils.py`
+- **Verification**: Verified using `reproduce_blocking_image.py` (0.09s latency for light request vs >7s before); existing tests passed.
+
 ### 2026-02-05
 
 - **fix**: Merged fix for transparent image conversion (RGBA/P modes) in `image_utils.py` from `palette/a11y` branch.
