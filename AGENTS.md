@@ -153,3 +153,9 @@
 - **feat**: Initial PDF password remover script
 - **Files**: `pdf_password_remover.py`, `requirements.txt`
 - **Verification**: Manual testing with password-protected PDF
+
+### 2026-02-04
+
+- **perf**: Optimized `resize_image` (target size mode) to use `io.BytesIO` for in-memory size checking, reducing disk I/O overhead.
+- **Files**: `image_utils.py`
+- **Verification**: `tests/test_image_resize.py` passed. Custom benchmark showed ~8% improvement (0.92s -> 0.84s).
