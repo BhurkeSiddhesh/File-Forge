@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Optimized `heic_to_jpeg` endpoint by wrapping the blocking call in `run_in_threadpool`.
+- **perf**: Added `tests/benchmark_heic_blocking.py` to measure event loop blocking.
+- **Files**: `main.py`, `tests/benchmark_heic_blocking.py`
+- **Verification**: Benchmark showed light request latency dropped from ~1.3s to ~0.014s.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
