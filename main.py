@@ -61,7 +61,7 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = remove_pdf_password(str(temp_path), password, str(OUTPUT_DIR))
+        output_path = await run_in_threadpool(remove_pdf_password, str(temp_path), password, str(OUTPUT_DIR))
         return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

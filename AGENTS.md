@@ -153,3 +153,10 @@
 - **feat**: Initial PDF password remover script
 - **Files**: `pdf_password_remover.py`, `requirements.txt`
 - **Verification**: Manual testing with password-protected PDF
+
+
+### 2026-02-04
+
+- **perf**: Optimized `api_remove_password` to run in a thread pool, preventing blocking of the main event loop.
+- **Files**: `main.py`
+- **Verification**: `tests/benchmark_blocking.py` showed reduction in concurrent request latency from ~0.5s (blocked) to ~0.05s (non-blocked).
