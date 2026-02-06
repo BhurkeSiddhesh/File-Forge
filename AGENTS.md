@@ -31,6 +31,12 @@
 
 ### 2026-02-03
 
+- **fix**: Added missing page breaks when merging recovered DOCX pages.
+- **refactor**: Extracted merging logic into `merge_docx_files` helper function.
+- **test**: Added unit tests for merging logic in `tests/test_docx_merge.py`.
+- **Files**: `pdf_utils.py`, `tests/test_docx_merge.py`
+- **Verification**: `python -m pytest tests/test_docx_merge.py` passed.
+
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
 - **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
 - **feat**: Enhanced workflow UI with pulsing animations for processing steps and green gradients for completed steps.
