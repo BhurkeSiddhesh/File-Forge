@@ -29,6 +29,12 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Wrapped blocking `pdf_to_word_paddle` call in `fastapi.concurrency.run_in_threadpool` to prevent event loop blocking in `api_convert_to_word`.
+- **Files**: `main.py`
+- **Verification**: Verified with `reproduce_blocking.py` showing latency dropping from blocked state to ~0.01s.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
