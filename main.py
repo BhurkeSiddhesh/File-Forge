@@ -85,7 +85,7 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
         if use_ai:
             # @jules: This can be very slow for large PDFs. 
             # We should probably implement a progress bar or background task with polling.
-            output_path = pdf_to_word_paddle(str(temp_path), str(OUTPUT_DIR), password)
+            output_path = await run_in_threadpool(pdf_to_word_paddle, str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word with AI Layout Recovery"
         else:
             output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
