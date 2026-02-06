@@ -116,7 +116,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
+        output_path = await run_in_threadpool(heic_to_jpeg, str(temp_path), str(OUTPUT_DIR), quality)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         import traceback
