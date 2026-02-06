@@ -29,6 +29,15 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **perf**: Optimized file uploads by replacing blocking `shutil.copyfileobj` with asynchronous chunked writing using `aiofiles`.
+- **fix**: Fixed potential event loop blocking during large file uploads.
+- **chore**: Added `aiofiles` to `requirements.txt`.
+- **Files**: `main.py`, `requirements.txt`
+- **Verification**: Benchmark showed ping latency drop from ~2.36s to ~0.01s during upload.
+
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
