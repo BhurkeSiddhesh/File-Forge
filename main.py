@@ -244,10 +244,6 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 
                 print(f"[DEBUG] Step {i+1}: {step_type}")
 
-                # Artificial delay to ensure UI updates are visible
-                import asyncio
-                await asyncio.sleep(1.0)
-                
                 if step_type == 'remove_password':
                     password = config.get('password', '')
                     if not password:
