@@ -29,6 +29,12 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-10
+
+- **perf**: Optimized iterative image resizing in `image_utils.py` by using in-memory `io.BytesIO` buffers to avoid repeated disk I/O.
+- **Files**: `image_utils.py`
+- **Verification**: Verified with `tests/test_image_resize.py` and custom benchmark script.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
