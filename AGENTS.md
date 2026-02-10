@@ -31,6 +31,13 @@
 
 ### 2026-02-03
 
+### 2026-02-10
+
+- **perf**: Implemented singleton pattern for PaddleOCR engine to avoid recurring initialization overhead.
+- **fix**: Added unit tests with mocks to verify singleton logic and correct parameter passing.
+- **Files**: `pdf_utils.py`, `tests/test_pdf_utils_singleton.py`
+- **Verification**: Benchmark showed reduction from ~3.6s to ~0.8s for subsequent calls.
+
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
 - **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
 - **feat**: Enhanced workflow UI with pulsing animations for processing steps and green gradients for completed steps.
