@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **security**: Fixed a race condition vulnerability in file uploads where concurrent uploads with the same name could overwrite each other.
+- **fix**: Implemented unique temporary filenames using UUIDs for all file processing endpoints.
+- **test**: Added reproduction and verification test case `tests/test_security_fix.py`.
+- **Files**: `main.py`, `tests/test_security_fix.py`
+- **Verification**: `pytest tests/test_security_fix.py` passed.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).

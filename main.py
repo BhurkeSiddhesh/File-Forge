@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import shutil
 import os
+import uuid
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
@@ -56,7 +57,11 @@ async def read_index():
 
 @app.post("/api/pdf/remove-password")
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    temp_path = UPLOAD_DIR / file.filename
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
+
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -74,8 +79,12 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
 
 @app.post("/api/pdf/convert-to-word")
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
+
+    print(f"[DEBUG] Converting: {file.filename} -> {temp_filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -110,8 +119,12 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
 @app.post("/api/image/heic-to-jpeg")
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
+
+    print(f"[DEBUG] Converting HEIC: {file.filename} -> {temp_filename}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -141,8 +154,12 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
+
+    print(f"[DEBUG] Resizing image: {file.filename} -> {temp_filename}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -180,8 +197,12 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
+
+    print(f"[DEBUG] Cropping image: {file.filename} -> {temp_filename}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -212,9 +233,12 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     import json
     from fastapi.responses import StreamingResponse
     
-    temp_path = UPLOAD_DIR / file.filename
+    # Generate unique filename to prevent race conditions
+    safe_filename = Path(file.filename).name
+    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / temp_filename
     
-    print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
+    print(f"[DEBUG] Workflow started: {file.filename} -> {temp_filename}, steps={steps}")
     
     # Parse steps JSON
     try:
