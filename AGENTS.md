@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **sec**: Fixed Path Traversal vulnerability in `/api/download/{filename}` endpoint.
+- **fix**: Implemented strict filename sanitization and path resolution checks.
+- **Files**: `main.py`
+- **Verification**: Verified with `verify_fix_direct.py` and existing tests.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
