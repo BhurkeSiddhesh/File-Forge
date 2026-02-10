@@ -31,6 +31,10 @@
 
 ### 2026-02-03
 
+- **security**: Fixed Arbitrary File Write/Read vulnerability (Path Traversal) in all API endpoints.
+- **fix**: Sanitized user-controlled filenames using `Path(filename.replace("\\", "/")).name` to prevent directory traversal.
+- **Files**: `main.py`
+- **Verification**: Verified with standalone sanitization test script.
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
 - **fix**: Wrapped blocking workflow steps in `run_in_threadpool` to enable real-time SSE progress updates.
 - **feat**: Enhanced workflow UI with pulsing animations for processing steps and green gradients for completed steps.
