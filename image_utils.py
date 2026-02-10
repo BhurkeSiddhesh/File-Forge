@@ -2,6 +2,7 @@
 Image conversion utilities for File Forge.
 """
 from pathlib import Path
+import io
 from PIL import Image, ImageOps
 import pillow_heif
 
@@ -111,11 +112,12 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             # 2. Reduce dimensions if quality reduction isn't enough
             
             current_quality = 95
-            img.save(output_file, "JPEG", quality=current_quality)
-            while output_file.stat().st_size > target_bytes:
+            buffer = io.BytesIO()
+            img.save(buffer, "JPEG", quality=current_quality)
+
+            while buffer.tell() > target_bytes:
                 if current_quality > 60:
                     current_quality -= 5
-                    img.save(output_file, "JPEG", quality=current_quality)
                 else:
                     # Quality is low, start shrinking dimensions
                     current_width, current_height = img.size
@@ -127,8 +129,15 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                         break # Stop if image gets too small
                         
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    # Reset quality slightly when resizing to allow better compression
-                    img.save(output_file, "JPEG", quality=current_quality)
+
+                # Check size with new parameters
+                buffer.seek(0)
+                buffer.truncate()
+                img.save(buffer, "JPEG", quality=current_quality)
+
+            # Write final result to disk
+            with open(output_file, "wb") as f:
+                f.write(buffer.getvalue())
 
         else:
             raise ValueError(f"Unknown resize mode: {mode}")
