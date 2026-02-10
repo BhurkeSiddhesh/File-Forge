@@ -1,8 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Security
+from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import shutil
 import os
+import secrets
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
@@ -10,10 +12,27 @@ from image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
 
+# --- Authentication Logic ---
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+api_key_query = APIKeyQuery(name="api_key", auto_error=False)
+
 @app.on_event("startup")
 async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
     print("Initializing AI Models... This may take a while on first run.")
+
+    # Auth Setup
+    api_key = os.getenv("FILE_FORGE_API_KEY")
+    if not api_key:
+        api_key = secrets.token_urlsafe(32)
+        print("=" * 64)
+        print(f"WARNING: No FILE_FORGE_API_KEY set.")
+        print(f"Generated temporary API Key: {api_key}")
+        print(f"Access the web UI and enter this key when prompted.")
+        print("=" * 64)
+    app.state.api_key = api_key
+
     try:
         from paddleocr import PPStructure
         # Define explicit model paths to ensure ONNX models are found
@@ -38,6 +57,14 @@ async def startup_event():
     except Exception as e:
         print(f"Warning: AI Model initialization failed: {e}")
 
+async def get_api_key(
+    api_key_header: str = Security(api_key_header),
+    api_key_query: str = Security(api_key_query)
+):
+    key = api_key_header or api_key_query
+    if hasattr(app.state, "api_key") and key == app.state.api_key:
+        return key
+    raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 # Ensure directories exist
 BASE_DIR = Path(__file__).parent
@@ -54,7 +81,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def read_index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
-@app.post("/api/pdf/remove-password")
+@app.post("/api/pdf/remove-password", dependencies=[Depends(get_api_key)])
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
     temp_path = UPLOAD_DIR / file.filename
     try:
@@ -72,7 +99,7 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
             except PermissionError:
                 pass  # Windows file locking - will be cleaned up later
 
-@app.post("/api/pdf/convert-to-word")
+@app.post("/api/pdf/convert-to-word", dependencies=[Depends(get_api_key)])
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
     temp_path = UPLOAD_DIR / file.filename
     print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
@@ -107,7 +134,7 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/heic-to-jpeg")
+@app.post("/api/image/heic-to-jpeg", dependencies=[Depends(get_api_key)])
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
     temp_path = UPLOAD_DIR / file.filename
@@ -131,7 +158,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/resize")
+@app.post("/api/image/resize", dependencies=[Depends(get_api_key)])
 async def api_resize_image(
     file: UploadFile = File(...),
     mode: str = Form(...),
@@ -171,7 +198,7 @@ async def api_resize_image(
                 pass
 
 
-@app.post("/api/image/crop")
+@app.post("/api/image/crop", dependencies=[Depends(get_api_key)])
 async def api_crop_image(
     file: UploadFile = File(...),
     x: int = Form(...),
@@ -206,7 +233,7 @@ async def api_crop_image(
                 pass
 
 
-@app.post("/api/workflow/execute")
+@app.post("/api/workflow/execute", dependencies=[Depends(get_api_key)])
 async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
     import json
@@ -332,7 +359,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
-@app.get("/api/download/{filename}")
+@app.get("/api/download/{filename}", dependencies=[Depends(get_api_key)])
 async def download_file(filename: str):
     file_path = OUTPUT_DIR / filename
     if file_path.exists():

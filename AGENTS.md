@@ -153,3 +153,14 @@
 - **feat**: Initial PDF password remover script
 - **Files**: `pdf_password_remover.py`, `requirements.txt`
 - **Verification**: Manual testing with password-protected PDF
+
+### 2026-02-10
+
+- **sec**: Implemented API Key authentication for sensitive endpoints.
+- **feat**: Added Login Modal to frontend for authentication.
+- **feat**: Secured all `/api/*` endpoints with `X-API-Key` header check.
+- **feat**: Added dynamic API key generation at startup if not configured.
+- **feat**: Updated frontend to handle 401/403 responses and store API key.
+- **test**: Added `tests/test_auth.py` and updated `tests/test_main.py` to use authenticated client.
+- **Files**: `main.py`, `static/index.html`, `static/script.js`, `tests/conftest.py`, `tests/test_main.py`, `tests/test_auth.py`
+- **Verification**: Playwright script `verify_frontend.py` verified modal appearance and login flow. Pytest suite passed.

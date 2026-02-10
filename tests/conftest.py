@@ -66,3 +66,23 @@ def sample_image_file(tmp_path_factory):
     img = Image.new('RGB', (100, 100), color='green')
     img.save(file_path, "JPEG")
     return file_path
+
+# Auth Fixtures
+from main import app
+from fastapi.testclient import TestClient
+import os
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    """Sets a known API key for testing."""
+    test_key = "test-secret-key"
+    app.state.api_key = test_key
+    os.environ["FILE_FORGE_API_KEY"] = test_key
+    yield test_key
+
+@pytest.fixture
+def auth_client(mock_auth):
+    """Returns a TestClient with authentication headers."""
+    client = TestClient(app)
+    client.headers = {"X-API-Key": mock_auth}
+    return client
