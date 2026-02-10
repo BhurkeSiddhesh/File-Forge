@@ -10,7 +10,7 @@
 
 ## 2. Project Structure & File Placement
 
-- **Root**: Configs (`requirements.txt`), main application (`main.py`).
+- **Root**: Configs (`requirements.txt`), main application (`main.py`), security utilities (`security_utils.py`).
 - **Scripts**: Utility modules like `pdf_utils.py`.
 - **Static**: Frontend assets in `/static`.
 - **Data**: Uploads in `/uploads`, processed files in `/outputs`.
@@ -20,14 +20,25 @@
 - **Architecture**: Simple CLI scripts with argparse.
 - **Error Handling**: Always catch and display user-friendly error messages.
 - **Type Hints**: Use type hints for function signatures.
+- **Security**: Use `security_utils.secure_filename` for all user-provided filenames.
 
 ## 4. Active Context
 
-- **Current Sprint**: Modern Web UI, PDF tools, and Image tools (HEIC to JPEG).
+- **Current Sprint**: Security Hardening and Vulnerability Fixes.
 
 ## 5. Change Log (Reverse Chronological)
 
 > **CRITICAL**: Add entry here BEFORE every commit.
+
+### 2026-02-04
+
+- **security**: Fixed "Information Exposure in Debug Logs" and Path Traversal vulnerabilities.
+- **feat**: Added `security_utils.py` with `secure_filename` function.
+- **refactor**: Updated all file handling endpoints in `main.py` to use sanitized filenames.
+- **fix**: Prevented log injection by removing control characters from logged filenames.
+- **fix**: Reduced log verbosity in `execute_workflow` to avoid logging raw JSON steps.
+- **Files**: `main.py`, `security_utils.py`
+- **Verification**: Verified with `reproduce_vulnerability_direct.py` and existing tests.
 
 ### 2026-02-03
 
