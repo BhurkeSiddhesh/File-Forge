@@ -1,0 +1,18 @@
+INFO:     Started server process [5324]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+Initializing AI Models... This may take a while on first run.
+================================================================
+WARNING: No FILE_FORGE_API_KEY set.
+Generated temporary API Key: BOJVWSNtjIaY9Pm0mqgLDx3FyT2K1G676h7UFt5EueY
+Access the web UI and enter this key when prompted.
+================================================================
+Warning: AI Model initialization failed: [ONNXRuntimeError] : 7 : INVALID_PROTOBUF : Load model from /app/models/layout/picodet_lcnet_x1_0_fgd_layout_infer failed:Protobuf parsing failed.
+INFO:     127.0.0.1:41648 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41648 - "GET /static/style.css?v=20260203 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41654 - "GET /static/script.js?v=20260203 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [5324]
