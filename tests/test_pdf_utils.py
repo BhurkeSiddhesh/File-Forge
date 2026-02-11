@@ -1,7 +1,7 @@
-import pytest
 from pathlib import Path
-from pdf_utils import remove_pdf_password, pdf_to_docx
+import pytest
 import pikepdf
+from pdf_utils import remove_pdf_password, pdf_to_docx, extract_pdf_pages
 
 def test_remove_pdf_password(locked_pdf, tmp_path):
     """Test removing password from a PDF."""
@@ -27,3 +27,14 @@ def test_pdf_to_docx(sample_pdf, tmp_path):
     assert output_path.exists()
     assert output_path.suffix == ".docx"
     assert output_path.stem == sample_pdf.stem
+
+def test_extract_pdf_pages(multi_page_pdf, tmp_path):
+    """Test extracting selected pages from a PDF."""
+    output_path_str = extract_pdf_pages(str(multi_page_pdf), str(tmp_path), "1,3-4")
+    output_path = Path(output_path_str)
+
+    assert output_path.exists()
+    assert output_path.name == "multi_sample_extracted.pdf"
+
+    with pikepdf.open(output_path) as pdf:
+        assert len(pdf.pages) == 3

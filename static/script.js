@@ -83,6 +83,12 @@ function handleFile(file) {
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
     document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('convert-password-area').classList.add('hidden');
+    document.getElementById('extract-pages-area')?.classList.add('hidden');
+    const extractInput = document.getElementById('extract-pages-input');
+    const extractPassword = document.getElementById('extract-password');
+    if (extractInput) extractInput.value = '';
+    if (extractPassword) extractPassword.value = '';
 }
 
 // Actions
@@ -93,6 +99,7 @@ document.getElementById('remove-password-btn').onclick = () => {
     }
     document.getElementById('password-input-area').classList.remove('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
+    document.getElementById('extract-pages-area').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 };
 
@@ -104,6 +111,18 @@ document.getElementById('convert-word-btn').onclick = () => {
     // Show the optional password input for conversion
     document.getElementById('convert-password-area').classList.remove('hidden');
     document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('extract-pages-area').classList.add('hidden');
+    document.getElementById('result-display').classList.add('hidden');
+};
+
+document.getElementById('extract-pages-btn').onclick = () => {
+    if (!selectedFile) {
+        alert('Please select a file first.');
+        return;
+    }
+    document.getElementById('extract-pages-area').classList.remove('hidden');
+    document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 };
 
@@ -133,6 +152,25 @@ document.getElementById('process-password-btn').onclick = () => {
     formData.append('password', password);
 
     processAction('/api/pdf/remove-password', 'Removing password...', formData);
+};
+
+document.getElementById('process-extract-btn').onclick = () => {
+    const pages = document.getElementById('extract-pages-input').value.trim();
+    const password = document.getElementById('extract-password').value;
+
+    if (!pages) {
+        alert('Please enter pages to extract (e.g., 1,3,5-7 or all).');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('pages', pages);
+    if (password) {
+        formData.append('password', password);
+    }
+
+    processAction('/api/pdf/extract-pages', 'Extracting selected pages...', formData);
 };
 
 async function processAction(url, text, formData = null) {
@@ -198,8 +236,11 @@ function resetUI() {
     fileInfo.classList.add('hidden');
     document.getElementById('password-input-area').classList.add('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
+    document.getElementById('extract-pages-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
+    document.getElementById('extract-pages-input')?.value = '';
+    document.getElementById('extract-password')?.value = '';
 
     // Reset image tools
     const imageFileInput = document.getElementById('image-file-input');

@@ -18,6 +18,20 @@ def sample_pdf(tmp_path_factory):
     return file_path
 
 @pytest.fixture(scope="session")
+def multi_page_pdf(tmp_path_factory):
+    """Creates a multi-page PDF file for extraction tests."""
+    d = tmp_path_factory.mktemp("multi_data")
+    file_path = d / "multi_sample.pdf"
+
+    c = canvas.Canvas(str(file_path))
+    for i in range(1, 5):
+        c.drawString(100, 750, f"Page {i}")
+        c.showPage()
+    c.save()
+
+    return file_path
+
+@pytest.fixture(scope="session")
 def locked_pdf(tmp_path_factory, sample_pdf):
     """Creates a password-protected PDF file."""
     d = tmp_path_factory.mktemp("locked_data")

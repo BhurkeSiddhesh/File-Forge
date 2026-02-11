@@ -120,6 +120,13 @@
                                 <p>Transform PDF into editable DOCX</p>
                             </div>
                         </div>
+                        <div class="action-card" id="extract-pages-btn" role="button" tabindex="0">
+                            <i class="fas fa-cut"></i>
+                            <div class="action-text">
+                                <h4>Extract Pages</h4>
+                                <p>Cut selected pages into a new PDF</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Convert to Word Password (optional, for protected PDFs) -->
@@ -128,6 +135,15 @@
                         <input type="password" id="convert-password" placeholder="Enter PDF Password (optional)"
                             aria-label="PDF Password (Optional)">
                         <button id="process-convert-btn" class="primary-btn">Convert Now</button>
+                    </div>
+
+                    <!-- Extract Pages Input -->
+                    <div id="extract-pages-area" class="password-area hidden">
+                        <p class="helper-text">Enter pages to extract (e.g., 1,3,5-7 or all):</p>
+                        <input type="text" id="extract-pages-input" placeholder="Pages to extract" aria-label="Pages to extract">
+                        <input type="password" id="extract-password" placeholder="PDF Password (optional)"
+                            aria-label="PDF Password (Optional)">
+                        <button id="process-extract-btn" class="primary-btn">Extract Pages</button>
                     </div>
 
                     <!-- Password Modal-style Input (inline) -->

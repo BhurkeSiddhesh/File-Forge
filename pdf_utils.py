@@ -2,6 +2,7 @@ import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
 import os
+from typing import List
 
 # Disable MKL-DNN/OneDNN to fix compatibility issues on Windows
 # Must be set BEFORE importing paddle/paddleocr
@@ -33,6 +34,60 @@ def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     
     return str(output_file)
 
+def _parse_page_selection(pages: str, total_pages: int) -> List[int]:
+    """Parse a page selection string (e.g., '1,3-5') into zero-based indices."""
+    if pages is None:
+        raise ValueError("No pages selected. Please provide page numbers or 'all'.")
+
+    normalized = pages.strip().lower()
+    if not normalized:
+        raise ValueError("No pages selected. Please provide page numbers or 'all'.")
+
+    if normalized == "all":
+        return list(range(total_pages))
+
+    indices: List[int] = []
+    seen = set()
+
+    for part in normalized.split(","):
+        segment = part.strip()
+        if not segment:
+            continue
+
+        if "-" in segment:
+            start_str, end_str = segment.split("-", 1)
+            if not start_str or not end_str:
+                raise ValueError(f"Invalid page range segment: '{segment}'")
+            try:
+                start = int(start_str)
+                end = int(end_str)
+            except ValueError:
+                raise ValueError(f"Invalid page range numbers: '{segment}'")
+            if start < 1 or end < 1 or start > end:
+                raise ValueError(f"Invalid page range segment: '{segment}'")
+            for num in range(start, end + 1):
+                if num not in seen:
+                    seen.add(num)
+                    indices.append(num - 1)
+        else:
+            try:
+                num = int(segment)
+            except ValueError:
+                raise ValueError(f"Invalid page number: '{segment}'")
+            if num < 1:
+                raise ValueError(f"Invalid page number: '{segment}'")
+            if num not in seen:
+                seen.add(num)
+                indices.append(num - 1)
+
+    if not indices:
+        raise ValueError("No valid pages selected.")
+
+    if max(indices) >= total_pages:
+        raise ValueError(f"Selected page number exceeds document page count ({total_pages}).")
+
+    return indices
+
 def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Path = None) -> tuple:
     """
     Returns (path_to_use, needs_cleanup).
@@ -62,6 +117,28 @@ def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Pat
             pdf.save(temp_file)
         
         return str(temp_file), True
+
+def extract_pdf_pages(input_path: str, output_dir: str, pages: str, password: str = None) -> str:
+    """Extract selected pages from PDF and save to output_dir."""
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_extracted.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            selected_indices = _parse_page_selection(pages, len(pdf.pages))
+
+            new_pdf = pikepdf.Pdf.new()
+            for idx in selected_indices:
+                new_pdf.pages.append(pdf.pages[idx])
+
+            new_pdf.save(output_file)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
 
 def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
