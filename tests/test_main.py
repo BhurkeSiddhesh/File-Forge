@@ -3,6 +3,7 @@ from main import app
 from unittest.mock import patch
 import pytest
 import os
+import pikepdf
 
 client = TestClient(app)
 
@@ -65,6 +66,24 @@ def test_api_convert_to_word(sample_pdf, mock_dirs):
     # Verify file exists in mock output dir
     output_filename = data["filename"]
     assert (mock_dirs["output"] / output_filename).exists()
+
+def test_api_extract_pages(multi_page_pdf, mock_dirs):
+    file_path = multi_page_pdf
+
+    with open(file_path, "rb") as f:
+        files = {"file": (file_path.name, f, "application/pdf")}
+        data = {"pages": "2-3"}
+        response = client.post("/api/pdf/extract-pages", files=files, data=data)
+
+    assert response.status_code == 200
+    resp_data = response.json()
+    assert resp_data["status"] == "success"
+    output_filename = resp_data["filename"]
+    output_path = mock_dirs["output"] / output_filename
+    assert output_path.exists()
+
+    with pikepdf.open(output_path) as pdf:
+        assert len(pdf.pages) == 2
 
 def test_download_file(sample_pdf, mock_dirs):
     # First generate the file
@@ -129,4 +148,3 @@ def test_api_crop_image(sample_image_file, mock_dirs):
     assert resp_data["status"] == "success"
     assert "cropped" in resp_data["filename"]
     assert (mock_dirs["output"] / resp_data["filename"]).exists()
-
