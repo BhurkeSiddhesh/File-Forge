@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
-from image_utils import heic_to_jpeg
+from image_utils import heic_to_jpeg, resize_image, crop_image
+import traceback
+import json
 
 app = FastAPI(title="File Forge API")
 
@@ -94,7 +96,6 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
         print(f"[DEBUG] Conversion successful: {output_path}")
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
-        import traceback
         print(f"[ERROR] Conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -119,7 +120,6 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
-        import traceback
         print(f"[ERROR] HEIC conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -147,7 +147,6 @@ async def api_resize_image(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        from image_utils import resize_image
         output_path = resize_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -159,7 +158,6 @@ async def api_resize_image(
         )
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
-        import traceback
         print(f"[ERROR] Image resize failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -186,7 +184,6 @@ async def api_crop_image(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        from image_utils import crop_image
         output_path = crop_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -194,7 +191,6 @@ async def api_crop_image(
         )
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
-        import traceback
         print(f"[ERROR] Image crop failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -209,7 +205,6 @@ async def api_crop_image(
 @app.post("/api/workflow/execute")
 async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
-    import json
     from fastapi.responses import StreamingResponse
     
     temp_path = UPLOAD_DIR / file.filename
@@ -243,10 +238,6 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 yield f"data: {json.dumps({'event': 'step_start', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
                 
                 print(f"[DEBUG] Step {i+1}: {step_type}")
-
-                # Artificial delay to ensure UI updates are visible
-                import asyncio
-                await asyncio.sleep(1.0)
                 
                 if step_type == 'remove_password':
                     password = config.get('password', '')
@@ -271,7 +262,6 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'resize_image':
-                    from image_utils import resize_image
                     mode = config.get('mode', 'percentage')
                     percentage = config.get('percentage', 50)
                     output_path = await run_in_threadpool(
@@ -284,7 +274,6 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'crop_image':
-                    from image_utils import crop_image
                     x = config.get('x', 0)
                     y = config.get('y', 0)
                     width = config.get('width', 100)
@@ -308,7 +297,6 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
             yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
             
         except Exception as e:
-            import traceback
             print(f"[ERROR] Workflow failed: {e}")
             traceback.print_exc()
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"

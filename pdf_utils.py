@@ -22,6 +22,37 @@ from docx import Document as Document_docx
 import shutil
 
 
+# Global cache for PaddleOCR engine to avoid expensive re-initialization
+_paddle_engine = None
+
+def _get_paddle_engine():
+    """Returns cached PaddleOCR engine instance, initializing if needed."""
+    global _paddle_engine
+    if _paddle_engine is None:
+        print("[AI] Initializing PaddleOCR engine (first time only)...")
+        base_dir = Path(__file__).parent
+        paddle_dir = base_dir / "models"
+        layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
+        table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
+        det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
+        rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
+
+        # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
+        # usage of use_onnx=True to bypass Paddle OneDNN issues
+        # @jules: Should we detect the language instead of hardcoding 'en'?
+        # Potential fix: Use a language detection library or add a UI selector.
+        _paddle_engine = PPStructure(
+            recovery=True, lang='en', show_log=False, use_gpu=False, 
+            enable_mkldnn=False, use_onnx=True,
+            layout_model_dir=str(layout_dir),
+            table_model_dir=str(table_dir),
+            det_model_dir=str(det_dir),
+            rec_model_dir=str(rec_dir)
+        )
+        print("[AI] PaddleOCR engine cached successfully")
+    return _paddle_engine
+
+
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     """Removes password from PDF and saves to output_dir."""
@@ -42,13 +73,13 @@ def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Pat
     """
     input_file = Path(input_path)
     
-    # Check if PDF is encrypted
+    # Try to open PDF - check if encrypted in a single operation
     try:
         with pikepdf.open(input_file) as pdf:
             # PDF is not encrypted or has no password
             return str(input_file), False
     except pikepdf.PasswordError:
-        # PDF is encrypted
+        # PDF is encrypted - need password
         if not password:
             raise ValueError(f"PDF is password-protected. Please provide a password.")
         
@@ -97,32 +128,8 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
 
     try:
-        # Initialize PaddleOCR engine
-        print(f"[AI] Initializing PaddleOCR engine...")
-        # Define explicit model paths to ensure ONNX models are found
-        # These must match what fix_models.py downloaded/converted (now copied to local models dir)
-        base_dir = Path(__file__).parent
-        paddle_dir = base_dir / "models"
-        layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
-        table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
-        det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
-        rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
-
-        # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
-        # usage of use_onnx=True to bypass Paddle OneDNN issues
-        # @jules: Should we detect the language instead of hardcoding 'en'?
-        # Potential fix: Use a language detection library or add a UI selector.
-        table_engine = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False, 
-                                   enable_mkldnn=False, use_onnx=True,
-                                   layout_model_dir=str(layout_dir),
-                                   table_model_dir=str(table_dir),
-                                   det_model_dir=str(det_dir),
-                                   rec_model_dir=str(rec_dir))
-
-
-
-
-        print(f"[AI] PaddleOCR engine initialized")
+        # Use cached PaddleOCR engine instead of re-initializing
+        table_engine = _get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
         print(f"[AI] Opened PDF with {len(doc)} pages")
