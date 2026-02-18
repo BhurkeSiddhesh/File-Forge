@@ -29,6 +29,15 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-18
+
+- **feat**: Added GitHub Actions CI workflow (`ci.yml`)
+- **feat**: Workflow tests on Python 3.10, 3.11, and 3.12
+- **feat**: Includes pip dependency caching for faster builds
+- **feat**: Runs on pushes and pull requests to main/master branches
+- **Files**: `.github/workflows/ci.yml`, `AGENTS.md`
+- **Verification**: Workflow file syntax validated
+
 ### 2026-02-11
 
 - **feat**: Added PDF page extraction utility and API to save selected pages as a new PDF.
