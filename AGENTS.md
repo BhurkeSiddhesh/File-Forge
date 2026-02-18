@@ -31,6 +31,8 @@
 
 ### 2026-02-18
 
+- **fix**: Fixed CI workflow YAML indentation - steps are now properly indented under `steps:` key
+- **fix**: Removed redundant PYTHONPATH setting in pytest command (kept only in env block)
 - **feat**: Added GitHub Actions CI workflow (`ci.yml`)
 - **feat**: Workflow tests on Python 3.10, 3.11, and 3.12
 - **feat**: Includes pip dependency caching for faster builds
