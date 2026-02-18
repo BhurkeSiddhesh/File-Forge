@@ -29,6 +29,12 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-17
+
+- **chore**: Updated `branch_list.txt` with current branch inventory.
+- **Files**: `branch_list.txt`
+- **Verification**: `pytest tests/` — 22 tests passed.
+
 ### 2026-02-05
 
 - **fix**: Merged fix for transparent image conversion (RGBA/P modes) in `image_utils.py` from `palette/a11y` branch.
