@@ -29,6 +29,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-04
+
+- **security**: Fixed Arbitrary File Write and Read via Path Traversal in multiple endpoints.
+- **security**: Implemented filename sanitization using `Path(filename.replace("\\", "/")).name` to prevent path traversal attacks.
+- **Files**: `main.py`
+- **Verification**: Verified with `test_sanitization.py` covering Unix and Windows path traversal patterns.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
