@@ -29,6 +29,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-11
+
+- **feat**: Added PDF page extraction utility and API to save selected pages as a new PDF.
+- **feat**: Exposed UI controls for selecting page ranges and downloading extracted PDFs.
+- **test**: Added unit and API coverage for page extraction flows.
+- **Files**: `pdf_utils.py`, `main.py`, `static/index.html`, `static/script.js`, `tests/conftest.py`, `tests/test_pdf_utils.py`, `tests/test_main.py`
+- **Verification**: `PYTHONPATH=. pytest -q`
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).

@@ -5,7 +5,7 @@ import shutil
 import os
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
-from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
+from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
 from image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
@@ -105,6 +105,30 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
                 os.remove(temp_path)
             except PermissionError:
                 pass  # Windows file locking - will be cleaned up later
+
+@app.post("/api/pdf/extract-pages")
+async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...), password: str = Form(None)):
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Extracting pages: {file.filename}, pages='{pages}', password={'***' if password else 'None'}")
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        output_path = await run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password)
+        return {"status": "success", "message": "Pages extracted", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Page extraction failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
 
 
 @app.post("/api/image/heic-to-jpeg")
