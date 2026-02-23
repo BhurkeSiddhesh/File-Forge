@@ -358,9 +358,21 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
-    file_path = OUTPUT_DIR / filename
-    if file_path.exists():
-        return FileResponse(file_path, filename=filename)
+    # Sanitize filename to prevent path traversal
+    # We strip any directory components using .name and handle backslashes
+    clean_filename = Path(filename.replace("\\", "/")).name
+
+    # Resolve the path to ensure it's absolute
+    file_path = (OUTPUT_DIR / clean_filename).resolve()
+
+    # Check if the resolved path is within OUTPUT_DIR
+    if not file_path.is_relative_to(OUTPUT_DIR.resolve()):
+        # This branch should be unreachable with the sanitization above,
+        # but serves as a defense-in-depth measure.
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path, filename=clean_filename)
     raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
