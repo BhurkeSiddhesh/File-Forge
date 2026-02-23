@@ -57,3 +57,5 @@ The tests automatically create temporary files for testing and clean them up aft
 - `uploads/`: Directory where uploaded files are temporarily stored (created automatically).
 - `outputs/`: Directory where processed files are saved (created automatically).
 - `tests/`: Contains the test suite.
+
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/BhurkeSiddhesh/File-Forge?utm_source=oss&utm_medium=github&utm_campaign=BhurkeSiddhesh%2FFile-Forge&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
