@@ -18,6 +18,4 @@ test_output/Download Report_Aai.docx
 outputs/Siddhesh Lab Smart Report_unlocked.pdf
 .venv
 .ai-context
-models/**/*.onnx
-models/**/*.pdmodel
-models/**/*.pdiparams
+models/

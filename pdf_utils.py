@@ -22,19 +22,18 @@ from docxcompose.composer import Composer
 from docx import Document as Document_docx
 import shutil
 
-
 _PADDLE_ENGINE = None
 _ENGINE_LOCK = threading.Lock()
 
 def get_paddle_engine():
     """Singleton accessor for PaddleOCR engine."""
     global _PADDLE_ENGINE
+
     if _PADDLE_ENGINE is None:
         with _ENGINE_LOCK:
             if _PADDLE_ENGINE is None:
                 print(f"[AI] Initializing PaddleOCR engine...")
                 # Define explicit model paths to ensure ONNX models are found
-                # These must match what fix_models.py downloaded/converted (now copied to local models dir)
                 base_dir = Path(__file__).parent
                 paddle_dir = base_dir / "models"
                 layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
@@ -113,21 +112,6 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     
     return str(output_file)
 
-
-def merge_docx_files(input_files: list[str], output_file: str) -> None:
-    """Merges multiple DOCX files into one, inserting page breaks between them."""
-    if not input_files:
-        raise ValueError("No input files provided for merging.")
-
-    master = Document_docx(input_files[0])
-    composer = Composer(master)
-
-    for docx_path in input_files[1:]:
-        master.add_page_break()
-        composer.append(Document_docx(docx_path))
-
-    composer.save(output_file)
-
 def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
     print(f"[AI] Starting AI conversion for: {input_path}")
@@ -144,7 +128,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
 
     try:
-        # Initialize PaddleOCR engine (Singleton)
+        # Get singleton engine
         table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
@@ -190,7 +174,15 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
              raise Exception("No pages were successfully converted using AI engine.")
 
         # Merge files
-        merge_docx_files([str(f) for f in docx_files], str(output_file))
+        master = Document_docx(str(docx_files[0]))
+        composer = Composer(master)
+
+        for docx_path in docx_files[1:]:
+            # @jules: Append usually doesn't include a page break. 
+            # We might want to explicitly add one if the pages are getting merged into one long stream.
+            composer.append(Document_docx(str(docx_path)))
+
+        composer.save(str(output_file))
         doc.close()
 
     finally:
