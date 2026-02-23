@@ -1,3 +1,3 @@
-## 2026-01-31 - Retrofitting Accessibility
-**Learning:** This app relies heavily on `div` elements with `onclick` handlers, which is a common pattern but inaccessible.
-**Action:** Instead of rewriting every component to `<button>`, a cost-effective retrofit is adding `role="button"`, `tabindex="0"`, and a single global delegate listener for `Enter`/`Space` keys. This instantly makes the entire UI keyboard-friendly with minimal code churn (< 20 lines of JS).
+## 2026-02-04 - Keyboard Accessibility for Custom Inputs
+**Learning:** `display: none` on form inputs removes them from the accessibility tree, making custom toggles/switches unreachable for keyboard users.
+**Action:** Use a `.visually-hidden` utility class (opacity: 0, absolute position) to hide the native input while keeping it focusable, and use `:focus-visible` + adjacent sibling selector to style the custom control.

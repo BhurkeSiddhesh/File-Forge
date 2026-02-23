@@ -49,6 +49,11 @@
 - **Files**: `pdf_utils.py`, `main.py`, `tests/test_paddle_singleton.py`
 - **Verification**: `python tests/test_paddle_singleton.py` passed; full test suite passed.
 
+- **feat**: Improved accessibility by adding focus styles for custom toggles and global focus indicators.
+- **fix**: Added ARIA labels to workflow builder buttons.
+- **Files**: `static/style.css`, `static/script.js`
+- **Verification**: Playwright script verified focus states and ARIA labels.
+
 ### 2026-02-03
 
 - **chore**: Updated `agency.yaml` with detailed, natural language descriptions for specialized agent roles (Architect, PDF/Image Specialists, Frontend, QA/Watchdog, Workflow Orchestrator).
