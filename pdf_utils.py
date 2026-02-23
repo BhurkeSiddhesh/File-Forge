@@ -1,3 +1,4 @@
+import threading
 import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
@@ -23,34 +24,40 @@ import shutil
 
 
 # Global cache for PaddleOCR engine to avoid expensive re-initialization
-_paddle_engine = None
+_PADDLE_ENGINE = None
+_ENGINE_LOCK = threading.Lock()
 
-def _get_paddle_engine():
-    """Returns cached PaddleOCR engine instance, initializing if needed."""
-    global _paddle_engine
-    if _paddle_engine is None:
-        print("[AI] Initializing PaddleOCR engine (first time only)...")
-        base_dir = Path(__file__).parent
-        paddle_dir = base_dir / "models"
-        layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
-        table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
-        det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
-        rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
+def get_paddle_engine():
+    """Returns cached PaddleOCR engine instance, initializing if needed (thread-safe)."""
+    global _PADDLE_ENGINE
+    if _PADDLE_ENGINE is None:
+        with _ENGINE_LOCK:
+            if _PADDLE_ENGINE is None:
+                print("[AI] Initializing PaddleOCR engine (first time only)...")
+                base_dir = Path(__file__).parent
+                paddle_dir = base_dir / "models"
+                layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
+                table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
+                det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
+                rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
 
-        # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
-        # usage of use_onnx=True to bypass Paddle OneDNN issues
-        # @jules: Should we detect the language instead of hardcoding 'en'?
-        # Potential fix: Use a language detection library or add a UI selector.
-        _paddle_engine = PPStructure(
-            recovery=True, lang='en', show_log=False, use_gpu=False, 
-            enable_mkldnn=False, use_onnx=True,
-            layout_model_dir=str(layout_dir),
-            table_model_dir=str(table_dir),
-            det_model_dir=str(det_dir),
-            rec_model_dir=str(rec_dir)
-        )
-        print("[AI] PaddleOCR engine cached successfully")
-    return _paddle_engine
+                # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
+                # usage of use_onnx=True to bypass Paddle OneDNN issues
+                # @jules: Should we detect the language instead of hardcoding 'en'?
+                # Potential fix: Use a language detection library or add a UI selector.
+                _PADDLE_ENGINE = PPStructure(
+                    recovery=True, lang='en', show_log=False, use_gpu=False,
+                    enable_mkldnn=False, use_onnx=True,
+                    layout_model_dir=str(layout_dir),
+                    table_model_dir=str(table_dir),
+                    det_model_dir=str(det_dir),
+                    rec_model_dir=str(rec_dir)
+                )
+                print("[AI] PaddleOCR engine cached successfully")
+    return _PADDLE_ENGINE
+
+# Private alias for internal backward compatibility
+_get_paddle_engine = get_paddle_engine
 
 
 
@@ -112,6 +119,22 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     
     return str(output_file)
 
+
+def merge_docx_files(input_files: list, output_file: str) -> None:
+    """Merges multiple DOCX files into one, inserting page breaks between them."""
+    if not input_files:
+        raise ValueError("No input files provided for merging.")
+
+    master = Document_docx(input_files[0])
+    composer = Composer(master)
+
+    for docx_path in input_files[1:]:
+        master.add_page_break()
+        composer.append(Document_docx(str(docx_path)))
+
+    composer.save(output_file)
+
+
 def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
     print(f"[AI] Starting AI conversion for: {input_path}")
@@ -129,7 +152,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
 
     try:
         # Use cached PaddleOCR engine instead of re-initializing
-        table_engine = _get_paddle_engine()
+        table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
         print(f"[AI] Opened PDF with {len(doc)} pages")
@@ -173,16 +196,8 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
         if not docx_files:
              raise Exception("No pages were successfully converted using AI engine.")
 
-        # Merge files
-        master = Document_docx(str(docx_files[0]))
-        composer = Composer(master)
-
-        for docx_path in docx_files[1:]:
-            # @jules: Append usually doesn't include a page break. 
-            # We might want to explicitly add one if the pages are getting merged into one long stream.
-            composer.append(Document_docx(str(docx_path)))
-
-        composer.save(str(output_file))
+        # Merge recovered per-page DOCX files with page breaks between them
+        merge_docx_files([str(f) for f in docx_files], str(output_file))
         doc.close()
 
     finally:

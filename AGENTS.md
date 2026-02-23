@@ -36,6 +36,16 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-02-23
+
+- **feat**: Bulk merged 26 PRs covering accessibility, performance (PaddleOCR caching, threadpooling), and security fixes.
+- **feat**: Implemented API Key Authentication (X-API-Key / api_key query param) across all processing endpoints.
+- **security**: Enforced unique UUID-based filename randomization for all uploads to prevent race conditions and path traversal.
+- **fix**: Resolved PaddleOCR singleton API compatibility issues and fixed `ImportError` in test environment.
+- **fix**: Addressed `UnicodeEncodeError` in performance tests for Windows compatibility.
+- **Files**: `main.py`, `pdf_utils.py`, `image_utils.py`, `requirements.txt`, `static/`, `tests/`
+- **Verification**: All 39 tests passed (`python -m pytest tests/`).
+
 ### 2026-02-17
 
 - **chore**: Updated `branch_list.txt` with current branch inventory.

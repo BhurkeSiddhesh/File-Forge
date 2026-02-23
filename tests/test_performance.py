@@ -50,7 +50,7 @@ def test_binary_search_resize_faster(tmp_path, benchmark_image):
     # Binary search should complete in under 1 second for typical images
     # Old linear approach could take 3-5 seconds
     assert elapsed < 2.0, f"Binary search took {elapsed:.2f}s (expected < 2.0s)"
-    print(f"✓ Binary search completed in {elapsed:.3f}s")
+    print(f"PASS Binary search completed in {elapsed:.3f}s")
 
 
 def test_optimize_flag_reduces_size(tmp_path, benchmark_image):
@@ -76,7 +76,7 @@ def test_optimize_flag_reduces_size(tmp_path, benchmark_image):
     
     # Optimized version should be smaller (typically 10-20% reduction)
     reduction_percent = ((ref_size - optimized_size) / ref_size) * 100
-    print(f"✓ File size reduction: {reduction_percent:.1f}% (from {ref_size} to {optimized_size} bytes)")
+    print(f"PASS File size reduction: {reduction_percent:.1f}% (from {ref_size} to {optimized_size} bytes)")
     assert optimized_size < ref_size, "Optimize flag should reduce file size"
 
 
@@ -125,7 +125,7 @@ def test_import_time_reduction():
     
     # Import should be fast (< 2 seconds even with dependencies)
     # Note: First import may be slower due to bytecode compilation
-    print(f"✓ main.py import time: {elapsed:.3f}s")
+    print(f"PASS main.py import time: {elapsed:.3f}s")
     assert elapsed < 5.0, f"Import took {elapsed:.2f}s (expected < 5.0s)"
 
 

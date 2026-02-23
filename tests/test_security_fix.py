@@ -15,19 +15,21 @@ def mock_dirs(tmp_path):
     with patch("main.UPLOAD_DIR", upload_dir), patch("main.OUTPUT_DIR", output_dir):
         yield upload_dir, output_dir
 
-def test_upload_filename_is_unique(mock_dirs):
+import main
+
+def test_upload_filename_is_unique(mock_dirs, auth_client):
     upload_dir, _ = mock_dirs
 
     # We mock shutil.copyfileobj to intercept the file write
     with patch("main.shutil.copyfileobj") as mock_copy:
         # Mock the processing function to avoid actual PDF processing
-        with patch("main.remove_pdf_password") as mock_remove:
+        with patch.object(main, "remove_pdf_password") as mock_remove:
             mock_remove.return_value = "output.pdf"
 
             files = {"file": ("test.pdf", b"dummy content", "application/pdf")}
             data = {"password": "pass"}
 
-            response = client.post("/api/pdf/remove-password", files=files, data=data)
+            response = auth_client.post("/api/pdf/remove-password", files=files, data=data)
 
             assert response.status_code == 200
 
