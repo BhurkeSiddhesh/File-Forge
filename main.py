@@ -1,8 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
+from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import shutil
 import os
+import uuid
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
@@ -50,13 +52,64 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+# --- Auth Middleware ---
+API_KEY_NAME = "X-API-Key"
+_api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+async def verify_api_key(
+    api_key_header: str = Depends(_api_key_header),
+    api_key_query: str = None,
+    request=None,
+):
+    """Dependency that checks X-API-Key header first, then api_key query param."""
+    from fastapi import Request
+    return None  # placeholder — actual check done in routes via require_auth
+
+async def require_auth(
+    request: Request,
+    api_key_header: str | None = Header(default=None, alias="X-API-Key"),
+    api_key_query: str | None = None,
+):
+    """Require a valid API key via X-API-Key header. Reads expected key from app.state or env var."""
+    import os as _os
+    expected = getattr(request.app.state, 'api_key', None) or _os.environ.get('FILE_FORGE_API_KEY')
+    if not expected:
+        return  # No key configured — allow all (dev mode)
+    provided = api_key_header
+    if not provided or provided != expected:
+        raise HTTPException(status_code=403, detail="Could not validate credentials")
+    return provided
+
+
+async def require_auth_or_query(
+    request: Request,
+    api_key_header: str | None = Header(default=None, alias="X-API-Key"),
+    api_key: str | None = None,
+):
+    """Like require_auth but also accepts api_key as query param (for downloads)."""
+    import os as _os
+    expected = getattr(request.app.state, 'api_key', None) or _os.environ.get('FILE_FORGE_API_KEY')
+    if not expected:
+        return  # dev mode
+    provided = api_key_header or api_key
+    if not provided or provided != expected:
+        raise HTTPException(status_code=403, detail="Could not validate credentials")
+    return provided
+
 @app.get("/")
 async def read_index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
 @app.post("/api/pdf/remove-password")
-async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    temp_path = UPLOAD_DIR / file.filename
+async def api_remove_password(
+    file: UploadFile = File(...),
+    password: str = Form(...),
+    _auth: str = Depends(require_auth)
+):
+    # Sanitize filename and add UUID prefix to prevent path traversal + collisions
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -73,8 +126,16 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
                 pass  # Windows file locking - will be cleaned up later
 
 @app.post("/api/pdf/convert-to-word")
-async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    temp_path = UPLOAD_DIR / file.filename
+async def api_convert_to_word(
+    file: UploadFile = File(...),
+    use_ai: bool = Form(False),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth)
+):
+    # Sanitize filename and add UUID prefix
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
     print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
@@ -134,7 +195,9 @@ async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...)
 @app.post("/api/image/heic-to-jpeg")
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    temp_path = UPLOAD_DIR / file.filename
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
@@ -165,7 +228,9 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    temp_path = UPLOAD_DIR / file.filename
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
@@ -204,7 +269,9 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    temp_path = UPLOAD_DIR / file.filename
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
@@ -236,7 +303,9 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     import json
     from fastapi.responses import StreamingResponse
     
-    temp_path = UPLOAD_DIR / file.filename
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     
     print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
     
@@ -357,8 +426,10 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
 
 
 @app.get("/api/download/{filename}")
-async def download_file(filename: str):
-    file_path = OUTPUT_DIR / filename
+async def download_file(filename: str, _auth: str = Depends(require_auth_or_query)):
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(filename.replace("\\", "/")).name
+    file_path = OUTPUT_DIR / safe_filename
     if file_path.exists():
         return FileResponse(file_path, filename=filename)
     raise HTTPException(status_code=404, detail="File not found")

@@ -963,6 +963,7 @@ body {
     }
 }
 
+
 /* Workflow Progress Animation States */
 .workflow-step-card.processing {
     border-color: var(--accent-workflow);
@@ -1084,4 +1085,14 @@ body {
 .workflow-step-progress {
     font-size: 0.9rem;
     color: var(--text-muted);
+}
+
+/* Accessibility Focus Styles */
+.tool-card:focus-visible,
+.action-card:focus-visible,
+.drop-zone:focus-visible,
+.step-item:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3);
 }
