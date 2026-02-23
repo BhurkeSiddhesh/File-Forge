@@ -681,6 +681,20 @@ function initWorkflowBuilder() {
         item.ondragend = () => {
             item.style.opacity = '1';
         };
+
+        // Add click handler for accessibility
+        item.onclick = () => {
+            addStepToWorkflow(item.dataset.stepType, item.dataset.stepLabel, item.dataset.stepIcon);
+        };
+
+        // Add keyboard handler explicitly (stops global handler from double-firing)
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                item.click();
+            }
+        });
     });
 
     // Canvas drop handling
