@@ -21,6 +21,13 @@
 - **Error Handling**: Always catch and display user-friendly error messages.
 - **Type Hints**: Use type hints for function signatures.
 
+### 2026-02-03
+
+- **feat**: Added Windows benchmark script (`tests/run_benchmark.ps1`) for cross-platform compatibility.
+- **chore**: Removed developer comments from `tests/run_benchmark.sh`.
+- **Files**: `tests/run_benchmark.ps1`, `tests/run_benchmark.sh`
+- **Verification**: `bash tests/run_benchmark.sh` passed, manual verification of PS1 logic.
+
 ## 4. Active Context
 
 - **Current Sprint**: Modern Web UI, PDF tools, and Image tools (HEIC to JPEG).

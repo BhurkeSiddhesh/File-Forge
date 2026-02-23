@@ -1,5 +1,4 @@
 #!/bin/bash
-# @jules: We should probably provide a .ps1 or .bat version of this for Windows users.
 set -e
 
 # Setup
