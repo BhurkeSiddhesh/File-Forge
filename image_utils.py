@@ -1,33 +1,13 @@
 """
 Image conversion utilities for File Forge.
 """
-import io
 from pathlib import Path
+import io
 from PIL import Image, ImageOps
 import pillow_heif
 
 # Register HEIF opener with Pillow
 pillow_heif.register_heif_opener()
-
-
-def _preprocess_image(img: Image.Image) -> Image.Image:
-    """
-    Common preprocessing for images: normalize orientation and convert to RGB.
-    
-    Args:
-        img: PIL Image object
-    
-    Returns:
-        Preprocessed PIL Image (oriented correctly, RGB mode)
-    """
-    # Normalize orientation (handle EXIF tags)
-    img = ImageOps.exif_transpose(img)
-    
-    # Convert RGBA or palette mode to RGB for JPEG compatibility
-    if img.mode in ("RGBA", "P"):
-        img = img.convert("RGB")
-    
-    return img
 
 
 def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
@@ -46,7 +26,12 @@ def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
     output_file = Path(output_dir) / f"{input_file.stem}.jpg"
     
     with Image.open(input_file) as img:
-        img = _preprocess_image(img)
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+        
+        # Convert RGBA or palette mode to RGB for JPEG compatibility
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
         img.save(output_file, "JPEG", quality=quality)
     
     return str(output_file)
@@ -76,7 +61,13 @@ def resize_image(input_path: str, output_dir: str, mode: str,
     output_file = Path(output_dir) / f"{input_file.stem}_resized.jpg"
     
     with Image.open(input_file) as img:
-        img = _preprocess_image(img)
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+
+        # Convert to RGB if needed
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+            
         original_width, original_height = img.size
 
         if mode == 'dimensions':
@@ -123,12 +114,10 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             current_quality = 95
             buffer = io.BytesIO()
             img.save(buffer, "JPEG", quality=current_quality)
+
             while buffer.tell() > target_bytes:
                 if current_quality > 60:
                     current_quality -= 5
-                    buffer.seek(0)
-                    buffer.truncate()
-                    img.save(buffer, "JPEG", quality=current_quality)
                 else:
                     # Quality is low, start shrinking dimensions
                     current_width, current_height = img.size
@@ -140,11 +129,13 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                         break # Stop if image gets too small
                         
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    # Reset quality slightly when resizing to allow better compression
-                    buffer.seek(0)
-                    buffer.truncate()
-                    img.save(buffer, "JPEG", quality=current_quality)
 
+                # Check size with new parameters
+                buffer.seek(0)
+                buffer.truncate()
+                img.save(buffer, "JPEG", quality=current_quality)
+
+            # Write final result to disk
             with open(output_file, "wb") as f:
                 f.write(buffer.getvalue())
 
@@ -176,8 +167,13 @@ def crop_image(input_path: str, output_dir: str,
     output_file = Path(output_dir) / f"{input_file.stem}_cropped.jpg"
     
     with Image.open(input_file) as img:
-        img = _preprocess_image(img)
-        
+        # Normalize orientation (handle EXIF tags)
+        img = ImageOps.exif_transpose(img)
+
+        # Convert to RGB if needed
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+            
         # Ensure crop box is within bounds
         img_width, img_height = img.size
         x = max(0, x)
