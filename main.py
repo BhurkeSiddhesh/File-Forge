@@ -1,41 +1,19 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Security
-from fastapi.security import APIKeyHeader, APIKeyQuery
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from security_utils import secure_filename
 import shutil
 import os
-import secrets
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
-from image_utils import heic_to_jpeg, resize_image, crop_image
-import traceback
-import json
+from image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
-
-# --- Authentication Logic ---
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 @app.on_event("startup")
 async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
     print("Initializing AI Models... This may take a while on first run.")
-
-    # Auth Setup
-    api_key = os.getenv("FILE_FORGE_API_KEY")
-    if not api_key:
-        api_key = secrets.token_urlsafe(32)
-        print("=" * 64)
-        print(f"WARNING: No FILE_FORGE_API_KEY set.")
-        print(f"Generated temporary API Key: {api_key}")
-        print(f"Access the web UI and enter this key when prompted.")
-        print("=" * 64)
-    app.state.api_key = api_key
-
     try:
         from paddleocr import PPStructure
         # Define explicit model paths to ensure ONNX models are found
@@ -60,14 +38,6 @@ async def startup_event():
     except Exception as e:
         print(f"Warning: AI Model initialization failed: {e}")
 
-async def get_api_key(
-    api_key_header: str = Security(api_key_header),
-    api_key_query: str = Security(api_key_query)
-):
-    key = api_key_header or api_key_query
-    if hasattr(app.state, "api_key") and key == app.state.api_key:
-        return key
-    raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 # Ensure directories exist
 BASE_DIR = Path(__file__).parent
@@ -84,10 +54,11 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def read_index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
-@app.post("/api/pdf/remove-password", dependencies=[Depends(get_api_key)])
+@app.post("/api/pdf/remove-password")
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -103,11 +74,12 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
             except PermissionError:
                 pass  # Windows file locking - will be cleaned up later
 
-@app.post("/api/pdf/convert-to-word", dependencies=[Depends(get_api_key)])
+@app.post("/api/pdf/convert-to-word")
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
-    print(f"[DEBUG] Converting: {safe_name}, use_ai={use_ai}, password={'***' if password else 'None'}")
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
+    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -126,6 +98,7 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
         print(f"[DEBUG] Conversion successful: {output_path}")
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
+        import traceback
         print(f"[ERROR] Conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -138,12 +111,13 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/heic-to-jpeg", dependencies=[Depends(get_api_key)])
+@app.post("/api/image/heic-to-jpeg")
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
-    print(f"[DEBUG] Converting HEIC: {safe_name}, quality={quality}")
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
+    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -151,6 +125,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
+        import traceback
         print(f"[ERROR] HEIC conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -162,7 +137,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/resize", dependencies=[Depends(get_api_key)])
+@app.post("/api/image/resize")
 async def api_resize_image(
     file: UploadFile = File(...),
     mode: str = Form(...),
@@ -172,13 +147,15 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
-    print(f"[DEBUG] Resizing image: {safe_name}, mode={mode}")
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
+    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        from image_utils import resize_image
         output_path = resize_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -190,6 +167,7 @@ async def api_resize_image(
         )
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
+        import traceback
         print(f"[ERROR] Image resize failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -201,7 +179,7 @@ async def api_resize_image(
                 pass
 
 
-@app.post("/api/image/crop", dependencies=[Depends(get_api_key)])
+@app.post("/api/image/crop")
 async def api_crop_image(
     file: UploadFile = File(...),
     x: int = Form(...),
@@ -210,13 +188,15 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
-    print(f"[DEBUG] Cropping image: {safe_name}, x={x}, y={y}, w={width}, h={height}")
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
+    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        from image_utils import crop_image
         output_path = crop_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -224,6 +204,7 @@ async def api_crop_image(
         )
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
+        import traceback
         print(f"[ERROR] Image crop failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -235,15 +216,17 @@ async def api_crop_image(
                 pass
 
 
-@app.post("/api/workflow/execute", dependencies=[Depends(get_api_key)])
+@app.post("/api/workflow/execute")
 async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
+    import json
     from fastapi.responses import StreamingResponse
     
-    safe_name = secure_filename(file.filename)
-    temp_path = UPLOAD_DIR / safe_name
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
     
-    print(f"[DEBUG] Workflow started: {safe_name}, steps_len={len(steps)}")
+    print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
     
     # Parse steps JSON
     try:
@@ -272,6 +255,10 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 yield f"data: {json.dumps({'event': 'step_start', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
                 
                 print(f"[DEBUG] Step {i+1}: {step_type}")
+
+                # Artificial delay to ensure UI updates are visible
+                import asyncio
+                await asyncio.sleep(1.0)
                 
                 if step_type == 'remove_password':
                     password = config.get('password', '')
@@ -296,6 +283,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'resize_image':
+                    from image_utils import resize_image
                     mode = config.get('mode', 'percentage')
                     percentage = config.get('percentage', 50)
                     output_path = await run_in_threadpool(
@@ -308,6 +296,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'crop_image':
+                    from image_utils import crop_image
                     x = config.get('x', 0)
                     y = config.get('y', 0)
                     width = config.get('width', 100)
@@ -331,6 +320,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
             yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
             
         except Exception as e:
+            import traceback
             print(f"[ERROR] Workflow failed: {e}")
             traceback.print_exc()
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
@@ -354,12 +344,13 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
-@app.get("/api/download/{filename}", dependencies=[Depends(get_api_key)])
+@app.get("/api/download/{filename}")
 async def download_file(filename: str):
-    safe_name = secure_filename(filename)
-    file_path = OUTPUT_DIR / safe_name
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(filename.replace("\\", "/")).name
+    file_path = OUTPUT_DIR / safe_filename
     if file_path.exists():
-        return FileResponse(file_path, filename=safe_name)
+        return FileResponse(file_path, filename=filename)
     raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
