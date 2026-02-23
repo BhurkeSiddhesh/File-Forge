@@ -14,12 +14,9 @@ function showDrillDown(tool) {
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {
         document.getElementById('home-page').style.display = 'none';
-        const page = document.getElementById(pageId);
-        page.style.display = 'block';
+        document.getElementById(pageId).style.display = 'block';
         setTimeout(() => {
-            page.classList.add('active');
-            page.setAttribute('tabindex', '-1');
-            page.focus({ preventScroll: true });
+            document.getElementById(pageId).classList.add('active');
         }, 50);
     }, 500);
 }
@@ -35,12 +32,9 @@ function showHome() {
     resetUI();
     setTimeout(() => {
         document.getElementById(pageId).style.display = 'none';
-        const home = document.getElementById('home-page');
-        home.style.display = 'block';
+        document.getElementById('home-page').style.display = 'block';
         setTimeout(() => {
-            home.classList.add('active');
-            home.setAttribute('tabindex', '-1');
-            home.focus({ preventScroll: true });
+            document.getElementById('home-page').classList.add('active');
         }, 50);
     }, 500);
 }
@@ -682,19 +676,10 @@ function initWorkflowBuilder() {
             item.style.opacity = '1';
         };
 
-        // Add click handler for accessibility
+        // A11y: Click to add step
         item.onclick = () => {
             addStepToWorkflow(item.dataset.stepType, item.dataset.stepLabel, item.dataset.stepIcon);
         };
-
-        // Add keyboard handler explicitly (stops global handler from double-firing)
-        item.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                item.click();
-            }
-        });
     });
 
     // Canvas drop handling
@@ -785,8 +770,8 @@ function renderWorkflowSteps() {
         stepCard.innerHTML = `
             <i class="fas ${step.icon}"></i>
             <span class="step-label">${step.label}</span>
-            ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})" aria-label="Configure ${step.label}"><i class="fas fa-cog"></i></button>` : ''}
-            <button class="remove-step" onclick="removeStep(${index})" aria-label="Remove ${step.label}"><i class="fas fa-times"></i></button>
+            ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})"><i class="fas fa-cog"></i></button>` : ''}
+            <button class="remove-step" onclick="removeStep(${index})"><i class="fas fa-times"></i></button>
         `;
         container.appendChild(stepCard);
     });

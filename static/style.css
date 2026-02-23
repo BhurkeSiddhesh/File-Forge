@@ -704,16 +704,10 @@ body {
     user-select: none;
 }
 
-.step-item:hover,
-.step-item:focus-visible {
+.step-item:hover {
     border-color: var(--accent-workflow);
     background: rgba(139, 92, 246, 0.1);
     transform: translateY(-2px);
-}
-
-.step-item:focus-visible {
-    outline: 2px solid var(--accent-workflow);
-    outline-offset: 2px;
 }
 
 .step-item:active {
@@ -969,6 +963,7 @@ body {
     }
 }
 
+
 /* Workflow Progress Animation States */
 .workflow-step-card.processing {
     border-color: var(--accent-workflow);
@@ -1091,12 +1086,13 @@ body {
     font-size: 0.9rem;
     color: var(--text-muted);
 }
+
 /* Accessibility Focus Styles */
-:focus-visible {
+.tool-card:focus-visible,
+.action-card:focus-visible,
+.drop-zone:focus-visible,
+.step-item:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 4px;
-}
-
-.view:focus {
-    outline: none;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3);
 }
