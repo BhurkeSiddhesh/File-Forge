@@ -15,8 +15,9 @@ async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
     print("Initializing AI Models... This may take a while on first run.")
     try:
-        # Warmup the singleton PaddleOCR engine
+        # Initialize and cache the model via the singleton accessor
         get_paddle_engine()
+
         print("AI Models initialized successfully.")
     except Exception as e:
         print(f"Warning: AI Model initialization failed: {e}")
