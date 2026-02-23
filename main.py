@@ -1,9 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Security
+from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import shutil
 import os
-import uuid
+import secrets
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle
@@ -11,10 +12,27 @@ from image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
 
+# --- Authentication Logic ---
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+api_key_query = APIKeyQuery(name="api_key", auto_error=False)
+
 @app.on_event("startup")
 async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
     print("Initializing AI Models... This may take a while on first run.")
+
+    # Auth Setup
+    api_key = os.getenv("FILE_FORGE_API_KEY")
+    if not api_key:
+        api_key = secrets.token_urlsafe(32)
+        print("=" * 64)
+        print(f"WARNING: No FILE_FORGE_API_KEY set.")
+        print(f"Generated temporary API Key: {api_key}")
+        print(f"Access the web UI and enter this key when prompted.")
+        print("=" * 64)
+    app.state.api_key = api_key
+
     try:
         from paddleocr import PPStructure
         # Define explicit model paths to ensure ONNX models are found
@@ -39,6 +57,14 @@ async def startup_event():
     except Exception as e:
         print(f"Warning: AI Model initialization failed: {e}")
 
+async def get_api_key(
+    api_key_header: str = Security(api_key_header),
+    api_key_query: str = Security(api_key_query)
+):
+    key = api_key_header or api_key_query
+    if hasattr(app.state, "api_key") and key == app.state.api_key:
+        return key
+    raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 # Ensure directories exist
 BASE_DIR = Path(__file__).parent
@@ -55,13 +81,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def read_index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
-@app.post("/api/pdf/remove-password")
+@app.post("/api/pdf/remove-password", dependencies=[Depends(get_api_key)])
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
-
+    temp_path = UPLOAD_DIR / file.filename
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -77,14 +99,10 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
             except PermissionError:
                 pass  # Windows file locking - will be cleaned up later
 
-@app.post("/api/pdf/convert-to-word")
+@app.post("/api/pdf/convert-to-word", dependencies=[Depends(get_api_key)])
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
-
-    print(f"[DEBUG] Converting: {file.filename} -> {temp_filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -116,15 +134,11 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/heic-to-jpeg")
+@app.post("/api/image/heic-to-jpeg", dependencies=[Depends(get_api_key)])
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
-
-    print(f"[DEBUG] Converting HEIC: {file.filename} -> {temp_filename}, quality={quality}")
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -144,7 +158,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
                 pass  # Windows file locking - will be cleaned up later
 
 
-@app.post("/api/image/resize")
+@app.post("/api/image/resize", dependencies=[Depends(get_api_key)])
 async def api_resize_image(
     file: UploadFile = File(...),
     mode: str = Form(...),
@@ -154,12 +168,8 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
-
-    print(f"[DEBUG] Resizing image: {file.filename} -> {temp_filename}, mode={mode}")
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -188,7 +198,7 @@ async def api_resize_image(
                 pass
 
 
-@app.post("/api/image/crop")
+@app.post("/api/image/crop", dependencies=[Depends(get_api_key)])
 async def api_crop_image(
     file: UploadFile = File(...),
     x: int = Form(...),
@@ -197,12 +207,8 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
-
-    print(f"[DEBUG] Cropping image: {file.filename} -> {temp_filename}, x={x}, y={y}, w={width}, h={height}")
+    temp_path = UPLOAD_DIR / file.filename
+    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -227,18 +233,15 @@ async def api_crop_image(
                 pass
 
 
-@app.post("/api/workflow/execute")
+@app.post("/api/workflow/execute", dependencies=[Depends(get_api_key)])
 async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
     import json
     from fastapi.responses import StreamingResponse
     
-    # Generate unique filename to prevent race conditions
-    safe_filename = Path(file.filename).name
-    temp_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / temp_filename
+    temp_path = UPLOAD_DIR / file.filename
     
-    print(f"[DEBUG] Workflow started: {file.filename} -> {temp_filename}, steps={steps}")
+    print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
     
     # Parse steps JSON
     try:
@@ -356,23 +359,11 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
-@app.get("/api/download/{filename}")
+@app.get("/api/download/{filename}", dependencies=[Depends(get_api_key)])
 async def download_file(filename: str):
-    # Sanitize filename to prevent path traversal
-    # We strip any directory components using .name and handle backslashes
-    clean_filename = Path(filename.replace("\\", "/")).name
-
-    # Resolve the path to ensure it's absolute
-    file_path = (OUTPUT_DIR / clean_filename).resolve()
-
-    # Check if the resolved path is within OUTPUT_DIR
-    if not file_path.is_relative_to(OUTPUT_DIR.resolve()):
-        # This branch should be unreachable with the sanitization above,
-        # but serves as a defense-in-depth measure.
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if file_path.exists() and file_path.is_file():
-        return FileResponse(file_path, filename=clean_filename)
+    file_path = OUTPUT_DIR / filename
+    if file_path.exists():
+        return FileResponse(file_path, filename=filename)
     raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":

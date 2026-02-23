@@ -1,3 +1,75 @@
+
+// === Authentication ===
+
+function getApiKey() {
+    return localStorage.getItem('fileForgeApiKey');
+}
+
+function saveApiKey(key) {
+    localStorage.setItem('fileForgeApiKey', key);
+}
+
+function showLoginModal() {
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function hideLoginModal() {
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+const loginBtn = document.getElementById('login-submit-btn');
+if (loginBtn) {
+    loginBtn.onclick = () => {
+        const key = document.getElementById('api-key-input').value;
+        if (key) {
+            saveApiKey(key);
+            hideLoginModal();
+            alert("API Key saved. Please retry your action.");
+        }
+    };
+}
+
+const keyInput = document.getElementById('api-key-input');
+if (keyInput) {
+    keyInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('login-submit-btn').click();
+        }
+    });
+}
+
+async function fetchWithAuth(url, options = {}) {
+    const headers = options.headers || {};
+    const key = getApiKey();
+    if (key) {
+        headers['X-API-Key'] = key;
+    }
+    options.headers = headers;
+
+    const response = await fetch(url, options);
+
+    if (response.status === 401 || response.status === 403) {
+        showLoginModal();
+        throw new Error("Authentication required. Please enter your API Key.");
+    }
+
+    return response;
+}
+
+function updateDownloadLink(element, filename) {
+    if (!element) return;
+    const key = getApiKey();
+    let url = `/api/download/${filename}`;
+    if (key) {
+        url += `?api_key=${encodeURIComponent(key)}`;
+    }
+    element.href = url;
+}
+
+// === End Authentication ===
+
 let selectedFile = null;
 let selectedImageFile = null;
 let currentTool = null;
@@ -152,7 +224,7 @@ async function processAction(url, text, formData = null) {
     }
 
     try {
-        const response = await fetch(url, {
+        const response = await fetchWithAuth(url, {
             method: 'POST',
             body: formData
         });
@@ -186,7 +258,7 @@ function showResult(filename, message) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    downloadLink.href = `/api/download/${filename}`;
+    updateDownloadLink(downloadLink, filename);
 }
 
 function resetUI() {
@@ -300,7 +372,7 @@ async function processImageAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(url, {
+        const response = await fetchWithAuth(url, {
             method: 'POST',
             body: formData
         });
@@ -332,7 +404,7 @@ function showImageResult(filename, message) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    downloadLink.href = `/api/download/${filename}`;
+    updateDownloadLink(downloadLink, filename);
 }
 
 // --- Image Resize & Crop Functions ---
@@ -407,7 +479,7 @@ async function initCropper() {
             formData.append('file', selectedImageFile);
             formData.append('quality', 80); // Faster preview
 
-            const response = await fetch('/api/image/heic-to-jpeg', {
+            const response = await fetchWithAuth('/api/image/heic-to-jpeg', {
                 method: 'POST',
                 body: formData
             });
@@ -434,7 +506,7 @@ async function initCropper() {
                     scalable: false,
                 });
             };
-            image.src = `/api/download/${data.filename}`;
+            image.src = `/api/download/${data.filename}?api_key=${encodeURIComponent(getApiKey() || "")}`;
 
         } catch (e) {
             console.error(e);
@@ -549,7 +621,7 @@ async function resizeImage() {
     statusText.innerText = "Resizing image...";
 
     try {
-        const response = await fetch('/api/image/resize', {
+        const response = await fetchWithAuth('/api/image/resize', {
             method: 'POST',
             body: formData
         });
@@ -560,7 +632,7 @@ async function resizeImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${data.message}: ${data.filename}`;
-            downloadLink.href = `/api/download/${data.filename}`;
+            updateDownloadLink(downloadLink, data.filename);
             downloadLink.innerText = `Download ${data.filename}`;
         } else {
             throw new Error(data.detail || 'Resize failed');
@@ -600,7 +672,7 @@ async function cropImage() {
     statusText.innerText = "Cropping image...";
 
     try {
-        const response = await fetch('/api/image/crop', {
+        const response = await fetchWithAuth('/api/image/crop', {
             method: 'POST',
             body: formData
         });
@@ -611,7 +683,7 @@ async function cropImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${respData.message}: ${respData.filename}`;
-            downloadLink.href = `/api/download/${respData.filename}`;
+            updateDownloadLink(downloadLink, respData.filename);
             downloadLink.innerText = `Download ${respData.filename}`;
         } else {
             throw new Error(respData.detail || 'Crop failed');
@@ -873,7 +945,7 @@ async function runWorkflow() {
     }))));
 
     try {
-        const response = await fetch('/api/workflow/execute', {
+        const response = await fetchWithAuth('/api/workflow/execute', {
             method: 'POST',
             body: formData
         });
@@ -933,7 +1005,7 @@ function handleWorkflowEvent(data, statusDisplay, resultDisplay) {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             document.getElementById('workflow-result-message').textContent = `${data.message}: ${data.filename}`;
-            document.getElementById('workflow-download-link').href = `/api/download/${data.filename}`;
+            updateDownloadLink(document.getElementById('workflow-download-link'), data.filename);
             // Keep completed states visible for a moment
             setTimeout(() => clearStepStates(), 3000);
             break;
