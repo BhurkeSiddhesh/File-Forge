@@ -2,7 +2,7 @@ import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
 import os
-from utils import cleanup_temp_file
+import threading
 
 # Disable MKL-DNN/OneDNN to fix compatibility issues on Windows
 # Must be set BEFORE importing paddle/paddleocr
@@ -21,53 +21,38 @@ from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes, 
 from docxcompose.composer import Composer
 from docx import Document as Document_docx
 import shutil
-import threading
 
 
 _PADDLE_ENGINE = None
 _ENGINE_LOCK = threading.Lock()
 
 def get_paddle_engine():
-    """Returns a singleton instance of the PaddleOCR engine."""
+    """Singleton accessor for PaddleOCR engine."""
     global _PADDLE_ENGINE
+    if _PADDLE_ENGINE is None:
+        with _ENGINE_LOCK:
+            if _PADDLE_ENGINE is None:
+                print(f"[AI] Initializing PaddleOCR engine...")
+                # Define explicit model paths to ensure ONNX models are found
+                # These must match what fix_models.py downloaded/converted (now copied to local models dir)
+                base_dir = Path(__file__).parent
+                paddle_dir = base_dir / "models"
+                layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
+                table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
+                det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
+                rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
 
-    # Double-checked locking
-    if _PADDLE_ENGINE is not None:
-        return _PADDLE_ENGINE
+                # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
+                # usage of use_onnx=True to bypass Paddle OneDNN issues
+                _PADDLE_ENGINE = PPStructure(recovery=True, lang='en', show_log=False, use_gpu=False,
+                                           enable_mkldnn=False, use_onnx=True,
+                                           layout_model_dir=str(layout_dir),
+                                           table_model_dir=str(table_dir),
+                                           det_model_dir=str(det_dir),
+                                           rec_model_dir=str(rec_dir))
+                print(f"[AI] PaddleOCR engine initialized")
 
-    with _ENGINE_LOCK:
-        if _PADDLE_ENGINE is not None:
-            return _PADDLE_ENGINE
-
-        print(f"[AI] Initializing PaddleOCR engine...")
-        # Define explicit model paths to ensure ONNX models are found
-        # These must match what fix_models.py downloaded/converted (now copied to local models dir)
-        base_dir = Path(__file__).parent
-        paddle_dir = base_dir / "models"
-        layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
-        table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
-        det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
-        rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
-
-        # Check if ONNX models exist (required for use_onnx=True)
-        if not (layout_dir / "model.onnx").exists():
-            error_msg = f"[AI] Error: PaddleOCR ONNX model missing at {layout_dir / 'model.onnx'}. Please run 'python fix_models.py' to setup models."
-            print(error_msg)
-            # Fail gracefully or raise error? Raising error ensures the issue is visible.
-            raise FileNotFoundError(error_msg)
-
-        # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
-        # usage of use_onnx=True to bypass Paddle OneDNN issues
-        _PADDLE_ENGINE = PPStructure(
-            recovery=True, lang='en', show_log=False, use_gpu=False,
-            enable_mkldnn=False, use_onnx=True,
-            layout_model_dir=str(layout_dir / "model.onnx"),
-            table_model_dir=str(table_dir / "model.onnx"),
-            det_model_dir=str(det_dir / "model.onnx"),
-            rec_model_dir=str(rec_dir / "model.onnx")
-        )
-        print(f"[AI] PaddleOCR engine initialized")
-        return _PADDLE_ENGINE
+    return _PADDLE_ENGINE
 
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
@@ -144,6 +129,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
 
     try:
+        # Initialize PaddleOCR engine (Singleton)
         table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
@@ -208,9 +194,5 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             except PermissionError:
                 # Windows file locking - schedule for manual cleanup
                 print(f"Warning: Could not fully clean up {temp_dir} - some files may be locked")
-        
-        # Clean up decrypted temp file if it was created
-        if needs_cleanup:
-            cleanup_temp_file(Path(decrypted_path))
 
     return str(output_file)
