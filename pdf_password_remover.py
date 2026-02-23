@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 
-
 def remove_pdf_password(input_path: str, password: str, output_path: str = None) -> str:
     """
     Remove password protection from a PDF file.
@@ -48,7 +47,6 @@ def remove_pdf_password(input_path: str, password: str, output_path: str = None)
 
     # Open the PDF with password and save without encryption
     with pikepdf.open(input_file, password=password) as pdf:
-        # Save without encryption
         pdf.save(output_file)
     
     return str(output_file)

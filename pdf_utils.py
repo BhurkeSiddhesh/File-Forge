@@ -2,6 +2,7 @@ import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
 import os
+from utils import cleanup_temp_file
 
 # Disable MKL-DNN/OneDNN to fix compatibility issues on Windows
 # Must be set BEFORE importing paddle/paddleocr
@@ -207,5 +208,9 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             except PermissionError:
                 # Windows file locking - schedule for manual cleanup
                 print(f"Warning: Could not fully clean up {temp_dir} - some files may be locked")
+        
+        # Clean up decrypted temp file if it was created
+        if needs_cleanup:
+            cleanup_temp_file(Path(decrypted_path))
 
     return str(output_file)

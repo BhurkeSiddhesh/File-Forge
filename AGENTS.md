@@ -37,6 +37,16 @@
 
 ### 2026-02-05
 
+- **refactor**: Major code duplication elimination across the codebase (~45 lines removed)
+- **feat**: Created `utils.py` with common `process_uploaded_file()` and `cleanup_temp_file()` utilities
+- **refactor**: Extracted `_preprocess_image()` helper in `image_utils.py` to eliminate 3x duplication of EXIF/RGB conversion
+- **refactor**: Refactored all 5 API endpoints in `main.py` to use new utility functions (remove-password, convert-to-word, heic-to-jpeg, resize, crop)
+- **refactor**: Consolidated error handling, file cleanup, and debug logging patterns
+- **Files**: `utils.py` (new), `main.py`, `image_utils.py`, `pdf_utils.py`
+- **Verification**: All 22 tests passed (`pytest tests/ -v`)
+
+### 2026-02-05
+
 - **fix**: Merged fix for transparent image conversion (RGBA/P modes) in `image_utils.py` from `palette/a11y` branch.
 - **Files**: `image_utils.py`
 - **Verification**: `pytest tests/test_image_utils.py` passed.
