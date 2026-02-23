@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Sec
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from security_utils import secure_filename
 import shutil
 import os
 import secrets
@@ -83,7 +84,8 @@ async def read_index():
 
 @app.post("/api/pdf/remove-password", dependencies=[Depends(get_api_key)])
 async def api_remove_password(file: UploadFile = File(...), password: str = Form(...)):
-    temp_path = UPLOAD_DIR / file.filename
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -101,8 +103,9 @@ async def api_remove_password(file: UploadFile = File(...), password: str = Form
 
 @app.post("/api/pdf/convert-to-word", dependencies=[Depends(get_api_key)])
 async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(False), password: str = Form(None)):
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
+    print(f"[DEBUG] Converting: {safe_name}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -137,8 +140,9 @@ async def api_convert_to_word(file: UploadFile = File(...), use_ai: bool = Form(
 @app.post("/api/image/heic-to-jpeg", dependencies=[Depends(get_api_key)])
 async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)):
     """Convert HEIC/HEIF image to JPEG format."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
+    print(f"[DEBUG] Converting HEIC: {safe_name}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -168,8 +172,9 @@ async def api_resize_image(
     target_size_kb: int = Form(None)
 ):
     """Resize image based on parameters."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
+    print(f"[DEBUG] Resizing image: {safe_name}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -207,8 +212,9 @@ async def api_crop_image(
     height: int = Form(...)
 ):
     """Crop image based on coordinates."""
-    temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
+    print(f"[DEBUG] Cropping image: {safe_name}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -239,9 +245,10 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     import json
     from fastapi.responses import StreamingResponse
     
-    temp_path = UPLOAD_DIR / file.filename
+    safe_name = secure_filename(file.filename)
+    temp_path = UPLOAD_DIR / safe_name
     
-    print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
+    print(f"[DEBUG] Workflow started: {safe_name}, steps_len={len(steps)}")
     
     # Parse steps JSON
     try:
@@ -361,9 +368,10 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
 
 @app.get("/api/download/{filename}", dependencies=[Depends(get_api_key)])
 async def download_file(filename: str):
-    file_path = OUTPUT_DIR / filename
+    safe_name = secure_filename(filename)
+    file_path = OUTPUT_DIR / safe_name
     if file_path.exists():
-        return FileResponse(file_path, filename=filename)
+        return FileResponse(file_path, filename=safe_name)
     raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
