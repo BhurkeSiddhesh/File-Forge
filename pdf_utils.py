@@ -21,11 +21,11 @@ from docxcompose.composer import Composer
 from docx import Document as Document_docx
 import shutil
 
-
+# Global cache for PaddleOCR engine
 _PADDLE_ENGINE = None
 
 def get_paddle_engine():
-    """Singleton accessor for PaddleOCR engine."""
+    """Returns a singleton instance of the PaddleOCR engine."""
     global _PADDLE_ENGINE
     if _PADDLE_ENGINE is None:
         print(f"[AI] Initializing PaddleOCR engine...")
@@ -47,9 +47,7 @@ def get_paddle_engine():
                                    det_model_dir=str(det_dir),
                                    rec_model_dir=str(rec_dir))
         print(f"[AI] PaddleOCR engine initialized")
-
     return _PADDLE_ENGINE
-
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     """Removes password from PDF and saves to output_dir."""
@@ -125,7 +123,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
 
     try:
-        # Initialize PaddleOCR engine (Singleton)
+        # Get cached PaddleOCR engine
         table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
