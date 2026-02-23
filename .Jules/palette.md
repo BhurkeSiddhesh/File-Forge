@@ -1,3 +1,3 @@
-## 2026-02-04 - Keyboard Accessibility for Custom Inputs
-**Learning:** `display: none` on form inputs removes them from the accessibility tree, making custom toggles/switches unreachable for keyboard users.
-**Action:** Use a `.visually-hidden` utility class (opacity: 0, absolute position) to hide the native input while keeping it focusable, and use `:focus-visible` + adjacent sibling selector to style the custom control.
+## 2026-02-04 - SPA Focus Management
+**Learning:** In Single Page Applications (SPAs) built with vanilla JS, changing "pages" (visibility toggles) does not move keyboard focus, leaving screen reader users lost in the previous container or body.
+**Action:** Always programmatically move focus to the new container (with `tabindex="-1"`) or the main heading immediately after a route transition completes.

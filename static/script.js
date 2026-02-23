@@ -14,9 +14,12 @@ function showDrillDown(tool) {
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {
         document.getElementById('home-page').style.display = 'none';
-        document.getElementById(pageId).style.display = 'block';
+        const page = document.getElementById(pageId);
+        page.style.display = 'block';
         setTimeout(() => {
-            document.getElementById(pageId).classList.add('active');
+            page.classList.add('active');
+            page.setAttribute('tabindex', '-1');
+            page.focus({ preventScroll: true });
         }, 50);
     }, 500);
 }
@@ -32,9 +35,12 @@ function showHome() {
     resetUI();
     setTimeout(() => {
         document.getElementById(pageId).style.display = 'none';
-        document.getElementById('home-page').style.display = 'block';
+        const home = document.getElementById('home-page');
+        home.style.display = 'block';
         setTimeout(() => {
-            document.getElementById('home-page').classList.add('active');
+            home.classList.add('active');
+            home.setAttribute('tabindex', '-1');
+            home.focus({ preventScroll: true });
         }, 50);
     }, 500);
 }
