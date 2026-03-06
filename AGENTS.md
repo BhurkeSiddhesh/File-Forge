@@ -36,6 +36,13 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-03-06
+
+- **feat**: Cleaned up the repository by bulk-merging all 25 outstanding feature branches (including `pdf_updates`, `codex/feature-cut-pdf-pages`, and all security/perf branches) cleanly into `main`.
+- **chore**: Deleted all 25 feature branches both locally and remotely from the GitHub `origin`. The repository is now perfectly aligned on the `main` branch.
+- **Files**: N/A (Complete Git branch operational cleanup)
+- **Verification**: Verified via `git branch -a` that `main` is the only remaining branch.
+
 ### 2026-02-23
 
 - **feat**: Bulk merged 26 PRs covering accessibility, performance (PaddleOCR caching, threadpooling), and security fixes.
