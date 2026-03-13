@@ -5,8 +5,8 @@ python-multipart
 pdf2docx
 pytest
 httpx
-paddlepaddle==2.6.2
-paddleocr==2.8.0
+paddlepaddle
+paddleocr
 opencv-python-headless
 docxcompose
 PyMuPDF
