@@ -5,9 +5,9 @@ set -o errexit
 # Upgrade pip and build tools
 python -m pip install --upgrade pip setuptools wheel
 
-# Install paddlepaddle from the official mirror to ensure Linux wheel resolution
-# We use Python 3.9 (required to be set in Render Env Vars) for best compatibility
-python -m pip install paddlepaddle==2.6.2 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# Install paddlepaddle from the official mirror FIRST to ensure success on Render
+# This is explicitly for Python 3.9 (production target)
+python -m pip install paddlepaddle==2.6.2 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ --no-cache-dir
 
-# Install the rest of the dependencies
+# Install the rest of the dependencies from requirements.txt
 python -m pip install -r requirements.txt
