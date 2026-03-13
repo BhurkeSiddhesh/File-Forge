@@ -7,7 +7,7 @@ class TestPaddleSingleton(unittest.TestCase):
         # Reset the singleton before each test
         pdf_utils._PADDLE_ENGINE = None
 
-    @patch('scripts.pdf_utils.PPStructure')
+    @patch('paddleocr.PPStructure')
     def test_get_paddle_engine_singleton(self, mock_ppstructure):
         # Configure the mock to return a dummy object
         mock_instance = MagicMock()
