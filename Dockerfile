@@ -1,5 +1,5 @@
-# Use a full Python runtime instead of slim for better wheel compatibility
-FROM python:3.10
+# Use Python 3.9 to maintain compatibility with Paddle's dependency tree (e.g. older Numpy)
+FROM python:3.9
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -23,7 +23,10 @@ WORKDIR /app
 # Upgrade pip and install wheel/setuptools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies
+# Install paddlepaddle separately from official mirror to ensure resolution on Render
+RUN pip install paddlepaddle==2.6.2 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+
+# Install remaining Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
