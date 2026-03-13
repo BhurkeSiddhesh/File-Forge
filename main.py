@@ -1,3 +1,4 @@
+from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -67,8 +68,8 @@ async def verify_api_key(
 
 async def require_auth(
     request: Request,
-    api_key_header: str | None = Header(default=None, alias="X-API-Key"),
-    api_key_query: str | None = None,
+    api_key_header: Optional[str] = Header(default=None, alias="X-API-Key"),
+    api_key_query: Optional[str] = None,
 ):
     """Require a valid API key via X-API-Key header. Reads expected key from app.state or env var."""
     import os as _os
