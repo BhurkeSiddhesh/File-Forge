@@ -7,6 +7,8 @@ services:
     dockerContext: .
     dockerfilePath: ./Dockerfile
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.10"
       - key: FILE_FORGE_API_KEY
         generateValue: true
       - key: PORT

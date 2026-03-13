@@ -1,5 +1,5 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# Use a full Python runtime instead of slim for better wheel compatibility
+FROM python:3.10
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -12,10 +12,16 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libgomp1 \
     tesseract-ocr \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
+
+# Upgrade pip and install wheel/setuptools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python dependencies
 COPY requirements.txt .

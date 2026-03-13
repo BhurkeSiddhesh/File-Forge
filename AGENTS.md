@@ -37,6 +37,7 @@
 > **CRITICAL**: Add entry here BEFORE every commit.
 ### 2026-03-14
 
+- **fix**: Fixed Render build failure by switching to a full `python:3.10` image and upgrading `pip`/`setuptools`. Added missing system libraries (`libsm6`, `libxext6`) required by OpenCV.
 - **feat**: Added `Dockerfile` and `render.yaml` for one-click deployment to Render.
 - **docs**: Updated `README.md` with detailed deployment instructions and corrected project structure.
 - **Files**: `Dockerfile`, `render.yaml`, `README.md`
