@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: file-forge
+    env: docker
+    plan: starter # Recommend starter plan because PaddleOCR needs > 512MB RAM
+    region: ohio
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: FILE_FORGE_API_KEY
+        generateValue: true
+      - key: PORT
+        value: 8000
+    # Enable persistence for uploads/outputs if needed (requires paid plan)
+    # disk:
+    #   name: data
+    #   mountPath: /app/outputs
+    #   sizeGB: 1

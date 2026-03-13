@@ -49,13 +49,29 @@ python -m pytest
 
 The tests automatically create temporary files for testing and clean them up afterwards, ensuring no test data is left behind.
 
+## Deployment
+
+### Deploy to Render
+
+1. **Connect GitHub**: Log in to [Render](https://render.com/) and connect your GitHub repository.
+2. **Select Blueprint**: Render will automatically detect the `render.yaml` file.
+3. **Deploy**: Follow the prompts to create the "File Forge" web service.
+
+> [!IMPORTANT]
+> Because this app uses **PaddleOCR** for high-quality PDF conversion, it requires at least **1GB or 2GB of RAM** (the Render **Starter** plan or higher). The Free Tier (512MB) may crash during AI model initialization.
+
 ## Project Structure
 
 - `main.py`: The FastAPI application entry point.
-- `pdf_utils.py`: Utility functions for PDF processing using `pikepdf` and `pdf2docx`.
+- `scripts/`:
+    - `pdf_utils.py`: Utility functions for PDF processing.
+    - `image_utils.py`: HEIC conversion and image processing.
+    - `utils.py`: Common shared utilities.
 - `static/`: Contains static assets (HTML, CSS, JS).
-- `uploads/`: Directory where uploaded files are temporarily stored (created automatically).
-- `outputs/`: Directory where processed files are saved (created automatically).
-- `tests/`: Contains the test suite.
+- `uploads/`: Temporary storage for raw uploads.
+- `outputs/`: Storage for processed files.
+- `tests/`: Comprehensive test suite.
+- `Dockerfile`: Configuration for containerized deployment.
+- `render.yaml`: Configuration for one-click Render deployment.
 
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/BhurkeSiddhesh/File-Forge?utm_source=oss&utm_medium=github&utm_campaign=BhurkeSiddhesh%2FFile-Forge&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)

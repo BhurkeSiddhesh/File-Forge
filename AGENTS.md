@@ -37,6 +37,13 @@
 > **CRITICAL**: Add entry here BEFORE every commit.
 ### 2026-03-14
 
+- **feat**: Added `Dockerfile` and `render.yaml` for one-click deployment to Render.
+- **docs**: Updated `README.md` with detailed deployment instructions and corrected project structure.
+- **Files**: `Dockerfile`, `render.yaml`, `README.md`
+- **Verification**: Local linting of YAML and Dockerfile.
+
+### 2026-03-14
+
 - **refactor**: Moved utility scripts (`*_utils.py`, `pdf_password_remover.py`, `fix_models.py`, `get_diffs.py`) to `scripts/` directory to align with project structure documented in `AGENTS.md`. 
 - **chore**: Updated import references across `main.py` and `tests/`.
 - **chore**: Cleaned up unneeded tracking files by removing `server.log`, `fix_patches.py`, `test_output.txt` and updating `.gitignore`.
