@@ -436,4 +436,6 @@ async def download_file(filename: str, _auth: str = Depends(require_auth_or_quer
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    import os
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
