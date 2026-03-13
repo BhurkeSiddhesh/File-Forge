@@ -2,14 +2,14 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sys
 
-# We need to make sure we can import pdf_utils
+# We need to make sure we can import scripts.pdf_utils as pdf_utils
 # It's in the root, so it should be fine if we run pytest from root.
 
 def test_paddle_engine_singleton():
     """Verify that get_paddle_engine returns the same instance and initializes only once."""
 
     # Import pdf_utils to access the module
-    import pdf_utils
+    import scripts.pdf_utils as pdf_utils
 
     # Check if the function exists (it won't initially)
     if not hasattr(pdf_utils, 'get_paddle_engine'):
@@ -20,7 +20,7 @@ def test_paddle_engine_singleton():
         pdf_utils._PADDLE_ENGINE = None
 
     # Patch PPStructure inside pdf_utils
-    with patch('pdf_utils.PPStructure') as MockPPStructure:
+    with patch('scripts.pdf_utils.PPStructure') as MockPPStructure:
         # Setup the mock to return a specific instance
         mock_instance = MagicMock()
         MockPPStructure.return_value = mock_instance

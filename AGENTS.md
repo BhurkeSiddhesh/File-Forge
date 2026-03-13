@@ -35,6 +35,13 @@
 ## 5. Change Log (Reverse Chronological)
 
 > **CRITICAL**: Add entry here BEFORE every commit.
+### 2026-03-14
+
+- **refactor**: Moved utility scripts (`*_utils.py`, `pdf_password_remover.py`, `fix_models.py`, `get_diffs.py`) to `scripts/` directory to align with project structure documented in `AGENTS.md`. 
+- **chore**: Updated import references across `main.py` and `tests/`.
+- **chore**: Cleaned up unneeded tracking files by removing `server.log`, `fix_patches.py`, `test_output.txt` and updating `.gitignore`.
+- **Files**: `scripts/*`, `main.py`, `tests/*`, `.gitignore`
+- **Verification**: `python -m pytest tests/` - all 41 passed.
 
 ### 2026-03-06
 

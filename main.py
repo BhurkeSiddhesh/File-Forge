@@ -7,8 +7,8 @@ import os
 import uuid
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
-from pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
-from image_utils import heic_to_jpeg
+from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
+from scripts.image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
 
@@ -236,7 +236,7 @@ async def api_resize_image(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        from image_utils import resize_image
+        from scripts.image_utils import resize_image
         output_path = resize_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -277,7 +277,7 @@ async def api_crop_image(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        from image_utils import crop_image
+        from scripts.image_utils import crop_image
         output_path = crop_image(
             str(temp_path), 
             str(OUTPUT_DIR), 
@@ -364,7 +364,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'resize_image':
-                    from image_utils import resize_image
+                    from scripts.image_utils import resize_image
                     mode = config.get('mode', 'percentage')
                     percentage = config.get('percentage', 50)
                     output_path = await run_in_threadpool(
@@ -377,7 +377,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                     current_file = Path(output_path)
                     
                 elif step_type == 'crop_image':
-                    from image_utils import crop_image
+                    from scripts.image_utils import crop_image
                     x = config.get('x', 0)
                     y = config.get('y', 0)
                     width = config.get('width', 100)

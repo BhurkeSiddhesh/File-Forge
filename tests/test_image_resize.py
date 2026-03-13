@@ -4,7 +4,7 @@ Tests for image resize functionality in image_utils.py.
 import pytest
 from pathlib import Path
 from PIL import Image
-from image_utils import resize_image
+from scripts.image_utils import resize_image
 import os
 
 @pytest.fixture(scope="session")

@@ -5,7 +5,7 @@ import pytest
 import time
 from pathlib import Path
 from PIL import Image
-from image_utils import resize_image, heic_to_jpeg, crop_image, _prepare_image
+from scripts.image_utils import resize_image, heic_to_jpeg, crop_image, _prepare_image
 
 
 def test_prepare_image_helper_efficiency(tmp_path):

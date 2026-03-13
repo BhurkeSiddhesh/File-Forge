@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import pdf_utils
+import scripts.pdf_utils as pdf_utils
 import threading
 
 class TestPdfUtilsSingleton(unittest.TestCase):
@@ -8,7 +8,7 @@ class TestPdfUtilsSingleton(unittest.TestCase):
         # Reset the singleton before each test
         pdf_utils._PADDLE_ENGINE = None
 
-    @patch('pdf_utils.PPStructure')
+    @patch('scripts.pdf_utils.PPStructure')
     def test_get_paddle_engine_initializes_once(self, mock_ppstructure):
         """Test that get_paddle_engine initializes PPStructure exactly once."""
         # Setup mock return value
@@ -26,7 +26,7 @@ class TestPdfUtilsSingleton(unittest.TestCase):
         # Should still be called only once
         mock_ppstructure.assert_called_once()
 
-    @patch('pdf_utils.PPStructure')
+    @patch('scripts.pdf_utils.PPStructure')
     def test_get_paddle_engine_parameters(self, mock_ppstructure):
         """Test that PPStructure is initialized with correct parameters."""
         mock_instance = MagicMock()

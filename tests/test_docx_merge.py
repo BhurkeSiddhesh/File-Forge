@@ -1,6 +1,6 @@
 import pytest
 from docx import Document
-from pdf_utils import merge_docx_files
+from scripts.pdf_utils import merge_docx_files
 import zipfile
 import os
 

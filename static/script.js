@@ -311,8 +311,10 @@ function resetUI() {
     document.getElementById('extract-pages-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
-    document.getElementById('extract-pages-input')?.value = '';
-    document.getElementById('extract-password')?.value = '';
+    const extractInput = document.getElementById('extract-pages-input');
+    if (extractInput) extractInput.value = '';
+    const extractPwd = document.getElementById('extract-password');
+    if (extractPwd) extractPwd.value = '';
 
     // Reset image tools
     const imageFileInput = document.getElementById('image-file-input');

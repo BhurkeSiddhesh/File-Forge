@@ -1,13 +1,13 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import pdf_utils
+import scripts.pdf_utils as pdf_utils
 
 class TestPaddleSingleton(unittest.TestCase):
     def setUp(self):
         # Reset the singleton before each test
         pdf_utils._PADDLE_ENGINE = None
 
-    @patch('pdf_utils.PPStructure')
+    @patch('scripts.pdf_utils.PPStructure')
     def test_get_paddle_engine_singleton(self, mock_ppstructure):
         # Configure the mock to return a dummy object
         mock_instance = MagicMock()

@@ -3,7 +3,7 @@ Tests for image_utils module.
 """
 import pytest
 from pathlib import Path
-from image_utils import heic_to_jpeg
+from scripts.image_utils import heic_to_jpeg
 
 
 @pytest.fixture(scope="session")

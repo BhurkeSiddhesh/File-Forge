@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 import pikepdf
-from pdf_utils import remove_pdf_password, pdf_to_docx, extract_pdf_pages
+from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, extract_pdf_pages
 
 def test_remove_pdf_password(locked_pdf, tmp_path):
     """Test removing password from a PDF."""

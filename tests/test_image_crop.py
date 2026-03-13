@@ -4,7 +4,7 @@ Tests for image cropping functionality in image_utils.py.
 import pytest
 from pathlib import Path
 from PIL import Image
-from image_utils import crop_image
+from scripts.image_utils import crop_image
 
 @pytest.fixture(scope="session")
 def sample_crop_image(tmp_path_factory):
