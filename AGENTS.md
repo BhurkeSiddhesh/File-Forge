@@ -37,6 +37,8 @@
 > **CRITICAL**: Add entry here BEFORE every commit.
 ### 2026-03-14
 
+- **fix**: Fixed Render native build failure by creating a custom `build.sh` that installs PaddlePaddle from the official mirror.
+- **feat**: Implemented lazy-loading for PaddleOCR in `pdf_utils.py` to prevent app crashes on low-resource environments (Free Tier).
 - **fix**: Fixed persistent Render build failure by downgrading to `python:3.9` (resolving Numpy version conflicts) and using the official PaddlePaddle mirror (`paddlepaddle.org.cn`) for installation.
 - **fix**: Fixed Render build failure by switching to a full `python:3.10` image and upgrading `pip`/`setuptools`. Added missing system libraries (`libsm6`, `libxext6`) required by OpenCV.
 - **feat**: Added `Dockerfile` and `render.yaml` for one-click deployment to Render.

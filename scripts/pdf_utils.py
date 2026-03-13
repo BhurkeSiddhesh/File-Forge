@@ -17,8 +17,6 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 import fitz
 import cv2
 import numpy as np
-from paddleocr import PPStructure, save_structure_res
-from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes, convert_info_docx
 from docxcompose.composer import Composer
 from docx import Document as Document_docx
 import shutil
@@ -35,6 +33,13 @@ def get_paddle_engine():
         with _ENGINE_LOCK:
             if _PADDLE_ENGINE is None:
                 print("[AI] Initializing PaddleOCR engine (first time only)...")
+                try:
+                    # Deferred imports to prevent boot crashes on low-resource environments
+                    from paddleocr import PPStructure
+                except ImportError as e:
+                    print(f"[AI] Error: PaddleOCR not installed correctly. {e}")
+                    raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.")
+
                 base_dir = Path(__file__).parent
                 paddle_dir = base_dir / "models"
                 layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
@@ -42,25 +47,24 @@ def get_paddle_engine():
                 det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
                 rec_dir = paddle_dir / "rec" / "en" / "en_PP-OCRv3_rec_infer"
 
-                # use_gpu=False for safety, enable_mkldnn=False to avoid OneDNN issues on Windows
-                # usage of use_onnx=True to bypass Paddle OneDNN issues
-                # @jules: Should we detect the language instead of hardcoding 'en'?
-                # Potential fix: Use a language detection library or add a UI selector.
-                _PADDLE_ENGINE = PPStructure(
-                    recovery=True, lang='en', show_log=False, use_gpu=False,
-                    enable_mkldnn=False, use_onnx=True,
-                    layout_model_dir=str(layout_dir),
-                    table_model_dir=str(table_dir),
-                    det_model_dir=str(det_dir),
-                    rec_model_dir=str(rec_dir)
-                )
+                try:
+                    _PADDLE_ENGINE = PPStructure(
+                        recovery=True, lang='en', show_log=False, use_gpu=False,
+                        enable_mkldnn=False, use_onnx=True,
+                        layout_model_dir=str(layout_dir),
+                        table_model_dir=str(table_dir),
+                        det_model_dir=str(det_dir),
+                        rec_model_dir=str(rec_dir)
+                    )
+                except MemoryError:
+                    print("[AI] CRITICAL: Out of Memory while loading PaddleOCR.")
+                    raise MemoryError("Server ran out of memory loading the AI engine. Please upgrade to a 'Starter' plan on Render for this feature.")
+                except Exception as e:
+                    print(f"[AI] Unexpected error loading PaddleOCR: {e}")
+                    raise e
+                    
                 print("[AI] PaddleOCR engine cached successfully")
     return _PADDLE_ENGINE
-
-# Private alias for internal backward compatibility
-_get_paddle_engine = get_paddle_engine
-
-
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     """Removes password from PDF and saves to output_dir."""
@@ -196,7 +200,6 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     
     return str(output_file)
 
-
 def merge_docx_files(input_files: list, output_file: str) -> None:
     """Merges multiple DOCX files into one, inserting page breaks between them."""
     if not input_files:
@@ -211,9 +214,15 @@ def merge_docx_files(input_files: list, output_file: str) -> None:
 
     composer.save(output_file)
 
-
 def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
+    # Deferred imports for utility functions that depend on paddleocr
+    try:
+        from paddleocr import save_structure_res
+        from paddleocr.ppstructure.recovery.recovery_to_doc import sorted_layout_boxes, convert_info_docx
+    except ImportError:
+        raise ImportError("PaddleOCR sub-modules could not be loaded. Please check your installation.")
+
     print(f"[AI] Starting AI conversion for: {input_path}")
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
@@ -234,7 +243,6 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
         doc = fitz.open(decrypted_path)
         print(f"[AI] Opened PDF with {len(doc)} pages")
         docx_files = []
-
 
         for i, page in enumerate(doc):
             # Render page to image
@@ -278,12 +286,11 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
         doc.close()
 
     finally:
-        # Cleanup - on Windows, files might still be locked
+        # Cleanup
         if temp_dir.exists():
             try:
                 shutil.rmtree(temp_dir)
-            except PermissionError:
-                # Windows file locking - schedule for manual cleanup
-                print(f"Warning: Could not fully clean up {temp_dir} - some files may be locked")
+            except Exception:
+                print(f"Warning: Could not fully clean up {temp_dir}")
 
     return str(output_file)
