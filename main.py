@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, BackgroundTasks
+from fastapi import UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -426,12 +427,43 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
+def delete_file_after_download(path: Path) -> None:
+    """
+    Deletes the file at the given path.
+    Designed to be used as a FastAPI BackgroundTask after a file has been served.
+    
+    Args:
+        path: Path to the file to delete.
+    """
+    try:
+        if path.exists():
+            path.unlink()
+            print(f"[DEBUG] Deleted file after download: {path}")
+    except OSError as e:
+        print(f"[ERROR] Failed to delete file {path}: {e}")
+
 @app.get("/api/download/{filename}")
-async def download_file(filename: str, _auth: str = Depends(require_auth_or_query)):
+async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)) -> FileResponse:
+    """
+    Serves a file for download from the outputs directory and schedules its deletion.
+    
+    Args:
+        filename: The name of the file to download.
+        background_tasks: FastAPI background tasks handler.
+        _auth: Validated authentication key (via header or query param).
+        
+    Returns:
+        FileResponse: The requested file.
+        
+    Raises:
+        HTTPException: 404 if the file is not found.
+    """
     # Sanitize filename to prevent path traversal
     safe_filename = Path(filename.replace("\\", "/")).name
     file_path = OUTPUT_DIR / safe_filename
     if file_path.exists():
+        # Schedule the file to be deleted after the response is sent
+        background_tasks.add_task(delete_file_after_download, file_path)
         return FileResponse(file_path, filename=filename)
     raise HTTPException(status_code=404, detail="File not found")
 

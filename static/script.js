@@ -61,11 +61,48 @@ async function fetchWithAuth(url, options = {}) {
 function updateDownloadLink(element, filename) {
     if (!element) return;
     const key = getApiKey();
-    let url = `/api/download/${filename}`;
-    if (key) {
-        url += `?api_key=${encodeURIComponent(key)}`;
-    }
-    element.href = url;
+    const url = `/api/download/${encodeURIComponent(filename)}`;
+    
+    // Construct authenticated direct link for native browser features (Save As..., etc.)
+    const authenticatedUrl = key ? `${url}?api_key=${encodeURIComponent(key)}` : url;
+    element.href = authenticatedUrl;
+
+    element.onclick = async (e) => {
+        // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
+        // For context-menu actions (Save As...), the browser hits the href directly.
+        
+        try {
+            // HEAD request is lightweight and verifies existence/auth without downloading.
+            const response = await fetch(url, {
+                method: 'HEAD',
+                headers: key ? { 'X-API-Key': key } : {}
+            });
+
+            if (response.status === 404) {
+                e.preventDefault();
+                alert("The converted file no longer exists. Please re-process.");
+                return false;
+            }
+
+            if (!response.ok) {
+                e.preventDefault();
+                if (response.status === 401 || response.status === 403) {
+                    showLoginModal();
+                    return false;
+                }
+                throw new Error(`Status ${response.status}`);
+            }
+            
+            // If OK, let the browser proceed with the native download via element.href.
+            // This avoids loading the entire file into memory as a Blob.
+            return true;
+
+        } catch (error) {
+            console.error('Download check failed:', error);
+            // On network error, still try to let the browser handle it
+            return true;
+        }
+    };
 }
 
 // === End Authentication ===
