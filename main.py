@@ -7,7 +7,17 @@ from fastapi.responses import FileResponse
 import shutil
 import os
 import uuid
+import logging
 from pathlib import Path
+
+# --- Logging Setup ---
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 from fastapi.concurrency import run_in_threadpool
 from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
 from scripts.image_utils import heic_to_jpeg
@@ -17,7 +27,7 @@ app = FastAPI(title="File Forge API")
 @app.on_event("startup")
 async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
-    print("Initializing AI Models... This may take a while on first run.")
+    logger.info("Initializing AI Models... This may take a while on first run.")
     try:
         from paddleocr import PPStructure
         # Define explicit model paths to ensure ONNX models are found
@@ -38,9 +48,9 @@ async def startup_event():
                     det_model_dir=str(det_dir),
                     rec_model_dir=str(rec_dir))
 
-        print("AI Models initialized successfully.")
+        logger.info("AI Models initialized successfully.")
     except Exception as e:
-        print(f"Warning: AI Model initialization failed: {e}")
+        logger.warning(f"AI Model initialization failed: {e}")
 
 
 # Ensure directories exist
@@ -138,12 +148,12 @@ async def api_convert_to_word(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     unique_filename = f"{uuid.uuid4()}_{safe_filename}"
     temp_path = UPLOAD_DIR / unique_filename
-    print(f"[DEBUG] Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
+    logger.debug(f"Converting: {file.filename}, use_ai={use_ai}, password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        print(f"[DEBUG] File saved to: {temp_path}")
+        logger.debug(f"File saved to: {temp_path}")
         
         if use_ai:
             # @jules: This can be very slow for large PDFs. 
@@ -154,11 +164,11 @@ async def api_convert_to_word(
             output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word (Standard)"
 
-        print(f"[DEBUG] Conversion successful: {output_path}")
+        logger.info(f"Conversion successful: {output_path}")
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
         import traceback
-        print(f"[ERROR] Conversion failed: {e}")
+        logger.error(f"Conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -172,7 +182,7 @@ async def api_convert_to_word(
 @app.post("/api/pdf/extract-pages")
 async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...), password: str = Form(None)):
     temp_path = UPLOAD_DIR / file.filename
-    print(f"[DEBUG] Extracting pages: {file.filename}, pages='{pages}', password={'***' if password else 'None'}")
+    logger.debug(f"Extracting pages: {file.filename}, pages='{pages}', password={'***' if password else 'None'}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -183,7 +193,7 @@ async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         import traceback
-        print(f"[ERROR] Page extraction failed: {e}")
+        logger.error(f"Page extraction failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -200,7 +210,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    print(f"[DEBUG] Converting HEIC: {file.filename}, quality={quality}")
+    logger.debug(f"Converting HEIC: {file.filename}, quality={quality}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -209,7 +219,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         import traceback
-        print(f"[ERROR] HEIC conversion failed: {e}")
+        logger.error(f"HEIC conversion failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -233,7 +243,7 @@ async def api_resize_image(
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    print(f"[DEBUG] Resizing image: {file.filename}, mode={mode}")
+    logger.debug(f"Resizing image: {file.filename}, mode={mode}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -251,7 +261,7 @@ async def api_resize_image(
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
         import traceback
-        print(f"[ERROR] Image resize failed: {e}")
+        logger.error(f"Image resize failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -274,7 +284,7 @@ async def api_crop_image(
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    print(f"[DEBUG] Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
+    logger.debug(f"Cropping image: {file.filename}, x={x}, y={y}, w={width}, h={height}")
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -288,7 +298,7 @@ async def api_crop_image(
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
         import traceback
-        print(f"[ERROR] Image crop failed: {e}")
+        logger.error(f"Image crop failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -309,7 +319,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
     
-    print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
+    logger.info(f"Workflow started: {file.filename}, steps={steps}")
     
     # Parse steps JSON
     try:
@@ -337,7 +347,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 # Send "processing" event for this step
                 yield f"data: {json.dumps({'event': 'step_start', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
                 
-                print(f"[DEBUG] Step {i+1}: {step_type}")
+                logger.debug(f"Step {i+1}: {step_type}")
 
                 # Artificial delay to ensure UI updates are visible
                 import asyncio
@@ -399,12 +409,12 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                 yield f"data: {json.dumps({'event': 'step_complete', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
             
             # Send final success event
-            print(f"[DEBUG] Workflow complete: {current_file}")
+            logger.info(f"Workflow complete: {current_file}")
             yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
             
         except Exception as e:
             import traceback
-            print(f"[ERROR] Workflow failed: {e}")
+            logger.error(f"Workflow failed: {e}")
             traceback.print_exc()
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
         
@@ -438,9 +448,9 @@ def delete_file_after_download(path: Path) -> None:
     try:
         if path.exists():
             path.unlink()
-            print(f"[DEBUG] Deleted file after download: {path}")
+            logger.debug(f"Deleted file after download: {path}")
     except OSError as e:
-        print(f"[ERROR] Failed to delete file {path}: {e}")
+        logger.error(f"Failed to delete file {path}: {e}")
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)) -> FileResponse:
