@@ -10,7 +10,7 @@ paddleocr
 opencv-python-headless
 docxcompose==1.4.0
 setuptools<70.0.0
-PyMuPDF
+PyMuPDF>=1.19.0,<1.24.0
 reportlab
 requests
 pillow-heif

@@ -20,7 +20,7 @@ def test_paddle_engine_singleton():
         pdf_utils._PADDLE_ENGINE = None
 
     # Patch PPStructure inside pdf_utils
-    with patch('paddleocr.PPStructure') as MockPPStructure:
+    with patch('paddleocr.PPStructure', create=True) as MockPPStructure:
         # Setup the mock to return a specific instance
         mock_instance = MagicMock()
         MockPPStructure.return_value = mock_instance

@@ -84,8 +84,8 @@ async def require_auth(
 
 async def require_auth_or_query(
     request: Request,
-    api_key_header: str | None = Header(default=None, alias="X-API-Key"),
-    api_key: str | None = None,
+    api_key_header: Optional[str] = Header(default=None, alias="X-API-Key"),
+    api_key: Optional[str] = None,
 ):
     """Like require_auth but also accepts api_key as query param (for downloads)."""
     import os as _os
