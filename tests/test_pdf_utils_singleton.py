@@ -8,7 +8,7 @@ class TestPdfUtilsSingleton(unittest.TestCase):
         # Reset the singleton before each test
         pdf_utils._PADDLE_ENGINE = None
 
-    @patch('paddleocr.PPStructure')
+    @patch('paddleocr.PPStructure', create=True)
     def test_get_paddle_engine_initializes_once(self, mock_ppstructure):
         """Test that get_paddle_engine initializes PPStructure exactly once."""
         # Setup mock return value
@@ -26,7 +26,7 @@ class TestPdfUtilsSingleton(unittest.TestCase):
         # Should still be called only once
         mock_ppstructure.assert_called_once()
 
-    @patch('paddleocr.PPStructure')
+    @patch('paddleocr.PPStructure', create=True)
     def test_get_paddle_engine_parameters(self, mock_ppstructure):
         """Test that PPStructure is initialized with correct parameters."""
         mock_instance = MagicMock()
