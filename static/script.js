@@ -65,7 +65,53 @@ function updateDownloadLink(element, filename) {
     if (key) {
         url += `?api_key=${encodeURIComponent(key)}`;
     }
-    element.href = url;
+
+    // Remove previous event listeners by cloning the element
+    const newElement = element.cloneNode(true);
+    element.parentNode.replaceChild(newElement, element);
+
+    newElement.href = '#';
+
+    newElement.addEventListener('click', async (e) => {
+        e.preventDefault();
+
+        try {
+            const response = await fetch(url, {
+                headers: key ? { 'X-API-Key': key } : {}
+            });
+
+            if (response.status === 404) {
+                alert("The converted file no longer exists. Please re-process.");
+                return;
+            }
+
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    showLoginModal();
+                    throw new Error("Authentication required.");
+                }
+                throw new Error(`Download failed with status ${response.status}`);
+            }
+
+            // Trigger actual download via blob to avoid browser navigation
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+
+            // Cleanup
+            window.URL.revokeObjectURL(downloadUrl);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error('Download error:', error);
+            alert("Download failed: " + error.message);
+        }
+    });
 }
 
 // === End Authentication ===

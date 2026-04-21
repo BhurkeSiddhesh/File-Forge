@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, BackgroundTasks
+from fastapi import UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -426,12 +427,22 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
+def delete_file_after_download(path: Path):
+    try:
+        if path.exists():
+            os.remove(path)
+            print(f"[DEBUG] Deleted file after download: {path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to delete file {path}: {e}")
+
 @app.get("/api/download/{filename}")
-async def download_file(filename: str, _auth: str = Depends(require_auth_or_query)):
+async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)):
     # Sanitize filename to prevent path traversal
     safe_filename = Path(filename.replace("\\", "/")).name
     file_path = OUTPUT_DIR / safe_filename
     if file_path.exists():
+        # Schedule the file to be deleted after the response is sent
+        background_tasks.add_task(delete_file_after_download, file_path)
         return FileResponse(file_path, filename=filename)
     raise HTTPException(status_code=404, detail="File not found")
 

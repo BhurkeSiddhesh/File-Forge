@@ -148,3 +148,21 @@ def test_api_crop_image(sample_image_file, mock_dirs, auth_client):
     assert resp_data["status"] == "success"
     assert "cropped" in resp_data["filename"]
     assert (mock_dirs["output"] / resp_data["filename"]).exists()
+
+def test_download_file_deletes_after_download(sample_pdf, mock_dirs, auth_client):
+    # First generate the file
+    with open(sample_pdf, "rb") as f:
+        files = {"file": (sample_pdf.name, f, "application/pdf")}
+        response = auth_client.post("/api/pdf/convert-to-word", files=files)
+
+    filename = response.json()["filename"]
+    file_path = mock_dirs["output"] / filename
+
+    assert file_path.exists()
+
+    # Download it
+    response = auth_client.get(f"/api/download/{filename}")
+    assert response.status_code == 200
+
+    # Check if the file is deleted
+    assert not file_path.exists()

@@ -21,6 +21,13 @@
 - **Error Handling**: Always catch and display user-friendly error messages.
 - **Type Hints**: Use type hints for function signatures.
 
+### 2026-04-21
+
+- **feat**: Automatically delete files in `/outputs` after downloading to save disk space
+- **feat**: Display 404 message to users in frontend when they attempt to download an expired link
+- **Files**: `main.py`, `static/script.js`, `tests/test_main.py`
+- **Verification**: `python3 -m pytest tests/` passed.
+
 ### 2026-02-03
 
 - **feat**: Added Windows benchmark script (`tests/run_benchmark.ps1`) for cross-platform compatibility.
