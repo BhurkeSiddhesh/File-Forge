@@ -40,9 +40,9 @@ def get_paddle_engine():
                 try:
                     # Deferred imports to prevent boot crashes on low-resource environments
                     from paddleocr import PPStructure
-                except ImportError:
+                except ImportError as e:
                     logger.exception("PaddleOCR not installed correctly")
-                    raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.")
+                    raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.") from e
 
                 base_dir = Path(__file__).parent
                 paddle_dir = base_dir / "models"

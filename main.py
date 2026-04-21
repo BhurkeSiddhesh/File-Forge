@@ -11,7 +11,15 @@ import logging
 from pathlib import Path
 
 # --- Logging Setup ---
-logger = logging.getLogger(__name__)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logger = logging.getLogger("file_forge")
+logger.setLevel(LOG_LEVEL)
+
+# Ensure logs are emitted if no parent handlers exist (e.g., when running directly)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
 
 from fastapi.concurrency import run_in_threadpool
 from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
@@ -22,14 +30,6 @@ app = FastAPI(title="File Forge API")
 @app.on_event("startup")
 async def startup_event():
     """Warmup AI models to avoid timeout on first request."""
-    # Configure logging on startup to avoid side effects during import
-    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        force=True # Override any existing config
-    )
-    
     logger.info("Initializing AI Models... This may take a while on first run.")
     try:
         from paddleocr import PPStructure
@@ -151,7 +151,7 @@ async def api_convert_to_word(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     unique_filename = f"{uuid.uuid4()}_{safe_filename}"
     temp_path = UPLOAD_DIR / unique_filename
-    logger.debug("Converting: %s, use_ai=%s, password=%s", file.filename, use_ai, '***' if password else 'None')
+    logger.debug("Converting: %s, use_ai=%s, password=%s", safe_filename, use_ai, '***' if password else 'None')
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -170,7 +170,7 @@ async def api_convert_to_word(
         logger.info("Conversion successful: %s", output_path)
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
-        logger.exception("Conversion failed for %s", file.filename)
+        logger.exception("Conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=str(e))
 
     finally:
@@ -182,8 +182,9 @@ async def api_convert_to_word(
 
 @app.post("/api/pdf/extract-pages")
 async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...), password: str = Form(None)):
-    temp_path = UPLOAD_DIR / file.filename
-    logger.debug("Extracting pages: %s, pages='%s', password=%s", file.filename, pages, '***' if password else 'None')
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / safe_filename
+    logger.debug("Extracting pages: %s, pages='%s', password=%s", safe_filename, pages, '***' if password else 'None')
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -193,7 +194,7 @@ async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception("Page extraction failed for %s", file.filename)
+        logger.exception("Page extraction failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -209,7 +210,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    logger.debug("Converting HEIC: %s, quality=%d", file.filename, quality)
+    logger.debug("Converting HEIC: %s, quality=%d", safe_filename, quality)
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -217,7 +218,7 @@ async def api_heic_to_jpeg(file: UploadFile = File(...), quality: int = Form(95)
         output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
-        logger.exception("HEIC conversion failed for %s", file.filename)
+        logger.exception("HEIC conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -240,7 +241,7 @@ async def api_resize_image(
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    logger.debug("Resizing image: %s, mode=%s", file.filename, mode)
+    logger.debug("Resizing image: %s, mode=%s", safe_filename, mode)
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -257,7 +258,7 @@ async def api_resize_image(
         )
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
-        logger.exception("Image resize failed for %s", file.filename)
+        logger.exception("Image resize failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -279,7 +280,7 @@ async def api_crop_image(
     # Sanitize filename to prevent path traversal
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
-    logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", file.filename, x, y, width, height)
+    logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", safe_filename, x, y, width, height)
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -292,7 +293,7 @@ async def api_crop_image(
         )
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
-        logger.exception("Image crop failed for %s", file.filename)
+        logger.exception("Image crop failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -312,7 +313,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / safe_filename
     
-    logger.info("Workflow started: %s, steps=%s", file.filename, steps)
+    logger.info("Workflow started: %s, steps=%s", safe_filename, steps)
     
     # Parse steps JSON
     try:
@@ -406,7 +407,7 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
             yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
             
         except Exception as e:
-            logger.exception("Workflow failed for %s", file.filename)
+            logger.exception("Workflow failed for %s", safe_filename)
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
         
         finally:
