@@ -40,8 +40,8 @@ def get_paddle_engine():
                 try:
                     # Deferred imports to prevent boot crashes on low-resource environments
                     from paddleocr import PPStructure
-                except ImportError as e:
-                    logger.error(f"PaddleOCR not installed correctly. {e}")
+                except ImportError:
+                    logger.exception("PaddleOCR not installed correctly")
                     raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.")
 
                 base_dir = Path(__file__).parent
@@ -63,9 +63,9 @@ def get_paddle_engine():
                 except MemoryError:
                     logger.critical("Out of Memory while loading PaddleOCR.")
                     raise MemoryError("Server ran out of memory loading the AI engine. Please upgrade to a 'Starter' plan on Render for this feature.")
-                except Exception as e:
-                    logger.error(f"Unexpected error loading PaddleOCR: {e}")
-                    raise e
+                except Exception:
+                    logger.exception("Unexpected error loading PaddleOCR")
+                    raise
                     
                 logger.info("PaddleOCR engine cached successfully")
     return _PADDLE_ENGINE
@@ -227,7 +227,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     except ImportError:
         raise ImportError("PaddleOCR sub-modules could not be loaded. Please check your installation.")
 
-    logger.info(f"Starting AI conversion for: {input_path}")
+    logger.info("Starting AI conversion for: %s", input_path)
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
 
@@ -238,14 +238,14 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     # Handle encrypted PDFs
     logger.debug("Checking encryption...")
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password, temp_dir)
-    logger.debug(f"Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
+    logger.debug("Using path: %s, needs_cleanup: %s", decrypted_path, needs_cleanup)
 
     try:
         # Use cached PaddleOCR engine instead of re-initializing
         table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
-        logger.info(f"Opened PDF with {len(doc)} pages")
+        logger.info("Opened PDF with %d pages", len(doc))
         docx_files = []
 
         for i, page in enumerate(doc):
@@ -280,7 +280,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             if expected_docx.exists():
                 docx_files.append(expected_docx)
             else:
-                logger.warning(f"Could not find recovered docx for page {i}")
+                logger.warning("Could not find recovered docx for page %d", i)
 
         if not docx_files:
              raise Exception("No pages were successfully converted using AI engine.")
@@ -295,6 +295,6 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             try:
                 shutil.rmtree(temp_dir)
             except Exception:
-                logger.warning(f"Could not fully clean up {temp_dir}")
+                logger.warning("Could not fully clean up %s", temp_dir)
 
     return str(output_file)
