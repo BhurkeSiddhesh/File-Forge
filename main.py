@@ -427,16 +427,16 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
     )
 
 
-def delete_file_after_download(path: Path):
+def delete_file_after_download(path: Path) -> None:
     try:
         if path.exists():
-            os.remove(path)
+            path.unlink()
             print(f"[DEBUG] Deleted file after download: {path}")
-    except Exception as e:
+    except OSError as e:
         print(f"[ERROR] Failed to delete file {path}: {e}")
 
 @app.get("/api/download/{filename}")
-async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)):
+async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)) -> FileResponse:
     # Sanitize filename to prevent path traversal
     safe_filename = Path(filename.replace("\\", "/")).name
     file_path = OUTPUT_DIR / safe_filename

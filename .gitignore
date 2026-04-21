@@ -19,6 +19,7 @@ outputs/Siddhesh Lab Smart Report_unlocked.pdf
 .venv
 .ai-context
 models/
+.claude/
 
 *.log
 server.log

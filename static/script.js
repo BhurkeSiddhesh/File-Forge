@@ -61,18 +61,11 @@ async function fetchWithAuth(url, options = {}) {
 function updateDownloadLink(element, filename) {
     if (!element) return;
     const key = getApiKey();
-    let url = `/api/download/${filename}`;
-    if (key) {
-        url += `?api_key=${encodeURIComponent(key)}`;
-    }
+    const url = `/api/download/${encodeURIComponent(filename)}`;
 
-    // Remove previous event listeners by cloning the element
-    const newElement = element.cloneNode(true);
-    element.parentNode.replaceChild(newElement, element);
+    element.href = '#';
 
-    newElement.href = '#';
-
-    newElement.addEventListener('click', async (e) => {
+    element.onclick = async (e) => {
         e.preventDefault();
 
         try {
@@ -88,7 +81,7 @@ function updateDownloadLink(element, filename) {
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
                     showLoginModal();
-                    throw new Error("Authentication required.");
+                    return;
                 }
                 throw new Error(`Download failed with status ${response.status}`);
             }
@@ -111,7 +104,7 @@ function updateDownloadLink(element, filename) {
             console.error('Download error:', error);
             alert("Download failed: " + error.message);
         }
-    });
+    };
 }
 
 // === End Authentication ===
