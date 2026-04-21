@@ -428,6 +428,13 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
 
 
 def delete_file_after_download(path: Path) -> None:
+    """
+    Deletes the file at the given path.
+    Designed to be used as a FastAPI BackgroundTask after a file has been served.
+    
+    Args:
+        path: Path to the file to delete.
+    """
     try:
         if path.exists():
             path.unlink()
@@ -437,6 +444,20 @@ def delete_file_after_download(path: Path) -> None:
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str, background_tasks: BackgroundTasks, _auth: str = Depends(require_auth_or_query)) -> FileResponse:
+    """
+    Serves a file for download from the outputs directory and schedules its deletion.
+    
+    Args:
+        filename: The name of the file to download.
+        background_tasks: FastAPI background tasks handler.
+        _auth: Validated authentication key (via header or query param).
+        
+    Returns:
+        FileResponse: The requested file.
+        
+    Raises:
+        HTTPException: 404 if the file is not found.
+    """
     # Sanitize filename to prevent path traversal
     safe_filename = Path(filename.replace("\\", "/")).name
     file_path = OUTPUT_DIR / safe_filename

@@ -150,6 +150,10 @@ def test_api_crop_image(sample_image_file, mock_dirs, auth_client):
     assert (mock_dirs["output"] / resp_data["filename"]).exists()
 
 def test_download_file_deletes_after_download(sample_pdf, mock_dirs, auth_client) -> None:
+    """
+    Verifies that a file is successfully served and then automatically deleted
+    from the output directory after download.
+    """
     # First generate the file
     with open(sample_pdf, "rb") as f:
         files = {"file": (sample_pdf.name, f, "application/pdf")}

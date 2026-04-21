@@ -62,47 +62,45 @@ function updateDownloadLink(element, filename) {
     if (!element) return;
     const key = getApiKey();
     const url = `/api/download/${encodeURIComponent(filename)}`;
-
-    element.href = '#';
+    
+    // Construct authenticated direct link for native browser features (Save As..., etc.)
+    const authenticatedUrl = key ? `${url}?api_key=${encodeURIComponent(key)}` : url;
+    element.href = authenticatedUrl;
 
     element.onclick = async (e) => {
-        e.preventDefault();
-
+        // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
+        // For context-menu actions (Save As...), the browser hits the href directly.
+        
         try {
+            // HEAD request is lightweight and verifies existence/auth without downloading.
             const response = await fetch(url, {
+                method: 'HEAD',
                 headers: key ? { 'X-API-Key': key } : {}
             });
 
             if (response.status === 404) {
+                e.preventDefault();
                 alert("The converted file no longer exists. Please re-process.");
-                return;
+                return false;
             }
 
             if (!response.ok) {
+                e.preventDefault();
                 if (response.status === 401 || response.status === 403) {
                     showLoginModal();
-                    return;
+                    return false;
                 }
-                throw new Error(`Download failed with status ${response.status}`);
+                throw new Error(`Status ${response.status}`);
             }
-
-            // Trigger actual download via blob to avoid browser navigation
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = downloadUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-
-            // Cleanup
-            window.URL.revokeObjectURL(downloadUrl);
-            document.body.removeChild(a);
+            
+            // If OK, let the browser proceed with the native download via element.href.
+            // This avoids loading the entire file into memory as a Blob.
+            return true;
 
         } catch (error) {
-            console.error('Download error:', error);
-            alert("Download failed: " + error.message);
+            console.error('Download check failed:', error);
+            // On network error, still try to let the browser handle it
+            return true;
         }
     };
 }
