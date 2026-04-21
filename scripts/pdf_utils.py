@@ -1,9 +1,13 @@
 import threading
+import logging
 import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
 import os
 from typing import List
+
+# --- Logging Setup ---
+logger = logging.getLogger(__name__)
 
 # Disable MKL-DNN/OneDNN to fix compatibility issues on Windows
 # Must be set BEFORE importing paddle/paddleocr
@@ -32,13 +36,13 @@ def get_paddle_engine():
     if _PADDLE_ENGINE is None:
         with _ENGINE_LOCK:
             if _PADDLE_ENGINE is None:
-                print("[AI] Initializing PaddleOCR engine (first time only)...")
+                logger.info("Initializing PaddleOCR engine (first time only)...")
                 try:
                     # Deferred imports to prevent boot crashes on low-resource environments
                     from paddleocr import PPStructure
                 except ImportError as e:
-                    print(f"[AI] Error: PaddleOCR not installed correctly. {e}")
-                    raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.")
+                    logger.exception("PaddleOCR not installed correctly")
+                    raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.") from e
 
                 base_dir = Path(__file__).parent
                 paddle_dir = base_dir / "models"
@@ -57,13 +61,13 @@ def get_paddle_engine():
                         rec_model_dir=str(rec_dir)
                     )
                 except MemoryError:
-                    print("[AI] CRITICAL: Out of Memory while loading PaddleOCR.")
+                    logger.critical("Out of Memory while loading PaddleOCR.")
                     raise MemoryError("Server ran out of memory loading the AI engine. Please upgrade to a 'Starter' plan on Render for this feature.")
-                except Exception as e:
-                    print(f"[AI] Unexpected error loading PaddleOCR: {e}")
-                    raise e
+                except Exception:
+                    logger.exception("Unexpected error loading PaddleOCR")
+                    raise
                     
-                print("[AI] PaddleOCR engine cached successfully")
+                logger.info("PaddleOCR engine cached successfully")
     return _PADDLE_ENGINE
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
@@ -223,7 +227,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     except ImportError:
         raise ImportError("PaddleOCR sub-modules could not be loaded. Please check your installation.")
 
-    print(f"[AI] Starting AI conversion for: {input_path}")
+    logger.info("Starting AI conversion for: %s", input_path)
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
 
@@ -232,16 +236,16 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
     temp_dir.mkdir(exist_ok=True)
     
     # Handle encrypted PDFs
-    print(f"[AI] Checking encryption...")
+    logger.debug("Checking encryption...")
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password, temp_dir)
-    print(f"[AI] Using path: {decrypted_path}, needs_cleanup: {needs_cleanup}")
+    logger.debug("Using path: %s, needs_cleanup: %s", decrypted_path, needs_cleanup)
 
     try:
         # Use cached PaddleOCR engine instead of re-initializing
         table_engine = get_paddle_engine()
 
         doc = fitz.open(decrypted_path)
-        print(f"[AI] Opened PDF with {len(doc)} pages")
+        logger.info("Opened PDF with %d pages", len(doc))
         docx_files = []
 
         for i, page in enumerate(doc):
@@ -276,7 +280,7 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             if expected_docx.exists():
                 docx_files.append(expected_docx)
             else:
-                print(f"Warning: Could not find recovered docx for page {i}")
+                logger.warning("Could not find recovered docx for page %d", i)
 
         if not docx_files:
              raise Exception("No pages were successfully converted using AI engine.")
@@ -291,6 +295,6 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
             try:
                 shutil.rmtree(temp_dir)
             except Exception:
-                print(f"Warning: Could not fully clean up {temp_dir}")
+                logger.warning("Could not fully clean up %s", temp_dir)
 
     return str(output_file)

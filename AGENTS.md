@@ -20,6 +20,7 @@
 - **Architecture**: Simple CLI scripts with argparse.
 - **Error Handling**: Always catch and display user-friendly error messages.
 - **Type Hints**: Use type hints for function signatures.
+- **Logging**: Use Python's `logging` module instead of `print()` for all output. Configure log level via `LOG_LEVEL` environment variable.
 
 ### 2026-02-03
 
@@ -38,10 +39,12 @@
 
 ### 2026-04-21
 
-- **feat**: Automatically delete files in `/outputs` after downloading to save disk space
-- **feat**: Display 404 message to users in frontend when they attempt to download an expired link
-- **Files**: `main.py`, `static/script.js`, `tests/test_main.py`
+- **feat**: Automatically delete files in `/outputs` after downloading to save disk space.
+- **feat**: Display 404 message to users in frontend when they attempt to download an expired link.
+- **feat**: Replaced `print()` statements with structured logging across the codebase (Issue #44).
+- **Files**: `main.py`, `static/script.js`, `scripts/pdf_utils.py`, `tests/test_main.py`
 - **Verification**: `python3 -m pytest tests/` passed.
+
 ### 2026-03-14
 
 - **fix**: Fixed Render native build failure by creating a custom `build.sh` that installs PaddlePaddle from the official mirror.
