@@ -182,6 +182,91 @@ def extract_pdf_pages(input_path: str, output_dir: str, pages: str, password: st
 
     return str(output_file)
 
+def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', password: str = None) -> dict:
+    """Compress PDF by optimizing structure and resampling large images.
+    
+    Returns dict with output_path, original_size, compressed_size, reduction_pct.
+    """
+    import io
+    from PIL import Image as PILImage
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_compressed.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        original_size = input_file.stat().st_size
+        doc = fitz.open(decrypted_path)
+
+        if level in ('medium', 'high'):
+            max_dim = {'medium': 1200, 'high': 800}[level]
+            jpeg_quality = {'medium': 72, 'high': 45}[level]
+
+            xrefs_processed = set()
+            for page in doc:
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    if xref in xrefs_processed:
+                        continue
+                    xrefs_processed.add(xref)
+                    try:
+                        pix = fitz.Pixmap(doc, xref)
+
+                        if pix.width <= max_dim and pix.height <= max_dim:
+                            pix = None
+                            continue
+
+                        if pix.n > 3:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+
+                        mode = "RGB" if pix.n == 3 else "RGBA"
+                        pil_img = PILImage.frombytes(mode, (pix.width, pix.height), pix.samples)
+
+                        factor = max_dim / max(pix.width, pix.height)
+                        new_w = max(1, int(pix.width * factor))
+                        new_h = max(1, int(pix.height * factor))
+                        pil_img = pil_img.resize((new_w, new_h), PILImage.LANCZOS)
+
+                        if pil_img.mode != 'RGB':
+                            pil_img = pil_img.convert('RGB')
+
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format='JPEG', quality=jpeg_quality, optimize=True)
+                        jpeg_bytes = buf.getvalue()
+
+                        doc.replace_image(xref, stream=jpeg_bytes)
+                        pix = None
+
+                    except Exception as e:
+                        print(f"[COMPRESS] Skipping image xref {xref}: {e}")
+                        continue
+
+        doc.save(
+            str(output_file),
+            garbage=4,
+            deflate=True,
+            deflate_images=True,
+            deflate_fonts=True,
+            clean=True,
+        )
+        doc.close()
+
+        compressed_size = output_file.stat().st_size
+        reduction = max(0.0, (1 - compressed_size / original_size) * 100)
+
+        return {
+            'output_path': str(output_file),
+            'original_size': original_size,
+            'compressed_size': compressed_size,
+            'reduction_pct': round(reduction, 1),
+        }
+
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+
 def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
     input_file = Path(input_path)
