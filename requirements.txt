@@ -16,3 +16,4 @@ requests
 pillow-heif
 onnxruntime
 aiofiles
+gunicorn
