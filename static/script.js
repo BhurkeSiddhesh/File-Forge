@@ -179,6 +179,14 @@ dropZone.ondrop = (e) => {
     }
 };
 
+function hidePdfActionAreas() {
+    document.getElementById('password-input-area').classList.add('hidden');
+    document.getElementById('convert-password-area').classList.add('hidden');
+    document.getElementById('extract-pages-area')?.classList.add('hidden');
+    document.getElementById('compress-area')?.classList.add('hidden');
+    document.getElementById('result-display').classList.add('hidden');
+}
+
 function handleFile(file) {
     if (file.type !== 'application/pdf') {
         alert('Please select a PDF file.');
@@ -190,10 +198,7 @@ function handleFile(file) {
 
     // Reset displays
     document.getElementById('status-display').classList.add('hidden');
-    document.getElementById('result-display').classList.add('hidden');
-    document.getElementById('password-input-area').classList.add('hidden');
-    document.getElementById('convert-password-area').classList.add('hidden');
-    document.getElementById('extract-pages-area')?.classList.add('hidden');
+    hidePdfActionAreas();
     const extractInput = document.getElementById('extract-pages-input');
     const extractPassword = document.getElementById('extract-password');
     if (extractInput) extractInput.value = '';
@@ -202,37 +207,63 @@ function handleFile(file) {
 
 // Actions
 document.getElementById('remove-password-btn').onclick = () => {
-    if (!selectedFile) {
-        alert('Please select a file first.');
-        return;
-    }
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
     document.getElementById('password-input-area').classList.remove('hidden');
-    document.getElementById('convert-password-area').classList.add('hidden');
-    document.getElementById('extract-pages-area').classList.add('hidden');
-    document.getElementById('result-display').classList.add('hidden');
 };
 
 document.getElementById('convert-word-btn').onclick = () => {
-    if (!selectedFile) {
-        alert('Please select a file first.');
-        return;
-    }
-    // Show the optional password input for conversion
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
     document.getElementById('convert-password-area').classList.remove('hidden');
-    document.getElementById('password-input-area').classList.add('hidden');
-    document.getElementById('extract-pages-area').classList.add('hidden');
-    document.getElementById('result-display').classList.add('hidden');
 };
 
 document.getElementById('extract-pages-btn').onclick = () => {
-    if (!selectedFile) {
-        alert('Please select a file first.');
-        return;
-    }
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
     document.getElementById('extract-pages-area').classList.remove('hidden');
-    document.getElementById('password-input-area').classList.add('hidden');
-    document.getElementById('convert-password-area').classList.add('hidden');
-    document.getElementById('result-display').classList.add('hidden');
+};
+
+document.getElementById('compress-pdf-btn').onclick = () => {
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
+    document.getElementById('compress-area').classList.remove('hidden');
+};
+
+document.getElementById('process-compress-btn').onclick = async () => {
+    const level = document.querySelector('input[name="compress-level"]:checked')?.value || 'medium';
+    const password = document.getElementById('compress-password').value || null;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('level', level);
+    if (password) formData.append('password', password);
+
+    const statusDisplay = document.getElementById('status-display');
+    const statusText = document.getElementById('status-text');
+    const resultDisplay = document.getElementById('result-display');
+
+    statusDisplay.classList.remove('hidden');
+    statusText.textContent = 'Compressing PDF...';
+    resultDisplay.classList.add('hidden');
+
+    try {
+        const response = await fetchWithAuth('/api/pdf/compress', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        if (response.ok) {
+            statusDisplay.classList.add('hidden');
+            showCompressResult(data);
+        } else {
+            statusDisplay.classList.add('hidden');
+            alert('Error: ' + (data.detail || 'Compression failed'));
+        }
+    } catch (error) {
+        statusDisplay.classList.add('hidden');
+        alert('An error occurred: ' + error.message);
+    }
 };
 
 document.getElementById('process-convert-btn').onclick = async () => {
@@ -326,14 +357,65 @@ async function processAction(url, text, formData = null) {
 
 }
 
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
 function showResult(filename, message) {
     const resultDisplay = document.getElementById('result-display');
     const resultMessage = document.getElementById('result-message');
     const downloadLink = document.getElementById('download-link');
 
+    // Clear any previous compress stats
+    const existingStats = resultDisplay.querySelector('.compress-stats');
+    if (existingStats) existingStats.remove();
+    const existingBadge = resultDisplay.querySelector('.reduction-badge');
+    if (existingBadge) existingBadge.remove();
+
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
     updateDownloadLink(downloadLink, filename);
+}
+
+function showCompressResult(data) {
+    const resultDisplay = document.getElementById('result-display');
+    const resultMessage = document.getElementById('result-message');
+    const downloadLink = document.getElementById('download-link');
+
+    // Clear any previous compress stats
+    const existingStats = resultDisplay.querySelector('.compress-stats');
+    if (existingStats) existingStats.remove();
+    const existingBadge = resultDisplay.querySelector('.reduction-badge');
+    if (existingBadge) existingBadge.remove();
+
+    resultDisplay.classList.remove('hidden');
+    resultMessage.textContent = 'Compressed: ' + data.filename;
+    updateDownloadLink(downloadLink, data.filename);
+
+    // Build size stats display
+    const badge = document.createElement('div');
+    badge.className = 'reduction-badge';
+    badge.textContent = `↓ ${data.reduction_pct}% smaller`;
+
+    const stats = document.createElement('div');
+    stats.className = 'compress-stats';
+    stats.innerHTML = `
+        <div class="compress-stat">
+            <span class="stat-label">Original</span>
+            <span class="stat-value">${formatBytes(data.original_size)}</span>
+        </div>
+        <span class="compress-stat-arrow"><i class="fas fa-arrow-right"></i></span>
+        <div class="compress-stat">
+            <span class="stat-label">Compressed</span>
+            <span class="stat-value">${formatBytes(data.compressed_size)}</span>
+        </div>
+    `;
+
+    // Insert after the message, before the download button
+    resultMessage.insertAdjacentElement('afterend', stats);
+    stats.insertAdjacentElement('afterend', badge);
 }
 
 function resetUI() {
@@ -346,6 +428,7 @@ function resetUI() {
     document.getElementById('password-input-area').classList.add('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('extract-pages-area')?.classList.add('hidden');
+    document.getElementById('compress-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
     const extractInput = document.getElementById('extract-pages-input');
@@ -881,13 +964,15 @@ function addStepToWorkflow(type, label, icon) {
     } else if (type === 'resize_image') {
         step.config.mode = 'percentage';
         step.config.percentage = 50;
+    } else if (type === 'compress_pdf') {
+        step.config.level = 'medium';
     }
 
     workflowSteps.push(step);
     renderWorkflowSteps();
 
     // If step needs config, open modal
-    if (type === 'remove_password' || type === 'resize_image') {
+    if (type === 'remove_password' || type === 'resize_image' || type === 'compress_pdf') {
         openConfigModal(workflowSteps.length - 1);
     }
 }
@@ -930,7 +1015,7 @@ function renderWorkflowSteps() {
 }
 
 function needsConfig(type) {
-    return ['remove_password', 'resize_image'].includes(type);
+    return ['remove_password', 'resize_image', 'compress_pdf'].includes(type);
 }
 
 function removeStep(index) {
@@ -961,6 +1046,18 @@ function openConfigModal(index) {
                 <input type="number" id="config-percentage" placeholder="e.g., 50" value="${step.config.percentage || 50}" min="1" max="200">
             </label>
         `;
+    } else if (step.type === 'compress_pdf') {
+        const lvl = step.config.level || 'medium';
+        body.innerHTML = `
+            <label>
+                <span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Compression Level</span>
+                <select id="config-compress-level">
+                    <option value="low" ${lvl === 'low' ? 'selected' : ''}>Low — Best Quality</option>
+                    <option value="medium" ${lvl === 'medium' ? 'selected' : ''}>Medium — Balanced</option>
+                    <option value="high" ${lvl === 'high' ? 'selected' : ''}>High — Smallest Size</option>
+                </select>
+            </label>
+        `;
     }
 
     modal.classList.remove('hidden');
@@ -980,6 +1077,8 @@ function saveStepConfig() {
         step.config.password = document.getElementById('config-password').value;
     } else if (step.type === 'resize_image') {
         step.config.percentage = parseInt(document.getElementById('config-percentage').value) || 50;
+    } else if (step.type === 'compress_pdf') {
+        step.config.level = document.getElementById('config-compress-level').value;
     }
 
     closeConfigModal();

@@ -127,6 +127,46 @@
                                 <p>Cut selected pages into a new PDF</p>
                             </div>
                         </div>
+                        <div class="action-card" id="compress-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-archive"></i>
+                            <div class="action-text">
+                                <h4>Compress PDF <span class="free-badge">Free on Adobe</span></h4>
+                                <p>Shrink file size — no Acrobat Pro needed</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Compress PDF Options -->
+                    <div id="compress-area" class="compress-area hidden">
+                        <p class="helper-text">Select compression level:</p>
+                        <div class="compress-levels">
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="low">
+                                <span class="level-card">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                    <strong>Low</strong>
+                                    <small>Best quality</small>
+                                </span>
+                            </label>
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="medium" checked>
+                                <span class="level-card">
+                                    <i class="fas fa-balance-scale"></i>
+                                    <strong>Medium</strong>
+                                    <small>Balanced</small>
+                                </span>
+                            </label>
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="high">
+                                <span class="level-card">
+                                    <i class="fas fa-compress-arrows-alt"></i>
+                                    <strong>High</strong>
+                                    <small>Smallest size</small>
+                                </span>
+                            </label>
+                        </div>
+                        <input type="password" id="compress-password" placeholder="PDF Password (if protected)" aria-label="PDF Password (Optional)">
+                        <button id="process-compress-btn" class="primary-btn">Compress Now</button>
                     </div>
 
                     <!-- Convert to Word Password (optional, for protected PDFs) -->
@@ -348,6 +388,11 @@
                                 data-step-label="Resize Image" data-step-icon="fa-compress-arrows-alt" role="button" tabindex="0" aria-label="Add Resize Image step to workflow">
                                 <i class="fas fa-compress-arrows-alt"></i>
                                 <span>Resize Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="compress_pdf"
+                                data-step-label="Compress PDF" data-step-icon="fa-file-archive" role="button" tabindex="0" aria-label="Add Compress PDF step to workflow">
+                                <i class="fas fa-file-archive"></i>
+                                <span>Compress PDF</span>
                             </div>
                         </div>
                     </div>

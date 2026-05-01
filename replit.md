@@ -14,9 +14,10 @@ A web-based file manipulation utility for PDF and image processing.
 - PDF password removal (pikepdf)
 - PDF to Word conversion: standard (pdf2docx) and AI-powered with layout recovery (PaddleOCR/PPStructure)
 - PDF page extraction (PyMuPDF)
+- PDF compression with three levels (Low/Medium/High) — PyMuPDF optimization + PIL image resampling
 - HEIC to JPEG image conversion (pillow-heif)
 - Image resizing and cropping (Pillow)
-- Multi-step workflow pipeline with SSE progress streaming
+- Multi-step workflow pipeline with SSE progress streaming (compress_pdf step supported)
 
 ## Project Structure
 

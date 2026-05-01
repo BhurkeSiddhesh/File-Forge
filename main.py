@@ -9,7 +9,7 @@ import os
 import uuid
 from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
-from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
+from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages, compress_pdf
 from scripts.image_utils import heic_to_jpeg
 
 app = FastAPI(title="File Forge API")
@@ -184,6 +184,48 @@ async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...)
     except Exception as e:
         import traceback
         print(f"[ERROR] Page extraction failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/compress")
+async def api_compress_pdf(
+    file: UploadFile = File(...),
+    level: str = Form('medium'),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth)
+):
+    """Compress PDF by optimizing structure and resampling large images."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    print(f"[DEBUG] Compressing: {file.filename}, level={level}, password={'***' if password else 'None'}")
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = await run_in_threadpool(
+            compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None
+        )
+        return {
+            "status": "success",
+            "message": "PDF compressed successfully",
+            "filename": Path(result['output_path']).name,
+            "original_size": result['original_size'],
+            "compressed_size": result['compressed_size'],
+            "reduction_pct": result['reduction_pct'],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] PDF compression failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -391,6 +433,13 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                         x=x, y=y, width=width, height=height
                     )
                     current_file = Path(output_path)
+
+                elif step_type == 'compress_pdf':
+                    level = config.get('level', 'medium')
+                    password = config.get('password') or None
+                    result = await run_in_threadpool(compress_pdf, str(current_file), str(OUTPUT_DIR), level, password)
+                    current_file = Path(result['output_path'])
+
                 else:
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
                     return
