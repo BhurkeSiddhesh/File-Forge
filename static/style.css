@@ -25,9 +25,11 @@ body {
     color: var(--text);
     min-height: 100vh;
     overflow-x: hidden;
+    overflow-y: auto;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    padding: 2rem 1rem;
 }
 
 /* Background Blobs */
@@ -86,7 +88,7 @@ body {
 }
 
 .app-container {
-    width: 90%;
+    width: 100%;
     max-width: 1000px;
     z-index: 10;
 }

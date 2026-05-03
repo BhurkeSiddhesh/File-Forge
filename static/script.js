@@ -124,6 +124,7 @@ function showDrillDown(tool) {
     setTimeout(() => {
         document.getElementById('home-page').style.display = 'none';
         document.getElementById(pageId).style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'instant' });
         setTimeout(() => {
             document.getElementById(pageId).classList.add('active');
         }, 50);
@@ -142,6 +143,7 @@ function showHome() {
     setTimeout(() => {
         document.getElementById(pageId).style.display = 'none';
         document.getElementById('home-page').style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'instant' });
         setTimeout(() => {
             document.getElementById('home-page').classList.add('active');
         }, 50);
