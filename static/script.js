@@ -218,6 +218,14 @@ function setMergeMode(on) {
 function handleFiles(files) {
     const pdfs = files.filter(f => f.type === 'application/pdf');
     if (pdfs.length === 0) {
+        // Clear any prior selection so the UI doesn't keep an obsolete file in
+        // state (otherwise a follow-up "Merge Now" click would silently re-use
+        // the previously selected files).
+        selectedFiles = [];
+        selectedFile = null;
+        fileInput.value = '';
+        filenameDisplay.textContent = 'No file selected';
+        fileInfo.classList.add('hidden');
         alert('Please select PDF files.');
         return;
     }
@@ -1652,7 +1660,15 @@ const excelFileInfo = document.getElementById('excel-file-info');
 function handleExcelFiles(files) {
     if (excelFileInput.multiple) {
         const xlsxs = files.filter(f => f.name.toLowerCase().endsWith('.xlsx'));
-        if (xlsxs.length === 0) { alert('Please select .xlsx files.'); return; }
+        if (xlsxs.length === 0) {
+            selectedExcelFiles = [];
+            selectedExcelFile = null;
+            excelFileInput.value = '';
+            excelFilenameDisplay.textContent = 'No file selected';
+            excelFileInfo.classList.add('hidden');
+            alert('Please select .xlsx files.');
+            return;
+        }
         selectedExcelFiles = xlsxs;
         selectedExcelFile = xlsxs[0];
         excelFilenameDisplay.textContent = xlsxs.length === 1
@@ -1785,7 +1801,15 @@ const pptFileInfo = document.getElementById('ppt-file-info');
 function handlePptFiles(files) {
     if (pptFileInput.multiple) {
         const pptxs = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
-        if (pptxs.length === 0) { alert('Please select .pptx files.'); return; }
+        if (pptxs.length === 0) {
+            selectedPptFiles = [];
+            selectedPptFile = null;
+            pptFileInput.value = '';
+            pptFilenameDisplay.textContent = 'No file selected';
+            pptFileInfo.classList.add('hidden');
+            alert('Please select .pptx files.');
+            return;
+        }
         selectedPptFiles = pptxs;
         selectedPptFile = pptxs[0];
         pptFilenameDisplay.textContent = pptxs.length === 1
