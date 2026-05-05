@@ -73,3 +73,61 @@ def test_resize_target_size(sample_image, tmp_path):
     # Relaxed check: just ensure it's smaller than original and "close" to target or under
     assert result_size <= target_kb * 1024 * 1.5 # Allow some margin, or just check it got smaller
     assert result_size < original_size
+
+
+def test_resize_unknown_mode_raises(sample_image, tmp_path):
+    """Unknown resize mode raises ValueError."""
+    output_dir = tmp_path / "output_unknown"
+    output_dir.mkdir()
+
+    with pytest.raises(ValueError, match="Unknown resize mode"):
+        resize_image(str(sample_image), str(output_dir), mode='invalid_mode')
+
+
+def test_resize_dimensions_no_width_or_height_raises(sample_image, tmp_path):
+    """Dimensions mode without width or height raises ValueError."""
+    output_dir = tmp_path / "output_no_dims"
+    output_dir.mkdir()
+
+    with pytest.raises(ValueError, match="Width or height"):
+        resize_image(str(sample_image), str(output_dir), mode='dimensions')
+
+
+def test_resize_percentage_no_percentage_raises(sample_image, tmp_path):
+    """Percentage mode without percentage raises ValueError."""
+    output_dir = tmp_path / "output_no_pct"
+    output_dir.mkdir()
+
+    with pytest.raises(ValueError, match="Percentage"):
+        resize_image(str(sample_image), str(output_dir), mode='percentage')
+
+
+def test_resize_target_size_no_target_raises(sample_image, tmp_path):
+    """Target size mode without target_size_kb raises ValueError."""
+    output_dir = tmp_path / "output_no_target"
+    output_dir.mkdir()
+
+    with pytest.raises(ValueError, match="Target size"):
+        resize_image(str(sample_image), str(output_dir), mode='target_size')
+
+
+def test_resize_only_height_provided(sample_image, tmp_path):
+    """Providing only height preserves aspect ratio."""
+    output_dir = tmp_path / "output_height_only"
+    output_dir.mkdir()
+
+    result = resize_image(str(sample_image), str(output_dir), mode='dimensions', height=200)
+
+    with Image.open(result) as img:
+        # Original is 500x500; scaling height to 200 → width should also be 200
+        assert img.size == (200, 200)
+
+
+def test_resize_output_filename_contains_resized(sample_image, tmp_path):
+    """Output filename contains '_resized' suffix."""
+    output_dir = tmp_path / "output_name"
+    output_dir.mkdir()
+
+    result = resize_image(str(sample_image), str(output_dir), mode='percentage', percentage=50)
+
+    assert "_resized" in Path(result).name

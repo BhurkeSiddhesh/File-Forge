@@ -1,5 +1,6 @@
 import threading
 import logging
+import uuid
 import pikepdf
 from pathlib import Path
 from pdf2docx import Converter
@@ -186,22 +187,340 @@ def extract_pdf_pages(input_path: str, output_dir: str, pages: str, password: st
 
     return str(output_file)
 
+def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', password: str = None) -> dict:
+    """Compress PDF by optimizing structure and resampling large images.
+    
+    Returns dict with output_path, original_size, compressed_size, reduction_pct.
+    """
+    import io
+    from PIL import Image as PILImage
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_compressed.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        original_size = input_file.stat().st_size
+        doc = fitz.open(decrypted_path)
+
+        if level in ('medium', 'high'):
+            max_dim = {'medium': 1200, 'high': 800}[level]
+            jpeg_quality = {'medium': 72, 'high': 45}[level]
+
+            xrefs_processed = set()
+            for page in doc:
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    if xref in xrefs_processed:
+                        continue
+                    xrefs_processed.add(xref)
+                    try:
+                        pix = fitz.Pixmap(doc, xref)
+
+                        if pix.width <= max_dim and pix.height <= max_dim:
+                            pix = None
+                            continue
+
+                        if pix.n > 3:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+
+                        mode = "RGB" if pix.n == 3 else "RGBA"
+                        pil_img = PILImage.frombytes(mode, (pix.width, pix.height), pix.samples)
+
+                        factor = max_dim / max(pix.width, pix.height)
+                        new_w = max(1, int(pix.width * factor))
+                        new_h = max(1, int(pix.height * factor))
+                        pil_img = pil_img.resize((new_w, new_h), PILImage.LANCZOS)
+
+                        if pil_img.mode != 'RGB':
+                            pil_img = pil_img.convert('RGB')
+
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format='JPEG', quality=jpeg_quality, optimize=True)
+                        jpeg_bytes = buf.getvalue()
+
+                        doc.replace_image(xref, stream=jpeg_bytes)
+                        pix = None
+
+                    except Exception as e:
+                        logger.warning("Skipping image xref %s: %s", xref, e)
+                        continue
+
+        doc.save(
+            str(output_file),
+            garbage=4,
+            deflate=True,
+            deflate_images=True,
+            deflate_fonts=True,
+            clean=True,
+        )
+        doc.close()
+
+        compressed_size = output_file.stat().st_size
+        reduction = max(0.0, (1 - compressed_size / original_size) * 100)
+
+        return {
+            'output_path': str(output_file),
+            'original_size': original_size,
+            'compressed_size': compressed_size,
+            'reduction_pct': round(reduction, 1),
+        }
+
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+
 def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}.docx"
-    
-    # Handle encrypted PDFs
+
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
-    
+
     try:
         cv = Converter(decrypted_path)
-        cv.convert(str(output_file))
-        cv.close()
+        try:
+            try:
+                cv.convert(str(output_file), multi_processing=True)
+            except Exception:
+                # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
+                cv.convert(str(output_file))
+        finally:
+            # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
+            # is called. Without this finally block, a failed convert() would leak
+            # the file handle and block cleanup on Windows.
+            cv.close()
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
-    
+
+    return str(output_file)
+
+
+def merge_pdfs(input_paths: List[str], output_dir: str, passwords: List[str] = None) -> str:
+    """Merge multiple PDFs into a single PDF, in the given order."""
+    if not input_paths:
+        raise ValueError("No input files provided for merging.")
+    if len(input_paths) < 2:
+        raise ValueError("Provide at least two PDF files to merge.")
+
+    output_dir_path = Path(output_dir)
+    output_file = output_dir_path / f"merged_{uuid.uuid4().hex[:8]}.pdf"
+
+    cleanup_paths: List[str] = []
+    try:
+        merged = pikepdf.Pdf.new()
+        for idx, path in enumerate(input_paths):
+            pwd = passwords[idx] if passwords and idx < len(passwords) else None
+            decrypted_path, needs_cleanup = _get_decrypted_pdf_path(path, pwd, output_dir_path)
+            if needs_cleanup:
+                cleanup_paths.append(decrypted_path)
+            with pikepdf.open(decrypted_path) as src:
+                merged.pages.extend(src.pages)
+        merged.save(output_file)
+    finally:
+        for p in cleanup_paths:
+            Path(p).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+def add_watermark(
+    input_path: str,
+    output_dir: str,
+    text: str,
+    position: str = "diagonal",
+    opacity: float = 0.3,
+    password: str = None,
+) -> str:
+    """Stamp a text watermark on every page."""
+    if not text or not text.strip():
+        raise ValueError("Watermark text cannot be empty.")
+    try:
+        opacity = float(opacity)
+    except (TypeError, ValueError):
+        raise ValueError("Opacity must be a number between 0.1 and 1.0.")
+    if not 0.05 <= opacity <= 1.0:
+        raise ValueError("Opacity must be between 0.1 and 1.0.")
+    if position not in ("diagonal", "top", "center", "bottom"):
+        raise ValueError("Position must be one of: diagonal, top, center, bottom.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_watermarked.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        # Use PyMuPDF for the overlay — simpler cross-page-size handling than pikepdf overlays.
+        doc = fitz.open(decrypted_path)
+        try:
+            for page in doc:
+                rect = page.rect
+                # Pick a font size relative to page width.
+                font_size = max(24, int(rect.width / 12))
+                color = (0.5, 0.5, 0.5)
+
+                if position == "diagonal":
+                    # Diagonal stamp anchored at page center (PyMuPDF rotate= must be a
+                    # multiple of 90, so apply the 45° rotation via morph).
+                    point = fitz.Point(rect.width / 2, rect.height / 2)
+                    page.insert_text(
+                        point,
+                        text,
+                        fontname="helv",
+                        fontsize=font_size,
+                        color=color,
+                        fill_opacity=opacity,
+                        morph=(point, fitz.Matrix(1, 1).prerotate(45)),
+                    )
+                else:
+                    if position == "top":
+                        y = rect.height * 0.1
+                    elif position == "center":
+                        y = rect.height / 2
+                    else:  # bottom
+                        y = rect.height * 0.9
+                    # Rough horizontal centering.
+                    text_width = font_size * 0.5 * len(text)
+                    x = max(10, (rect.width - text_width) / 2)
+                    page.insert_text(
+                        fitz.Point(x, y),
+                        text,
+                        fontname="helv",
+                        fontsize=font_size,
+                        color=color,
+                        fill_opacity=opacity,
+                    )
+            doc.save(str(output_file), garbage=3, deflate=True)
+        finally:
+            doc.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+def pdf_to_images_zip(
+    input_path: str,
+    output_dir: str,
+    dpi: int = 150,
+    fmt: str = "jpg",
+    password: str = None,
+) -> dict:
+    """Render every PDF page to an image and return a zip."""
+    import zipfile
+
+    try:
+        dpi = int(dpi)
+    except (TypeError, ValueError):
+        raise ValueError("DPI must be an integer.")
+    if dpi < 50 or dpi > 300:
+        raise ValueError("DPI must be between 50 and 300.")
+
+    fmt = (fmt or "jpg").lower()
+    if fmt not in ("jpg", "jpeg", "png"):
+        raise ValueError("Format must be jpg or png.")
+    file_ext = "jpg" if fmt in ("jpg", "jpeg") else "png"
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_pages.zip"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        try:
+            page_count = len(doc)
+            with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for i, page in enumerate(doc, start=1):
+                    pix = page.get_pixmap(dpi=dpi)
+                    if file_ext == "jpg":
+                        img_bytes = pix.tobytes("jpeg")
+                    else:
+                        img_bytes = pix.tobytes("png")
+                    zf.writestr(f"{input_file.stem}_page_{i:03d}.{file_ext}", img_bytes)
+                    pix = None
+        finally:
+            doc.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return {"output_path": str(output_file), "page_count": page_count}
+
+
+def sign_pdf(
+    input_path: str,
+    signature_image_path: str,
+    output_dir: str,
+    page: int = 1,
+    x: float = 0.65,
+    y: float = 0.85,
+    width: float = 0.2,
+    password: str = None,
+) -> str:
+    """Stamp a signature image onto the chosen page.
+
+    x, y, width are normalized (0-1) relative to page size. (x, y) is the top-left
+    of the signature box.
+    """
+    try:
+        page = int(page)
+        x = float(x)
+        y = float(y)
+        width = float(width)
+    except (TypeError, ValueError):
+        raise ValueError("page must be an integer; x, y, width must be numbers.")
+    if page < 1:
+        raise ValueError("Page number must be >= 1.")
+    if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+        raise ValueError("x and y must be between 0 and 1.")
+    if not (0.05 <= width <= 1.0):
+        raise ValueError("width must be between 0.05 and 1.0.")
+    if not Path(signature_image_path).exists():
+        raise ValueError("Signature image not found.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_signed.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        try:
+            if page > len(doc):
+                raise ValueError(f"Page {page} exceeds document page count ({len(doc)}).")
+
+            target_page = doc[page - 1]
+            rect = target_page.rect
+            box_w = rect.width * width
+            # Estimate height from image aspect ratio so the signature isn't squashed.
+            try:
+                from PIL import Image as PILImage
+                with PILImage.open(signature_image_path) as im:
+                    img_w, img_h = im.size
+                aspect = img_h / img_w if img_w else 0.4
+            except Exception:
+                aspect = 0.4
+            box_h = box_w * aspect
+
+            x0 = rect.width * x
+            y0 = rect.height * y
+            x1 = min(rect.width, x0 + box_w)
+            y1 = min(rect.height, y0 + box_h)
+            target_rect = fitz.Rect(x0, y0, x1, y1)
+
+            target_page.insert_image(target_rect, filename=signature_image_path, keep_proportion=True)
+            doc.save(str(output_file), garbage=3, deflate=True)
+        finally:
+            doc.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
     return str(output_file)
 
 def merge_docx_files(input_files: list, output_file: str) -> None:

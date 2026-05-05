@@ -16,3 +16,7 @@ requests
 pillow-heif
 onnxruntime
 aiofiles
+gunicorn
+openpyxl
+pandas
+python-pptx

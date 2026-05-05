@@ -22,8 +22,35 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 from fastapi.concurrency import run_in_threadpool
-from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, pdf_to_word_paddle, extract_pdf_pages
-from scripts.image_utils import heic_to_jpeg
+from scripts.pdf_utils import (
+    remove_pdf_password,
+    pdf_to_docx,
+    pdf_to_word_paddle,
+    extract_pdf_pages,
+    compress_pdf,
+    merge_pdfs,
+    add_watermark,
+    pdf_to_images_zip,
+    sign_pdf,
+)
+from scripts.image_utils import (
+    heic_to_jpeg,
+    rotate_image,
+    compress_image,
+    convert_image_format,
+    watermark_image,
+)
+from scripts.excel_utils import (
+    excel_to_pdf,
+    csv_to_xlsx,
+    xlsx_to_csv,
+    merge_excel_files,
+)
+from scripts.ppt_utils import (
+    ppt_to_pdf,
+    ppt_to_images_zip,
+    merge_pptx,
+)
 
 app = FastAPI(title="File Forge API")
 
@@ -164,7 +191,7 @@ async def api_convert_to_word(
             output_path = pdf_to_word_paddle(str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word with AI Layout Recovery"
         else:
-            output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
+            output_path = await run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word (Standard)"
 
         logger.info("Conversion successful: %s", output_path)
@@ -202,6 +229,204 @@ async def api_extract_pages(file: UploadFile = File(...), pages: str = Form(...)
                 os.remove(temp_path)
             except PermissionError:
                 pass
+
+
+@app.post("/api/pdf/compress")
+async def api_compress_pdf(
+    file: UploadFile = File(...),
+    level: str = Form('medium'),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth)
+):
+    """Compress PDF by optimizing structure and resampling large images."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    logger.debug("Compressing: %s, level=%s, password=%s", safe_filename, level, '***' if password else 'None')
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = await run_in_threadpool(
+            compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None
+        )
+        return {
+            "status": "success",
+            "message": "PDF compressed successfully",
+            "filename": Path(result['output_path']).name,
+            "original_size": result['original_size'],
+            "compressed_size": result['compressed_size'],
+            "reduction_pct": result['reduction_pct'],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("PDF compression failed for %s", safe_filename)
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/merge")
+async def api_merge_pdfs(
+    files: List[UploadFile] = File(...),
+    passwords: Optional[str] = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Merge multiple PDFs into one. `passwords` is an optional comma-separated list aligned with files."""
+    if not files or len(files) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least two PDF files to merge.")
+
+    temp_paths: List[Path] = []
+    try:
+        for f in files:
+            safe_filename = Path(f.filename.replace("\\", "/")).name
+            unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+            temp_path = UPLOAD_DIR / unique_filename
+            with temp_path.open("wb") as buffer:
+                shutil.copyfileobj(f.file, buffer)
+            temp_paths.append(temp_path)
+
+        pwd_list = None
+        if passwords:
+            pwd_list = [p if p else None for p in passwords.split(",")]
+
+        output_path = await run_in_threadpool(
+            merge_pdfs, [str(p) for p in temp_paths], str(OUTPUT_DIR), pwd_list
+        )
+        return {"status": "success", "message": "PDFs merged", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("PDF merge failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        for p in temp_paths:
+            if p.exists():
+                try:
+                    os.remove(p)
+                except PermissionError:
+                    pass
+
+
+@app.post("/api/pdf/watermark")
+async def api_add_watermark(
+    file: UploadFile = File(...),
+    text: str = Form(...),
+    position: str = Form("diagonal"),
+    opacity: float = Form(0.3),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Stamp a text watermark on every page."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        output_path = await run_in_threadpool(
+            add_watermark, str(temp_path), str(OUTPUT_DIR), text, position, opacity, password or None
+        )
+        return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Watermark failed for %s", safe_filename)
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/to-images")
+async def api_pdf_to_images(
+    file: UploadFile = File(...),
+    dpi: int = Form(150),
+    fmt: str = Form("jpg"),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Render every page to an image and return a zip."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = await run_in_threadpool(
+            pdf_to_images_zip, str(temp_path), str(OUTPUT_DIR), dpi, fmt, password or None
+        )
+        return {
+            "status": "success",
+            "message": f"Rendered {result['page_count']} page(s) to images",
+            "filename": Path(result["output_path"]).name,
+            "page_count": result["page_count"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("PDF to images failed for %s", safe_filename)
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/sign")
+async def api_sign_pdf(
+    file: UploadFile = File(...),
+    signature: UploadFile = File(...),
+    page: int = Form(1),
+    x: float = Form(0.65),
+    y: float = Form(0.85),
+    width: float = Form(0.2),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Stamp a signature image onto the chosen page."""
+    sig_ct = (signature.content_type or "").lower()
+    if sig_ct not in ("image/png", "image/jpeg", "image/jpg"):
+        raise HTTPException(status_code=400, detail="Signature must be a PNG or JPEG image.")
+
+    safe_pdf = Path(file.filename.replace("\\", "/")).name
+    safe_sig = Path(signature.filename.replace("\\", "/")).name
+    pdf_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_pdf}"
+    sig_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_sig}"
+    try:
+        with pdf_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        with sig_path.open("wb") as buffer:
+            shutil.copyfileobj(signature.file, buffer)
+
+        output_path = await run_in_threadpool(
+            sign_pdf, str(pdf_path), str(sig_path), str(OUTPUT_DIR), page, x, y, width, password or None
+        )
+        return {"status": "success", "message": "Signature added", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Sign PDF failed for %s", safe_pdf)
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        for p in (pdf_path, sig_path):
+            if p.exists():
+                try:
+                    os.remove(p)
+                except PermissionError:
+                    pass
 
 
 @app.post("/api/image/heic-to-jpeg")
@@ -303,8 +528,309 @@ async def api_crop_image(
                 pass
 
 
+@app.post("/api/image/rotate")
+async def api_rotate_image(
+    file: UploadFile = File(...),
+    angle: float = Form(90),
+    quality: int = Form(95),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(rotate_image, str(temp_path), str(OUTPUT_DIR), angle, quality)
+        return {"status": "success", "message": f"Rotated by {angle}°", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/image/compress")
+async def api_compress_image(
+    file: UploadFile = File(...),
+    quality: int = Form(70),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        result = await run_in_threadpool(compress_image, str(temp_path), str(OUTPUT_DIR), quality)
+        return {
+            "status": "success",
+            "message": "Image compressed",
+            "filename": Path(result["output_path"]).name,
+            "original_size": result["original_size"],
+            "compressed_size": result["compressed_size"],
+            "reduction_pct": result["reduction_pct"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/image/convert")
+async def api_convert_image(
+    file: UploadFile = File(...),
+    target_format: str = Form(...),
+    quality: int = Form(90),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(
+            convert_image_format, str(temp_path), str(OUTPUT_DIR), target_format, quality
+        )
+        return {"status": "success", "message": f"Converted to {target_format.upper()}", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/image/watermark")
+async def api_watermark_image(
+    file: UploadFile = File(...),
+    text: str = Form(...),
+    position: str = Form("bottom-right"),
+    opacity: float = Form(0.4),
+    color: str = Form("white"),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(
+            watermark_image, str(temp_path), str(OUTPUT_DIR), text, position, opacity, color
+        )
+        return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+# --- Excel Routes ---
+
+@app.post("/api/excel/to-pdf")
+async def api_excel_to_pdf(
+    file: UploadFile = File(...),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(excel_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        return {"status": "success", "message": "Excel converted to PDF", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/excel/csv-to-xlsx")
+async def api_csv_to_xlsx(
+    file: UploadFile = File(...),
+    delimiter: str = Form(","),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(csv_to_xlsx, str(temp_path), str(OUTPUT_DIR), delimiter)
+        return {"status": "success", "message": "CSV converted to XLSX", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/excel/xlsx-to-csv")
+async def api_xlsx_to_csv(
+    file: UploadFile = File(...),
+    sheet: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(xlsx_to_csv, str(temp_path), str(OUTPUT_DIR), sheet or None)
+        return {"status": "success", "message": "XLSX converted to CSV", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/excel/merge")
+async def api_merge_excel(
+    files: List[UploadFile] = File(...),
+    _auth: str = Depends(require_auth),
+):
+    if not files or len(files) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least two Excel files to merge.")
+    temp_paths: List[Path] = []
+    try:
+        for f in files:
+            safe = Path(f.filename.replace("\\", "/")).name
+            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
+            with tp.open("wb") as buffer:
+                shutil.copyfileobj(f.file, buffer)
+            temp_paths.append(tp)
+        output_path = await run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(OUTPUT_DIR))
+        return {"status": "success", "message": "Excel files merged", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        for p in temp_paths:
+            if p.exists():
+                try: os.remove(p)
+                except PermissionError: pass
+
+
+# --- PPT Routes ---
+
+@app.post("/api/ppt/to-pdf")
+async def api_ppt_to_pdf(
+    file: UploadFile = File(...),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(ppt_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        return {"status": "success", "message": "PPT converted to PDF (best-effort layout)", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/ppt/to-images")
+async def api_ppt_to_images(
+    file: UploadFile = File(...),
+    fmt: str = Form("png"),
+    _auth: str = Depends(require_auth),
+):
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        result = await run_in_threadpool(ppt_to_images_zip, str(temp_path), str(OUTPUT_DIR), fmt)
+        return {
+            "status": "success",
+            "message": f"Rendered {result['slide_count']} slide(s)",
+            "filename": Path(result["output_path"]).name,
+            "slide_count": result["slide_count"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try: os.remove(temp_path)
+            except PermissionError: pass
+
+
+@app.post("/api/ppt/merge")
+async def api_merge_pptx(
+    files: List[UploadFile] = File(...),
+    _auth: str = Depends(require_auth),
+):
+    if not files or len(files) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least two PPTX files to merge.")
+    temp_paths: List[Path] = []
+    try:
+        for f in files:
+            safe = Path(f.filename.replace("\\", "/")).name
+            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
+            with tp.open("wb") as buffer:
+                shutil.copyfileobj(f.file, buffer)
+            temp_paths.append(tp)
+        output_path = await run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(OUTPUT_DIR))
+        return {"status": "success", "message": "PPTX files merged", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Endpoint failed")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        for p in temp_paths:
+            if p.exists():
+                try: os.remove(p)
+                except PermissionError: pass
+
+
 @app.post("/api/workflow/execute")
-async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
+async def execute_workflow(
+    file: UploadFile = File(...),
+    steps: str = Form(...),
+    _auth: str = Depends(require_auth),
+):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
     import json
     from fastapi.responses import StreamingResponse
@@ -395,6 +921,64 @@ async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...))
                         x=x, y=y, width=width, height=height
                     )
                     current_file = Path(output_path)
+
+                elif step_type == 'compress_pdf':
+                    level = config.get('level', 'medium')
+                    password = config.get('password') or None
+                    result = await run_in_threadpool(compress_pdf, str(current_file), str(OUTPUT_DIR), level, password)
+                    current_file = Path(result['output_path'])
+
+                elif step_type == 'rotate_image':
+                    angle = config.get('angle', 90)
+                    output_path = await run_in_threadpool(rotate_image, str(current_file), str(OUTPUT_DIR), angle)
+                    current_file = Path(output_path)
+
+                elif step_type == 'compress_image':
+                    quality = config.get('quality', 70)
+                    result = await run_in_threadpool(compress_image, str(current_file), str(OUTPUT_DIR), quality)
+                    current_file = Path(result['output_path'])
+
+                elif step_type == 'convert_image':
+                    target_format = config.get('target_format', 'jpg')
+                    quality = config.get('quality', 90)
+                    output_path = await run_in_threadpool(
+                        convert_image_format, str(current_file), str(OUTPUT_DIR), target_format, quality
+                    )
+                    current_file = Path(output_path)
+
+                elif step_type == 'watermark_image':
+                    text = config.get('text', 'WATERMARK')
+                    position = config.get('position', 'bottom-right')
+                    opacity = config.get('opacity', 0.4)
+                    color = config.get('color', 'white')
+                    output_path = await run_in_threadpool(
+                        watermark_image, str(current_file), str(OUTPUT_DIR), text, position, opacity, color
+                    )
+                    current_file = Path(output_path)
+
+                elif step_type == 'excel_to_pdf':
+                    output_path = await run_in_threadpool(excel_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    current_file = Path(output_path)
+
+                elif step_type == 'csv_to_xlsx':
+                    delimiter = config.get('delimiter', ',')
+                    output_path = await run_in_threadpool(csv_to_xlsx, str(current_file), str(OUTPUT_DIR), delimiter)
+                    current_file = Path(output_path)
+
+                elif step_type == 'xlsx_to_csv':
+                    sheet = config.get('sheet') or None
+                    output_path = await run_in_threadpool(xlsx_to_csv, str(current_file), str(OUTPUT_DIR), sheet)
+                    current_file = Path(output_path)
+
+                elif step_type == 'ppt_to_pdf':
+                    output_path = await run_in_threadpool(ppt_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    current_file = Path(output_path)
+
+                elif step_type == 'ppt_to_images':
+                    fmt = config.get('fmt', 'png')
+                    result = await run_in_threadpool(ppt_to_images_zip, str(current_file), str(OUTPUT_DIR), fmt)
+                    current_file = Path(result['output_path'])
+
                 else:
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
                     return

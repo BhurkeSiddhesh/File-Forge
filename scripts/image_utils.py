@@ -1,8 +1,9 @@
 """
 Image conversion utilities for File Forge.
 """
+import io
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 import pillow_heif
 
 # Register HEIF opener with Pillow
@@ -204,6 +205,178 @@ def crop_image(input_path: str, output_dir: str,
         
         cropped_img = img.crop((x, y, right, lower))
         cropped_img.save(output_file, "JPEG", quality=quality, optimize=True)
-    
+
+    return str(output_file)
+
+
+_FORMAT_EXT = {"jpg": "jpg", "jpeg": "jpg", "png": "png", "webp": "webp"}
+_FORMAT_PIL = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}
+
+
+def _save_pil(img: Image.Image, output_file: Path, fmt: str, quality: int = 90) -> None:
+    """Save a PIL image in the chosen format with sane defaults."""
+    pil_fmt = _FORMAT_PIL[fmt]
+    if pil_fmt == "JPEG":
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(output_file, pil_fmt, quality=quality, optimize=True)
+    elif pil_fmt == "PNG":
+        img.save(output_file, pil_fmt, optimize=True)
+    else:  # WEBP
+        img.save(output_file, pil_fmt, quality=quality, method=6)
+
+
+def rotate_image(input_path: str, output_dir: str, angle: float, quality: int = 95) -> str:
+    """Rotate an image counter-clockwise by `angle` degrees (90/180/270 are lossless-friendly)."""
+    try:
+        angle = float(angle)
+    except (TypeError, ValueError):
+        raise ValueError("angle must be a number.")
+
+    input_file = Path(input_path)
+    fmt = (input_file.suffix.lower().lstrip(".") or "jpg")
+    if fmt not in _FORMAT_EXT:
+        fmt = "jpg"
+    output_file = Path(output_dir) / f"{input_file.stem}_rotated.{_FORMAT_EXT[fmt]}"
+
+    with Image.open(input_file) as img:
+        img = ImageOps.exif_transpose(img)
+        # expand=True so rotated bounds are not clipped.
+        rotated = img.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True)
+        _save_pil(rotated, output_file, fmt, quality=quality)
+
+    return str(output_file)
+
+
+def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
+    """Re-encode an image at a lower quality (JPEG/WebP) or with optimize=True (PNG)."""
+    try:
+        quality = int(quality)
+    except (TypeError, ValueError):
+        raise ValueError("quality must be an integer.")
+    if not 1 <= quality <= 100:
+        raise ValueError("quality must be between 1 and 100.")
+
+    input_file = Path(input_path)
+    fmt = input_file.suffix.lower().lstrip(".")
+    if fmt not in _FORMAT_EXT:
+        fmt = "jpg"
+    output_file = Path(output_dir) / f"{input_file.stem}_compressed.{_FORMAT_EXT[fmt]}"
+
+    original_size = input_file.stat().st_size
+    with Image.open(input_file) as img:
+        img = ImageOps.exif_transpose(img)
+        _save_pil(img, output_file, fmt, quality=quality)
+
+    compressed_size = output_file.stat().st_size
+    reduction = max(0.0, (1 - compressed_size / original_size) * 100) if original_size else 0.0
+    return {
+        "output_path": str(output_file),
+        "original_size": original_size,
+        "compressed_size": compressed_size,
+        "reduction_pct": round(reduction, 1),
+    }
+
+
+def convert_image_format(input_path: str, output_dir: str, target_format: str, quality: int = 90) -> str:
+    """Convert an image to JPG/PNG/WebP."""
+    target_format = (target_format or "").lower()
+    if target_format not in _FORMAT_EXT:
+        raise ValueError("target_format must be one of: jpg, png, webp.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}.{_FORMAT_EXT[target_format]}"
+
+    with Image.open(input_file) as img:
+        img = ImageOps.exif_transpose(img)
+        # PNG/WebP can keep alpha; JPEG cannot.
+        if target_format in ("jpg", "jpeg") and img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+        elif target_format == "png" and img.mode == "P":
+            img = img.convert("RGBA")
+        _save_pil(img, output_file, target_format, quality=quality)
+
+    return str(output_file)
+
+
+def watermark_image(
+    input_path: str,
+    output_dir: str,
+    text: str,
+    position: str = "bottom-right",
+    opacity: float = 0.4,
+    color: str = "white",
+    quality: int = 95,
+) -> str:
+    """Stamp a text watermark on an image. position: top-left/top-right/center/bottom-left/bottom-right/diagonal."""
+    if not text or not text.strip():
+        raise ValueError("Watermark text cannot be empty.")
+    try:
+        opacity = float(opacity)
+    except (TypeError, ValueError):
+        raise ValueError("opacity must be a number between 0.05 and 1.0.")
+    if not 0.05 <= opacity <= 1.0:
+        raise ValueError("opacity must be between 0.05 and 1.0.")
+    if position not in ("top-left", "top-right", "center", "bottom-left", "bottom-right", "diagonal"):
+        raise ValueError("position must be one of: top-left, top-right, center, bottom-left, bottom-right, diagonal.")
+
+    color_map = {"white": (255, 255, 255), "black": (0, 0, 0), "red": (220, 30, 30), "blue": (30, 30, 220)}
+    rgb = color_map.get((color or "white").lower(), (255, 255, 255))
+    alpha = int(255 * opacity)
+
+    input_file = Path(input_path)
+    fmt = input_file.suffix.lower().lstrip(".")
+    if fmt not in _FORMAT_EXT:
+        fmt = "jpg"
+    output_file = Path(output_dir) / f"{input_file.stem}_watermarked.{_FORMAT_EXT[fmt]}"
+
+    with Image.open(input_file) as img:
+        img = ImageOps.exif_transpose(img).convert("RGBA")
+        w, h = img.size
+
+        # Pick a font size proportional to the smaller dimension.
+        font_size = max(20, int(min(w, h) / 20))
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # Measure text.
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except AttributeError:
+            tw, th = font.getsize(text)
+
+        margin = max(10, int(min(w, h) * 0.02))
+
+        if position == "diagonal":
+            # Render text on a transparent layer, rotate 30°, paste centered.
+            text_layer = Image.new("RGBA", (tw + 20, th + 20), (0, 0, 0, 0))
+            ImageDraw.Draw(text_layer).text((10, 10), text, font=font, fill=(*rgb, alpha))
+            rotated = text_layer.rotate(30, resample=Image.Resampling.BICUBIC, expand=True)
+            rx, ry = rotated.size
+            overlay.paste(rotated, ((w - rx) // 2, (h - ry) // 2), rotated)
+        else:
+            if position == "top-left":
+                pos = (margin, margin)
+            elif position == "top-right":
+                pos = (w - tw - margin, margin)
+            elif position == "center":
+                pos = ((w - tw) // 2, (h - th) // 2)
+            elif position == "bottom-left":
+                pos = (margin, h - th - margin)
+            else:  # bottom-right
+                pos = (w - tw - margin, h - th - margin)
+            draw.text(pos, text, font=font, fill=(*rgb, alpha))
+
+        composed = Image.alpha_composite(img, overlay)
+        if fmt in ("jpg", "jpeg"):
+            composed = composed.convert("RGB")
+        _save_pil(composed, output_file, fmt, quality=quality)
+
     return str(output_file)
 
