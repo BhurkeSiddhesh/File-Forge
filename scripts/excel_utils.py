@@ -99,10 +99,13 @@ def csv_to_xlsx(input_path: str, output_dir: str, delimiter: str = ",") -> str:
     output_file = Path(output_dir) / f"{input_file.stem}.xlsx"
 
     delimiter = delimiter or ","
-    if len(delimiter) > 2:
-        raise ValueError("delimiter must be a single character (use ',' '\\t' ';' '|').")
+    # Normalize the literal "\t" escape to a real tab BEFORE validating length,
+    # so a real two-char input like "||" is rejected with a clear ValueError
+    # instead of falling through to csv.reader and raising a raw TypeError.
     if delimiter == "\\t":
         delimiter = "\t"
+    if len(delimiter) != 1:
+        raise ValueError("delimiter must be a single character (use ',' '\\t' ';' '|').")
 
     wb = Workbook()
     ws = wb.active

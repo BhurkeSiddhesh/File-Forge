@@ -278,11 +278,16 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     try:
         cv = Converter(decrypted_path)
         try:
-            cv.convert(str(output_file), multi_processing=True)
-        except Exception:
-            # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
-            cv.convert(str(output_file))
-        cv.close()
+            try:
+                cv.convert(str(output_file), multi_processing=True)
+            except Exception:
+                # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
+                cv.convert(str(output_file))
+        finally:
+            # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
+            # is called. Without this finally block, a failed convert() would leak
+            # the file handle and block cleanup on Windows.
+            cv.close()
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)

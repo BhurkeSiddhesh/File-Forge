@@ -467,7 +467,7 @@
 
                     <!-- Watermark image options -->
                     <div id="watermark-image-area" class="password-area hidden">
-                        <input type="text" id="watermark-image-text" placeholder="Watermark text">
+                        <input type="text" id="watermark-image-text" placeholder="Watermark text" aria-label="Watermark text">
                         <select id="watermark-image-position" aria-label="Position">
                             <option value="bottom-right" selected>Bottom right</option>
                             <option value="bottom-left">Bottom left</option>
@@ -565,7 +565,7 @@
 
                     <div id="csv-to-xlsx-area" class="password-area hidden">
                         <p class="helper-text">Delimiter (default comma):</p>
-                        <select id="csv-delimiter">
+                        <select id="csv-delimiter" aria-label="CSV delimiter">
                             <option value="," selected>Comma (,)</option>
                             <option value=";">Semicolon (;)</option>
                             <option value="\t">Tab</option>
@@ -575,7 +575,7 @@
                     </div>
 
                     <div id="xlsx-to-csv-area" class="password-area hidden">
-                        <input type="text" id="xlsx-sheet-name" placeholder="Sheet name (blank = first sheet)">
+                        <input type="text" id="xlsx-sheet-name" placeholder="Sheet name (blank = first sheet)" aria-label="XLSX sheet name">
                         <button id="process-xlsx-to-csv-btn" class="primary-btn">Export CSV</button>
                     </div>
 
@@ -654,7 +654,7 @@
 
                     <div id="ppt-to-images-area" class="password-area hidden">
                         <p class="helper-text">Image format:</p>
-                        <select id="ppt-images-format">
+                        <select id="ppt-images-format" aria-label="Image format">
                             <option value="png" selected>PNG</option>
                             <option value="jpg">JPG</option>
                         </select>

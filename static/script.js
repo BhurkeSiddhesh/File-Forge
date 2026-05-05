@@ -883,26 +883,16 @@ async function initCropper() {
     }
 }
 
-// Hook into existing handleImageFile to trigger cropper if in crop mode
+// Hook into existing handleImageFile to trigger cropper if in crop mode.
+// Wrap the original instead of replacing it — the original now handles a much
+// broader accept list (BMP/TIFF/GIF/etc.) and resets per-action option panels
+// via hideImageActionAreas(). Re-implementing it here previously regressed both.
 const originalHandleImageFile = handleImageFile;
 handleImageFile = function (file) {
-    // Call original logic
-    const validTypes = ['image/heic', 'image/heif', 'image/jpeg', 'image/png', 'image/webp'];
-    const validExts = ['.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp'];
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
-
-    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
-        alert('Please select a valid image file (HEIC, JPG, PNG).');
-        return;
-    }
-    selectedImageFile = file;
-    document.getElementById('image-filename-display').textContent = file.name;
-    document.getElementById('image-file-info').classList.remove('hidden');
-    document.getElementById('image-status-display').classList.add('hidden');
-    document.getElementById('image-result-display').classList.add('hidden');
-
-    // If currently in crop mode, init cropper
-    if (document.getElementById('mode-crop').checked) {
+    originalHandleImageFile(file);
+    // If the original rejected the file, selectedImageFile stays null.
+    if (!selectedImageFile) return;
+    if (document.getElementById('mode-crop')?.checked) {
         initCropper();
     }
 };
@@ -1154,8 +1144,8 @@ function addStepToWorkflow(type, label, icon) {
     workflowSteps.push(step);
     renderWorkflowSteps();
 
-    // If step needs config, open modal
-    if (type === 'remove_password' || type === 'resize_image' || type === 'compress_pdf') {
+    // If step needs config, open modal — keep this in sync with needsConfig().
+    if (needsConfig(type)) {
         openConfigModal(workflowSteps.length - 1);
     }
 }
@@ -1210,6 +1200,17 @@ function removeStep(index) {
     renderWorkflowSteps();
 }
 
+// Escape values destined for innerHTML attribute interpolation. Any string that
+// originated from a user-typed input (watermark text, sheet name, password) must
+// pass through this before being templated into an HTML string, otherwise a
+// payload like `"><img src=x onerror=alert(1)>` breaks out of the value="..."
+// attribute and executes script when the modal is re-opened.
+function escapeAttr(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
 function openConfigModal(index) {
     currentConfigStepIndex = index;
     const step = workflowSteps[index];
@@ -1223,7 +1224,7 @@ function openConfigModal(index) {
         body.innerHTML = `
             <label>
                 <span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">PDF Password</span>
-                <input type="password" id="config-password" placeholder="Enter password" value="${step.config.password || ''}">
+                <input type="password" id="config-password" placeholder="Enter password" value="${escapeAttr(step.config.password)}">
             </label>
         `;
     } else if (step.type === 'resize_image') {
@@ -1273,7 +1274,7 @@ function openConfigModal(index) {
         const pos = step.config.position || 'bottom-right';
         body.innerHTML = `
             <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Text</span>
-            <input type="text" id="config-wm-text" value="${step.config.text || ''}"></label>
+            <input type="text" id="config-wm-text" value="${escapeAttr(step.config.text)}"></label>
             <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Position</span>
             <select id="config-wm-position">
                 ${['top-left','top-right','center','bottom-left','bottom-right','diagonal']
@@ -1294,7 +1295,7 @@ function openConfigModal(index) {
     } else if (step.type === 'xlsx_to_csv') {
         body.innerHTML = `
             <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Sheet name (blank = first)</span>
-            <input type="text" id="config-sheet" value="${step.config.sheet || ''}"></label>`;
+            <input type="text" id="config-sheet" value="${escapeAttr(step.config.sheet)}"></label>`;
     } else if (step.type === 'ppt_to_images') {
         const f = step.config.fmt || 'png';
         body.innerHTML = `

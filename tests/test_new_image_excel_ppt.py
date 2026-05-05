@@ -180,6 +180,24 @@ def test_csv_to_xlsx_roundtrip(csv_file, tmp_path):
     assert rows[1][0] == "alice"
 
 
+def test_csv_to_xlsx_rejects_multichar_delimiter(csv_file, tmp_path):
+    # "||" used to slip past the old `len > 2` check and reach csv.reader,
+    # which raised a raw TypeError. Now it must raise a clear ValueError.
+    with pytest.raises(ValueError, match="single character"):
+        csv_to_xlsx(str(csv_file), str(tmp_path), delimiter="||")
+
+
+def test_csv_to_xlsx_normalizes_tab_escape(tmp_path):
+    p = tmp_path / "tabbed.csv"
+    p.write_text("a\tb\n1\t2\n", encoding="utf-8")
+    out = Path(csv_to_xlsx(str(p), str(tmp_path), delimiter="\\t"))
+    assert out.exists()
+    wb = load_workbook(out)
+    rows = list(wb.active.iter_rows(values_only=True))
+    assert rows[0] == ("a", "b")
+    assert rows[1] == ("1", "2")
+
+
 def test_xlsx_to_csv_first_sheet(xlsx_file, tmp_path):
     out = Path(xlsx_to_csv(str(xlsx_file), str(tmp_path)))
     assert out.exists()

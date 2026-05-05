@@ -832,7 +832,11 @@ async def api_merge_pptx(
 
 
 @app.post("/api/workflow/execute")
-async def execute_workflow(file: UploadFile = File(...), steps: str = Form(...)):
+async def execute_workflow(
+    file: UploadFile = File(...),
+    steps: str = Form(...),
+    _auth: str = Depends(require_auth),
+):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
     import json
     from fastapi.responses import StreamingResponse

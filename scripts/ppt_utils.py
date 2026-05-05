@@ -12,9 +12,10 @@ import io
 import uuid
 import zipfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from pptx import Presentation
+from pptx.slide import Slide
 from pptx.util import Emu
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas as rl_canvas
@@ -25,7 +26,7 @@ from reportlab.lib.utils import ImageReader
 _EMU_PER_PX = 9525
 
 
-def _emu_to_px(emu_value) -> int:
+def _emu_to_px(emu_value: Optional[int]) -> int:
     if emu_value is None:
         return 0
     return int(emu_value / _EMU_PER_PX)
@@ -40,7 +41,7 @@ def _try_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _render_slide_to_image(slide, slide_width_emu, slide_height_emu) -> Image.Image:
+def _render_slide_to_image(slide: Slide, slide_width_emu: Optional[int], slide_height_emu: Optional[int]) -> Image.Image:
     """Best-effort raster of one slide: solid white background, then text/images at their layout positions."""
     w_px = max(1, _emu_to_px(slide_width_emu))
     h_px = max(1, _emu_to_px(slide_height_emu))
@@ -155,8 +156,15 @@ def ppt_to_pdf(input_path: str, output_dir: str) -> str:
 def merge_pptx(input_paths: List[str], output_dir: str) -> str:
     """Merge multiple .pptx files by appending slides into the first deck.
 
-    Uses pptx-internal XML copy of slide parts. Works for typical decks; very theme-heavy
-    files may render slightly off because the destination master/theme is preserved.
+    LIMITATION: this implementation deep-copies shape XML only — it does NOT
+    copy referenced package parts (images, embedded charts, media) or remap
+    their relationship IDs. As a result, slides from non-first decks that
+    contain pictures/charts/media will render with broken references in the
+    merged file. Text-only and shape-only decks merge cleanly. A full-fidelity
+    merge would either need to walk r:id relationships and copy the underlying
+    parts into the destination package, or rebuild each shape via the
+    high-level python-pptx APIs (add_picture, add_chart, etc.). See PR
+    discussion for context.
     """
     if not input_paths:
         raise ValueError("No input files provided for merging.")
