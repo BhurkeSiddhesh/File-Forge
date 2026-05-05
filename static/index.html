@@ -56,22 +56,22 @@
                     <div class="badge">New</div>
                 </div>
 
-                <div class="tool-card disabled">
+                <div class="tool-card active" onclick="showDrillDown('excel')" role="button" tabindex="0">
                     <div class="icon-wrapper excel">
                         <i class="fas fa-file-excel"></i>
                     </div>
                     <h3>Excel Tools</h3>
-                    <p>Coming soon: Excel to PDF, CSV to XLSX conversion.</p>
-                    <div class="badge">Soon</div>
+                    <p>Excel → PDF, CSV ↔ XLSX, and merge workbooks.</p>
+                    <div class="badge">New</div>
                 </div>
 
-                <div class="tool-card disabled">
+                <div class="tool-card active" onclick="showDrillDown('ppt')" role="button" tabindex="0">
                     <div class="icon-wrapper ppt">
                         <i class="fas fa-file-powerpoint"></i>
                     </div>
                     <h3>PPT Tools</h3>
-                    <p>Coming soon: PDF to PPT, PPT compression.</p>
-                    <div class="badge">Soon</div>
+                    <p>PPT → PDF, PPT → Images, and merge presentations.</p>
+                    <div class="badge">New</div>
                 </div>
             </div>
         </section>
@@ -135,6 +135,34 @@
                                 <p>Shrink file size — no Acrobat Pro needed</p>
                             </div>
                         </div>
+                        <div class="action-card" id="merge-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge PDFs <span class="free-badge">Paid on Adobe</span></h4>
+                                <p>Combine multiple PDFs into one</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="watermark-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-stamp"></i>
+                            <div class="action-text">
+                                <h4>Add Watermark <span class="free-badge">Paid on Adobe</span></h4>
+                                <p>Stamp text across every page</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="to-images-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-images"></i>
+                            <div class="action-text">
+                                <h4>PDF → JPG <span class="free-badge">Paid on Adobe</span></h4>
+                                <p>Render each page as an image (zip)</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="sign-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-signature"></i>
+                            <div class="action-text">
+                                <h4>Sign PDF <span class="free-badge">Paid on Adobe</span></h4>
+                                <p>Stamp a signature image onto a page</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Compress PDF Options -->
@@ -187,6 +215,62 @@
                         <button id="process-extract-btn" class="primary-btn">Extract Pages</button>
                     </div>
 
+                    <!-- Merge PDFs Options -->
+                    <div id="merge-area" class="password-area hidden">
+                        <p class="helper-text">Select 2 or more PDFs (use the upload area above — multi-select enabled).</p>
+                        <input type="password" id="merge-passwords" placeholder="Passwords, comma-separated (optional)" aria-label="Merge passwords">
+                        <button id="process-merge-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <!-- Watermark Options -->
+                    <div id="watermark-area" class="password-area hidden">
+                        <p class="helper-text">Watermark settings:</p>
+                        <input type="text" id="watermark-text" placeholder="Watermark text (e.g. DRAFT)" aria-label="Watermark text">
+                        <select id="watermark-position" aria-label="Watermark position">
+                            <option value="diagonal" selected>Diagonal</option>
+                            <option value="top">Top</option>
+                            <option value="center">Center</option>
+                            <option value="bottom">Bottom</option>
+                        </select>
+                        <label class="helper-text" for="watermark-opacity">Opacity: <span id="watermark-opacity-value">0.3</span></label>
+                        <input type="range" id="watermark-opacity" min="0.1" max="1" step="0.05" value="0.3">
+                        <input type="password" id="watermark-password" placeholder="PDF Password (optional)" aria-label="PDF Password">
+                        <button id="process-watermark-btn" class="primary-btn">Add Watermark</button>
+                    </div>
+
+                    <!-- PDF to Images Options -->
+                    <div id="to-images-area" class="password-area hidden">
+                        <p class="helper-text">Render every page to an image:</p>
+                        <select id="to-images-dpi" aria-label="DPI">
+                            <option value="72">72 DPI (small)</option>
+                            <option value="150" selected>150 DPI (balanced)</option>
+                            <option value="300">300 DPI (high quality)</option>
+                        </select>
+                        <select id="to-images-format" aria-label="Format">
+                            <option value="jpg" selected>JPG</option>
+                            <option value="png">PNG</option>
+                        </select>
+                        <input type="password" id="to-images-password" placeholder="PDF Password (optional)" aria-label="PDF Password">
+                        <button id="process-to-images-btn" class="primary-btn">Render Pages</button>
+                    </div>
+
+                    <!-- Sign PDF Options -->
+                    <div id="sign-area" class="password-area hidden">
+                        <p class="helper-text">Upload your signature image (PNG with transparency works best):</p>
+                        <input type="file" id="signature-image" accept="image/png,image/jpeg" aria-label="Signature image">
+                        <input type="number" id="sign-page" min="1" value="1" placeholder="Page number" aria-label="Page number">
+                        <select id="sign-position" aria-label="Signature position">
+                            <option value="bottom-right" selected>Bottom right</option>
+                            <option value="bottom-center">Bottom center</option>
+                            <option value="bottom-left">Bottom left</option>
+                            <option value="top-right">Top right</option>
+                        </select>
+                        <label class="helper-text" for="sign-width">Width: <span id="sign-width-value">20%</span></label>
+                        <input type="range" id="sign-width" min="0.05" max="0.6" step="0.01" value="0.2">
+                        <input type="password" id="sign-password" placeholder="PDF Password (optional)" aria-label="PDF Password">
+                        <button id="process-sign-btn" class="primary-btn">Sign PDF</button>
+                    </div>
+
                     <!-- Password Modal-style Input (inline) -->
                     <div id="password-input-area" class="password-area hidden">
                         <input type="password" id="pdf-password" placeholder="Enter PDF Password"
@@ -223,7 +307,7 @@
                         aria-label="Upload Image file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
                         <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
-                        <input type="file" id="image-file-input" accept=".heic,.heif" hidden>
+                        <input type="file" id="image-file-input" accept="image/*,.heic,.heif" hidden>
                         <div id="image-file-info" class="file-info hidden">
                             <i class="fas fa-image"></i>
                             <span id="image-filename-display">No file selected</span>
@@ -319,6 +403,89 @@
                                 <p>Apply cropping selection</p>
                             </div>
                         </div>
+
+                        <div class="action-card" id="rotate-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-redo"></i>
+                            <div class="action-text">
+                                <h4>Rotate</h4>
+                                <p>Rotate by 90°, 180° or 270°</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="compress-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-compress"></i>
+                            <div class="action-text">
+                                <h4>Compress</h4>
+                                <p>Reduce file size at chosen quality</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="convert-format-btn" role="button" tabindex="0">
+                            <i class="fas fa-exchange-alt"></i>
+                            <div class="action-text">
+                                <h4>Convert Format</h4>
+                                <p>JPG ↔ PNG ↔ WebP</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="watermark-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-stamp"></i>
+                            <div class="action-text">
+                                <h4>Add Watermark</h4>
+                                <p>Stamp text on the image</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rotate options -->
+                    <div id="rotate-image-area" class="password-area hidden">
+                        <p class="helper-text">Choose rotation angle:</p>
+                        <select id="rotate-angle" aria-label="Rotation angle">
+                            <option value="90">90° counter-clockwise</option>
+                            <option value="180">180°</option>
+                            <option value="270">270° (90° clockwise)</option>
+                        </select>
+                        <button id="process-rotate-image-btn" class="primary-btn">Rotate</button>
+                    </div>
+
+                    <!-- Compress image options -->
+                    <div id="compress-image-area" class="password-area hidden">
+                        <label class="helper-text" for="compress-image-quality">Quality: <span id="compress-image-quality-value">70</span></label>
+                        <input type="range" id="compress-image-quality" min="10" max="95" value="70">
+                        <button id="process-compress-image-btn" class="primary-btn">Compress</button>
+                    </div>
+
+                    <!-- Convert format options -->
+                    <div id="convert-format-area" class="password-area hidden">
+                        <p class="helper-text">Target format:</p>
+                        <select id="convert-target-format" aria-label="Target format">
+                            <option value="jpg">JPG</option>
+                            <option value="png">PNG</option>
+                            <option value="webp">WebP</option>
+                        </select>
+                        <label class="helper-text" for="convert-format-quality">Quality (jpg/webp): <span id="convert-format-quality-value">90</span></label>
+                        <input type="range" id="convert-format-quality" min="10" max="100" value="90">
+                        <button id="process-convert-format-btn" class="primary-btn">Convert</button>
+                    </div>
+
+                    <!-- Watermark image options -->
+                    <div id="watermark-image-area" class="password-area hidden">
+                        <input type="text" id="watermark-image-text" placeholder="Watermark text" aria-label="Watermark text">
+                        <select id="watermark-image-position" aria-label="Position">
+                            <option value="bottom-right" selected>Bottom right</option>
+                            <option value="bottom-left">Bottom left</option>
+                            <option value="bottom-center">Bottom center</option>
+                            <option value="top-right">Top right</option>
+                            <option value="top-left">Top left</option>
+                            <option value="center">Center</option>
+                            <option value="diagonal">Diagonal</option>
+                        </select>
+                        <select id="watermark-image-color" aria-label="Color">
+                            <option value="white">White</option>
+                            <option value="black">Black</option>
+                            <option value="red">Red</option>
+                            <option value="blue">Blue</option>
+                        </select>
+                        <label class="helper-text" for="watermark-image-opacity">Opacity: <span id="watermark-image-opacity-value">0.4</span></label>
+                        <input type="range" id="watermark-image-opacity" min="0.05" max="1" step="0.05" value="0.4">
+                        <button id="process-watermark-image-btn" class="primary-btn">Add Watermark</button>
                     </div>
 
                     <div id="image-status-display" class="status-display hidden">
@@ -331,6 +498,184 @@
                         <h3>Process Complete!</h3>
                         <p id="image-result-message"></p>
                         <a id="image-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Excel Page -->
+        <section id="excel-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="excel-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload Excel/CSV file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your Excel/CSV or <span class="browse-text">browse</span></p>
+                        <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv" hidden>
+                        <div id="excel-file-info" class="file-info hidden">
+                            <i class="fas fa-file-excel"></i>
+                            <span id="excel-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Excel/CSV</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="excel-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Excel → PDF</h4>
+                                <p>Render every sheet as a styled table</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="csv-to-xlsx-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-excel"></i>
+                            <div class="action-text">
+                                <h4>CSV → XLSX</h4>
+                                <p>Turn a CSV into a workbook</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="xlsx-to-csv-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-csv"></i>
+                            <div class="action-text">
+                                <h4>XLSX → CSV</h4>
+                                <p>Export a sheet to CSV</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="merge-excel-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge Workbooks</h4>
+                                <p>Combine multiple .xlsx files</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="excel-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Best-effort layout — cell colors, merged cells, and charts are approximated.</p>
+                        <button id="process-excel-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="csv-to-xlsx-area" class="password-area hidden">
+                        <p class="helper-text">Delimiter (default comma):</p>
+                        <select id="csv-delimiter" aria-label="CSV delimiter">
+                            <option value="," selected>Comma (,)</option>
+                            <option value=";">Semicolon (;)</option>
+                            <option value="\t">Tab</option>
+                            <option value="|">Pipe (|)</option>
+                        </select>
+                        <button id="process-csv-to-xlsx-btn" class="primary-btn">Convert to XLSX</button>
+                    </div>
+
+                    <div id="xlsx-to-csv-area" class="password-area hidden">
+                        <input type="text" id="xlsx-sheet-name" placeholder="Sheet name (blank = first sheet)" aria-label="XLSX sheet name">
+                        <button id="process-xlsx-to-csv-btn" class="primary-btn">Export CSV</button>
+                    </div>
+
+                    <div id="merge-excel-area" class="password-area hidden">
+                        <p class="helper-text">Select 2+ .xlsx files via the upload area above.</p>
+                        <button id="process-merge-excel-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <div id="excel-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="excel-status-text">Processing...</p>
+                    </div>
+
+                    <div id="excel-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="excel-result-message"></p>
+                        <a id="excel-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PPT Page -->
+        <section id="ppt-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="ppt-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PPTX file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your PPTX or <span class="browse-text">browse</span></p>
+                        <input type="file" id="ppt-file-input" accept=".pptx" hidden>
+                        <div id="ppt-file-info" class="file-info hidden">
+                            <i class="fas fa-file-powerpoint"></i>
+                            <span id="ppt-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for PPTX</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="ppt-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>PPT → PDF</h4>
+                                <p>Render slides into a PDF</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="ppt-to-images-btn" role="button" tabindex="0">
+                            <i class="fas fa-images"></i>
+                            <div class="action-text">
+                                <h4>PPT → Images</h4>
+                                <p>Each slide as PNG/JPG (zip)</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="merge-ppt-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge PPTX</h4>
+                                <p>Combine multiple presentations</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="ppt-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Best-effort layout — animations, gradients, and SmartArt are not preserved.</p>
+                        <button id="process-ppt-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="ppt-to-images-area" class="password-area hidden">
+                        <p class="helper-text">Image format:</p>
+                        <select id="ppt-images-format" aria-label="Image format">
+                            <option value="png" selected>PNG</option>
+                            <option value="jpg">JPG</option>
+                        </select>
+                        <button id="process-ppt-to-images-btn" class="primary-btn">Render Slides</button>
+                    </div>
+
+                    <div id="merge-ppt-area" class="password-area hidden">
+                        <p class="helper-text">Select 2+ .pptx files via the upload area above.</p>
+                        <button id="process-merge-ppt-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <div id="ppt-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="ppt-status-text">Processing...</p>
+                    </div>
+
+                    <div id="ppt-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="ppt-result-message"></p>
+                        <a id="ppt-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
                     </div>
@@ -394,6 +739,51 @@
                                 data-step-label="Compress PDF" data-step-icon="fa-file-archive" role="button" tabindex="0" aria-label="Add Compress PDF step to workflow">
                                 <i class="fas fa-file-archive"></i>
                                 <span>Compress PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="rotate_image"
+                                data-step-label="Rotate Image" data-step-icon="fa-redo" role="button" tabindex="0" aria-label="Add Rotate Image step">
+                                <i class="fas fa-redo"></i>
+                                <span>Rotate Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="compress_image"
+                                data-step-label="Compress Image" data-step-icon="fa-compress" role="button" tabindex="0" aria-label="Add Compress Image step">
+                                <i class="fas fa-compress"></i>
+                                <span>Compress Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="convert_image"
+                                data-step-label="Convert Image" data-step-icon="fa-exchange-alt" role="button" tabindex="0" aria-label="Add Convert Image step">
+                                <i class="fas fa-exchange-alt"></i>
+                                <span>Convert Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="watermark_image"
+                                data-step-label="Watermark Image" data-step-icon="fa-stamp" role="button" tabindex="0" aria-label="Add Watermark Image step">
+                                <i class="fas fa-stamp"></i>
+                                <span>Watermark Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="excel_to_pdf"
+                                data-step-label="Excel → PDF" data-step-icon="fa-file-pdf" role="button" tabindex="0" aria-label="Add Excel to PDF step">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Excel → PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="csv_to_xlsx"
+                                data-step-label="CSV → XLSX" data-step-icon="fa-file-excel" role="button" tabindex="0" aria-label="Add CSV to XLSX step">
+                                <i class="fas fa-file-excel"></i>
+                                <span>CSV → XLSX</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="xlsx_to_csv"
+                                data-step-label="XLSX → CSV" data-step-icon="fa-file-csv" role="button" tabindex="0" aria-label="Add XLSX to CSV step">
+                                <i class="fas fa-file-csv"></i>
+                                <span>XLSX → CSV</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="ppt_to_pdf"
+                                data-step-label="PPT → PDF" data-step-icon="fa-file-pdf" role="button" tabindex="0" aria-label="Add PPT to PDF step">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>PPT → PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="ppt_to_images"
+                                data-step-label="PPT → Images" data-step-icon="fa-images" role="button" tabindex="0" aria-label="Add PPT to Images step">
+                                <i class="fas fa-images"></i>
+                                <span>PPT → Images</span>
                             </div>
                         </div>
                     </div>
