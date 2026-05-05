@@ -108,6 +108,7 @@ function updateDownloadLink(element, filename) {
 // === End Authentication ===
 
 let selectedFile = null;
+let selectedFiles = [];
 let selectedImageFile = null;
 let currentTool = null;
 
@@ -117,6 +118,8 @@ function showDrillDown(tool) {
     let pageId;
     if (tool === 'pdf') pageId = 'pdf-page';
     else if (tool === 'image') pageId = 'image-page';
+    else if (tool === 'excel') pageId = 'excel-page';
+    else if (tool === 'ppt') pageId = 'ppt-page';
     else if (tool === 'workflow') pageId = 'workflow-page';
     else return;
 
@@ -135,6 +138,8 @@ function showHome() {
     let pageId;
     if (currentTool === 'pdf') pageId = 'pdf-page';
     else if (currentTool === 'image') pageId = 'image-page';
+    else if (currentTool === 'excel') pageId = 'excel-page';
+    else if (currentTool === 'ppt') pageId = 'ppt-page';
     else if (currentTool === 'workflow') pageId = 'workflow-page';
     else pageId = 'pdf-page';
 
@@ -160,7 +165,11 @@ dropZone.onclick = () => fileInput.click();
 
 fileInput.onchange = (e) => {
     if (e.target.files.length > 0) {
-        handleFile(e.target.files[0]);
+        if (fileInput.multiple) {
+            handleFiles(Array.from(e.target.files));
+        } else {
+            handleFile(e.target.files[0]);
+        }
     }
 };
 
@@ -177,7 +186,11 @@ dropZone.ondrop = (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     if (e.dataTransfer.files.length > 0) {
-        handleFile(e.dataTransfer.files[0]);
+        if (fileInput.multiple) {
+            handleFiles(Array.from(e.dataTransfer.files));
+        } else {
+            handleFile(e.dataTransfer.files[0]);
+        }
     }
 };
 
@@ -186,7 +199,35 @@ function hidePdfActionAreas() {
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('extract-pages-area')?.classList.add('hidden');
     document.getElementById('compress-area')?.classList.add('hidden');
+    document.getElementById('merge-area')?.classList.add('hidden');
+    document.getElementById('watermark-area')?.classList.add('hidden');
+    document.getElementById('to-images-area')?.classList.add('hidden');
+    document.getElementById('sign-area')?.classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
+}
+
+function setMergeMode(on) {
+    fileInput.multiple = !!on;
+    if (!on) {
+        selectedFiles = [];
+    } else {
+        selectedFile = null;
+    }
+}
+
+function handleFiles(files) {
+    const pdfs = files.filter(f => f.type === 'application/pdf');
+    if (pdfs.length === 0) {
+        alert('Please select PDF files.');
+        return;
+    }
+    selectedFiles = pdfs;
+    selectedFile = pdfs[0];
+    filenameDisplay.textContent = pdfs.length === 1
+        ? pdfs[0].name
+        : `${pdfs.length} files: ${pdfs.map(f => f.name).join(', ')}`;
+    fileInfo.classList.remove('hidden');
+    document.getElementById('status-display').classList.add('hidden');
 }
 
 function handleFile(file) {
@@ -209,27 +250,58 @@ function handleFile(file) {
 
 // Actions
 document.getElementById('remove-password-btn').onclick = () => {
+    setMergeMode(false);
     if (!selectedFile) { alert('Please select a file first.'); return; }
     hidePdfActionAreas();
     document.getElementById('password-input-area').classList.remove('hidden');
 };
 
 document.getElementById('convert-word-btn').onclick = () => {
+    setMergeMode(false);
     if (!selectedFile) { alert('Please select a file first.'); return; }
     hidePdfActionAreas();
     document.getElementById('convert-password-area').classList.remove('hidden');
 };
 
 document.getElementById('extract-pages-btn').onclick = () => {
+    setMergeMode(false);
     if (!selectedFile) { alert('Please select a file first.'); return; }
     hidePdfActionAreas();
     document.getElementById('extract-pages-area').classList.remove('hidden');
 };
 
 document.getElementById('compress-pdf-btn').onclick = () => {
+    setMergeMode(false);
     if (!selectedFile) { alert('Please select a file first.'); return; }
     hidePdfActionAreas();
     document.getElementById('compress-area').classList.remove('hidden');
+};
+
+document.getElementById('merge-pdf-btn').onclick = () => {
+    setMergeMode(true);
+    hidePdfActionAreas();
+    document.getElementById('merge-area').classList.remove('hidden');
+};
+
+document.getElementById('watermark-pdf-btn').onclick = () => {
+    setMergeMode(false);
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
+    document.getElementById('watermark-area').classList.remove('hidden');
+};
+
+document.getElementById('to-images-pdf-btn').onclick = () => {
+    setMergeMode(false);
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
+    document.getElementById('to-images-area').classList.remove('hidden');
+};
+
+document.getElementById('sign-pdf-btn').onclick = () => {
+    setMergeMode(false);
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    hidePdfActionAreas();
+    document.getElementById('sign-area').classList.remove('hidden');
 };
 
 document.getElementById('process-compress-btn').onclick = async () => {
@@ -313,6 +385,97 @@ document.getElementById('process-extract-btn').onclick = () => {
     }
 
     processAction('/api/pdf/extract-pages', 'Extracting selected pages...', formData);
+};
+
+document.getElementById('process-merge-btn').onclick = () => {
+    if (!selectedFiles || selectedFiles.length < 2) {
+        alert('Please select at least two PDF files in the upload area.');
+        return;
+    }
+    const passwords = document.getElementById('merge-passwords').value || '';
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append('files', f));
+    if (passwords) formData.append('passwords', passwords);
+    processAction('/api/pdf/merge', `Merging ${selectedFiles.length} PDFs...`, formData);
+};
+
+const watermarkOpacityInput = document.getElementById('watermark-opacity');
+if (watermarkOpacityInput) {
+    watermarkOpacityInput.addEventListener('input', (e) => {
+        document.getElementById('watermark-opacity-value').textContent = e.target.value;
+    });
+}
+
+document.getElementById('process-watermark-btn').onclick = () => {
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    const text = document.getElementById('watermark-text').value.trim();
+    if (!text) { alert('Please enter watermark text.'); return; }
+    const position = document.getElementById('watermark-position').value;
+    const opacity = document.getElementById('watermark-opacity').value;
+    const password = document.getElementById('watermark-password').value;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('text', text);
+    formData.append('position', position);
+    formData.append('opacity', opacity);
+    if (password) formData.append('password', password);
+
+    processAction('/api/pdf/watermark', 'Adding watermark...', formData);
+};
+
+document.getElementById('process-to-images-btn').onclick = () => {
+    if (!selectedFile) { alert('Please select a file first.'); return; }
+    const dpi = document.getElementById('to-images-dpi').value;
+    const fmt = document.getElementById('to-images-format').value;
+    const password = document.getElementById('to-images-password').value;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('dpi', dpi);
+    formData.append('fmt', fmt);
+    if (password) formData.append('password', password);
+
+    processAction('/api/pdf/to-images', 'Rendering pages to images...', formData);
+};
+
+const signWidthInput = document.getElementById('sign-width');
+if (signWidthInput) {
+    signWidthInput.addEventListener('input', (e) => {
+        document.getElementById('sign-width-value').textContent =
+            Math.round(parseFloat(e.target.value) * 100) + '%';
+    });
+}
+
+const SIGN_POSITION_PRESETS = {
+    'top-right':      { x: 0.65, y: 0.05 },
+    'bottom-right':   { x: 0.65, y: 0.85 },
+    'bottom-center':  { x: 0.40, y: 0.85 },
+    'bottom-left':    { x: 0.05, y: 0.85 },
+};
+
+document.getElementById('process-sign-btn').onclick = () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const sigInput = document.getElementById('signature-image');
+    const sigFile = sigInput?.files?.[0];
+    if (!sigFile) { alert('Please choose a signature image.'); return; }
+
+    const page = parseInt(document.getElementById('sign-page').value, 10) || 1;
+    const positionKey = document.getElementById('sign-position').value;
+    const preset = SIGN_POSITION_PRESETS[positionKey] || SIGN_POSITION_PRESETS['bottom-right'];
+    const width = document.getElementById('sign-width').value;
+    const password = document.getElementById('sign-password').value;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('signature', sigFile);
+    formData.append('page', page);
+    formData.append('x', preset.x);
+    formData.append('y', preset.y);
+    formData.append('width', width);
+    if (password) formData.append('password', password);
+
+    processAction('/api/pdf/sign', 'Adding signature...', formData);
 };
 
 async function processAction(url, text, formData = null) {
@@ -422,15 +585,21 @@ function showCompressResult(data) {
 
 function resetUI() {
     selectedFile = null;
+    selectedFiles = [];
     selectedImageFile = null;
     currentTool = null;
     fileInput.value = '';
+    fileInput.multiple = false;
     filenameDisplay.textContent = 'No file selected';
     fileInfo.classList.add('hidden');
     document.getElementById('password-input-area').classList.add('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('extract-pages-area')?.classList.add('hidden');
     document.getElementById('compress-area')?.classList.add('hidden');
+    document.getElementById('merge-area')?.classList.add('hidden');
+    document.getElementById('watermark-area')?.classList.add('hidden');
+    document.getElementById('to-images-area')?.classList.add('hidden');
+    document.getElementById('sign-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
     const extractInput = document.getElementById('extract-pages-input');
@@ -492,21 +661,25 @@ if (qualitySlider) {
 }
 
 function handleImageFile(file) {
-    const validTypes = ['image/heic', 'image/heif'];
-    const validExts = ['.heic', '.heif'];
+    const validExts = ['.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif', '.gif'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
 
-    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
-        alert('Please select a HEIC or HEIF file.');
+    if (!file.type.startsWith('image/') && !validExts.includes(ext)) {
+        alert('Please select an image file (HEIC, JPG, PNG, WebP, BMP, TIFF, GIF).');
         return;
     }
     selectedImageFile = file;
     imageFilenameDisplay.textContent = file.name;
     imageFileInfo.classList.remove('hidden');
 
-    // Reset displays
     document.getElementById('image-status-display').classList.add('hidden');
     document.getElementById('image-result-display').classList.add('hidden');
+    hideImageActionAreas();
+}
+
+function hideImageActionAreas() {
+    ['rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area']
+        .forEach(id => document.getElementById(id)?.classList.add('hidden'));
 }
 
 // Convert to JPEG
@@ -1017,7 +1190,11 @@ function renderWorkflowSteps() {
 }
 
 function needsConfig(type) {
-    return ['remove_password', 'resize_image', 'compress_pdf'].includes(type);
+    return [
+        'remove_password', 'resize_image', 'compress_pdf',
+        'rotate_image', 'compress_image', 'convert_image', 'watermark_image',
+        'csv_to_xlsx', 'xlsx_to_csv', 'ppt_to_images',
+    ].includes(type);
 }
 
 function removeStep(index) {
@@ -1060,6 +1237,64 @@ function openConfigModal(index) {
                 </select>
             </label>
         `;
+    } else if (step.type === 'rotate_image') {
+        const a = step.config.angle ?? 90;
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Rotation angle</span>
+            <select id="config-angle">
+                <option value="90" ${a == 90 ? 'selected' : ''}>90°</option>
+                <option value="180" ${a == 180 ? 'selected' : ''}>180°</option>
+                <option value="270" ${a == 270 ? 'selected' : ''}>270°</option>
+            </select></label>`;
+    } else if (step.type === 'compress_image') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Quality (1-100)</span>
+            <input type="number" id="config-quality" min="10" max="95" value="${step.config.quality ?? 70}"></label>`;
+    } else if (step.type === 'convert_image') {
+        const t = step.config.target_format || 'jpg';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Target format</span>
+            <select id="config-target-format">
+                <option value="jpg" ${t === 'jpg' ? 'selected' : ''}>JPG</option>
+                <option value="png" ${t === 'png' ? 'selected' : ''}>PNG</option>
+                <option value="webp" ${t === 'webp' ? 'selected' : ''}>WebP</option>
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Quality</span>
+            <input type="number" id="config-quality" min="10" max="100" value="${step.config.quality ?? 90}"></label>`;
+    } else if (step.type === 'watermark_image') {
+        const pos = step.config.position || 'bottom-right';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Text</span>
+            <input type="text" id="config-wm-text" value="${step.config.text || ''}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Position</span>
+            <select id="config-wm-position">
+                ${['top-left','top-right','center','bottom-left','bottom-right','diagonal']
+                    .map(p => `<option value="${p}" ${p === pos ? 'selected' : ''}>${p}</option>`).join('')}
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Opacity (0.05-1.0)</span>
+            <input type="number" id="config-wm-opacity" min="0.05" max="1" step="0.05" value="${step.config.opacity ?? 0.4}"></label>`;
+    } else if (step.type === 'csv_to_xlsx') {
+        const d = step.config.delimiter || ',';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Delimiter</span>
+            <select id="config-delimiter">
+                <option value="," ${d === ',' ? 'selected' : ''}>Comma</option>
+                <option value=";" ${d === ';' ? 'selected' : ''}>Semicolon</option>
+                <option value="\\t" ${d === '\\t' ? 'selected' : ''}>Tab</option>
+                <option value="|" ${d === '|' ? 'selected' : ''}>Pipe</option>
+            </select></label>`;
+    } else if (step.type === 'xlsx_to_csv') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Sheet name (blank = first)</span>
+            <input type="text" id="config-sheet" value="${step.config.sheet || ''}"></label>`;
+    } else if (step.type === 'ppt_to_images') {
+        const f = step.config.fmt || 'png';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Image format</span>
+            <select id="config-fmt">
+                <option value="png" ${f === 'png' ? 'selected' : ''}>PNG</option>
+                <option value="jpg" ${f === 'jpg' ? 'selected' : ''}>JPG</option>
+            </select></label>`;
     }
 
     modal.classList.remove('hidden');
@@ -1081,6 +1316,23 @@ function saveStepConfig() {
         step.config.percentage = parseInt(document.getElementById('config-percentage').value) || 50;
     } else if (step.type === 'compress_pdf') {
         step.config.level = document.getElementById('config-compress-level').value;
+    } else if (step.type === 'rotate_image') {
+        step.config.angle = parseInt(document.getElementById('config-angle').value) || 90;
+    } else if (step.type === 'compress_image') {
+        step.config.quality = parseInt(document.getElementById('config-quality').value) || 70;
+    } else if (step.type === 'convert_image') {
+        step.config.target_format = document.getElementById('config-target-format').value;
+        step.config.quality = parseInt(document.getElementById('config-quality').value) || 90;
+    } else if (step.type === 'watermark_image') {
+        step.config.text = document.getElementById('config-wm-text').value;
+        step.config.position = document.getElementById('config-wm-position').value;
+        step.config.opacity = parseFloat(document.getElementById('config-wm-opacity').value) || 0.4;
+    } else if (step.type === 'csv_to_xlsx') {
+        step.config.delimiter = document.getElementById('config-delimiter').value;
+    } else if (step.type === 'xlsx_to_csv') {
+        step.config.sheet = document.getElementById('config-sheet').value;
+    } else if (step.type === 'ppt_to_images') {
+        step.config.fmt = document.getElementById('config-fmt').value;
     }
 
     closeConfigModal();
@@ -1287,7 +1539,360 @@ const originalResetUI = resetUI;
 resetUI = function () {
     originalResetUI();
     resetWorkflowUI();
+    selectedExcelFile = null;
+    selectedExcelFiles = [];
+    if (excelFileInput) { excelFileInput.value = ''; excelFileInput.multiple = false; }
+    if (excelFilenameDisplay) excelFilenameDisplay.textContent = 'No file selected';
+    document.getElementById('excel-file-info')?.classList.add('hidden');
+    hideExcelActionAreas();
+    document.getElementById('excel-status-display')?.classList.add('hidden');
+    document.getElementById('excel-result-display')?.classList.add('hidden');
+
+    selectedPptFile = null;
+    selectedPptFiles = [];
+    if (pptFileInput) { pptFileInput.value = ''; pptFileInput.multiple = false; }
+    if (pptFilenameDisplay) pptFilenameDisplay.textContent = 'No file selected';
+    document.getElementById('ppt-file-info')?.classList.add('hidden');
+    hidePptActionAreas();
+    document.getElementById('ppt-status-display')?.classList.add('hidden');
+    document.getElementById('ppt-result-display')?.classList.add('hidden');
 };
+
+// === Image Page: new feature handlers (rotate, compress, convert format, watermark) ===
+
+function showImageOptionPanel(id) {
+    if (!selectedImageFile) { alert('Please select an image first.'); return false; }
+    hideImageActionAreas();
+    document.getElementById(id).classList.remove('hidden');
+    return true;
+}
+
+document.getElementById('rotate-image-btn')?.addEventListener('click', () => {
+    showImageOptionPanel('rotate-image-area');
+});
+document.getElementById('compress-image-btn')?.addEventListener('click', () => {
+    showImageOptionPanel('compress-image-area');
+});
+document.getElementById('convert-format-btn')?.addEventListener('click', () => {
+    showImageOptionPanel('convert-format-area');
+});
+document.getElementById('watermark-image-btn')?.addEventListener('click', () => {
+    showImageOptionPanel('watermark-image-area');
+});
+
+const compressImgQ = document.getElementById('compress-image-quality');
+if (compressImgQ) compressImgQ.addEventListener('input', e => {
+    document.getElementById('compress-image-quality-value').textContent = e.target.value;
+});
+const convertFmtQ = document.getElementById('convert-format-quality');
+if (convertFmtQ) convertFmtQ.addEventListener('input', e => {
+    document.getElementById('convert-format-quality-value').textContent = e.target.value;
+});
+const wmImgOpacity = document.getElementById('watermark-image-opacity');
+if (wmImgOpacity) wmImgOpacity.addEventListener('input', e => {
+    document.getElementById('watermark-image-opacity-value').textContent = e.target.value;
+});
+
+document.getElementById('process-rotate-image-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    const angle = document.getElementById('rotate-angle').value;
+    const fd = new FormData();
+    fd.append('file', selectedImageFile);
+    fd.append('angle', angle);
+    processImageAction('/api/image/rotate', `Rotating ${angle}°...`, fd);
+});
+
+document.getElementById('process-compress-image-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    const quality = document.getElementById('compress-image-quality').value;
+    const fd = new FormData();
+    fd.append('file', selectedImageFile);
+    fd.append('quality', quality);
+    processImageAction('/api/image/compress', 'Compressing image...', fd);
+});
+
+document.getElementById('process-convert-format-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    const target_format = document.getElementById('convert-target-format').value;
+    const quality = document.getElementById('convert-format-quality').value;
+    const fd = new FormData();
+    fd.append('file', selectedImageFile);
+    fd.append('target_format', target_format);
+    fd.append('quality', quality);
+    processImageAction('/api/image/convert', `Converting to ${target_format.toUpperCase()}...`, fd);
+});
+
+document.getElementById('process-watermark-image-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    const text = document.getElementById('watermark-image-text').value.trim();
+    if (!text) { alert('Please enter watermark text.'); return; }
+    const position = document.getElementById('watermark-image-position').value;
+    const opacity = document.getElementById('watermark-image-opacity').value;
+    const color = document.getElementById('watermark-image-color').value;
+
+    const fd = new FormData();
+    fd.append('file', selectedImageFile);
+    fd.append('text', text);
+    fd.append('position', position);
+    fd.append('opacity', opacity);
+    fd.append('color', color);
+    processImageAction('/api/image/watermark', 'Adding watermark...', fd);
+});
+
+// === Excel Page ===
+
+let selectedExcelFile = null;
+let selectedExcelFiles = [];
+
+const excelDropZone = document.getElementById('excel-drop-zone');
+const excelFileInput = document.getElementById('excel-file-input');
+const excelFilenameDisplay = document.getElementById('excel-filename-display');
+const excelFileInfo = document.getElementById('excel-file-info');
+
+function handleExcelFiles(files) {
+    if (excelFileInput.multiple) {
+        const xlsxs = files.filter(f => f.name.toLowerCase().endsWith('.xlsx'));
+        if (xlsxs.length === 0) { alert('Please select .xlsx files.'); return; }
+        selectedExcelFiles = xlsxs;
+        selectedExcelFile = xlsxs[0];
+        excelFilenameDisplay.textContent = xlsxs.length === 1
+            ? xlsxs[0].name
+            : `${xlsxs.length} files: ${xlsxs.map(f => f.name).join(', ')}`;
+    } else {
+        selectedExcelFile = files[0];
+        selectedExcelFiles = [files[0]];
+        excelFilenameDisplay.textContent = files[0].name;
+    }
+    excelFileInfo.classList.remove('hidden');
+    document.getElementById('excel-status-display').classList.add('hidden');
+    document.getElementById('excel-result-display').classList.add('hidden');
+}
+
+if (excelDropZone) {
+    excelDropZone.onclick = () => excelFileInput.click();
+    excelFileInput.onchange = e => { if (e.target.files.length) handleExcelFiles(Array.from(e.target.files)); };
+    excelDropZone.ondragover = e => { e.preventDefault(); excelDropZone.classList.add('drag-over'); };
+    excelDropZone.ondragleave = () => excelDropZone.classList.remove('drag-over');
+    excelDropZone.ondrop = e => {
+        e.preventDefault();
+        excelDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) handleExcelFiles(Array.from(e.dataTransfer.files));
+    };
+}
+
+function hideExcelActionAreas() {
+    ['excel-to-pdf-area', 'csv-to-xlsx-area', 'xlsx-to-csv-area', 'merge-excel-area']
+        .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById('excel-result-display')?.classList.add('hidden');
+}
+
+function setExcelMergeMode(on) {
+    if (excelFileInput) excelFileInput.multiple = !!on;
+    if (!on) selectedExcelFiles = [];
+}
+
+document.getElementById('excel-to-pdf-btn')?.addEventListener('click', () => {
+    setExcelMergeMode(false);
+    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    hideExcelActionAreas();
+    document.getElementById('excel-to-pdf-area').classList.remove('hidden');
+});
+document.getElementById('csv-to-xlsx-btn')?.addEventListener('click', () => {
+    setExcelMergeMode(false);
+    if (!selectedExcelFile) { alert('Please select a CSV file.'); return; }
+    hideExcelActionAreas();
+    document.getElementById('csv-to-xlsx-area').classList.remove('hidden');
+});
+document.getElementById('xlsx-to-csv-btn')?.addEventListener('click', () => {
+    setExcelMergeMode(false);
+    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    hideExcelActionAreas();
+    document.getElementById('xlsx-to-csv-area').classList.remove('hidden');
+});
+document.getElementById('merge-excel-btn')?.addEventListener('click', () => {
+    setExcelMergeMode(true);
+    hideExcelActionAreas();
+    document.getElementById('merge-excel-area').classList.remove('hidden');
+});
+
+async function processExcelAction(url, text, formData) {
+    const statusDisplay = document.getElementById('excel-status-display');
+    const statusText = document.getElementById('excel-status-text');
+    const resultDisplay = document.getElementById('excel-result-display');
+
+    statusDisplay.classList.remove('hidden');
+    statusText.textContent = text;
+    resultDisplay.classList.add('hidden');
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'POST', body: formData });
+        if (response.ok) {
+            const data = await response.json();
+            resultDisplay.classList.remove('hidden');
+            document.getElementById('excel-result-message').textContent = `${data.message}: ${data.filename}`;
+            updateDownloadLink(document.getElementById('excel-download-link'), data.filename);
+        } else {
+            const data = await response.json().catch(() => ({ detail: 'Failed' }));
+            alert('Error: ' + (data.detail || 'Failed'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        statusDisplay.classList.add('hidden');
+    }
+}
+
+document.getElementById('process-excel-to-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedExcelFile);
+    processExcelAction('/api/excel/to-pdf', 'Converting Excel to PDF...', fd);
+});
+document.getElementById('process-csv-to-xlsx-btn')?.addEventListener('click', () => {
+    if (!selectedExcelFile) { alert('Please select a CSV file.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedExcelFile);
+    fd.append('delimiter', document.getElementById('csv-delimiter').value);
+    processExcelAction('/api/excel/csv-to-xlsx', 'Converting CSV to XLSX...', fd);
+});
+document.getElementById('process-xlsx-to-csv-btn')?.addEventListener('click', () => {
+    if (!selectedExcelFile) { alert('Please select an XLSX file.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedExcelFile);
+    const sheet = document.getElementById('xlsx-sheet-name').value.trim();
+    if (sheet) fd.append('sheet', sheet);
+    processExcelAction('/api/excel/xlsx-to-csv', 'Exporting CSV...', fd);
+});
+document.getElementById('process-merge-excel-btn')?.addEventListener('click', () => {
+    if (!selectedExcelFiles || selectedExcelFiles.length < 2) {
+        alert('Please select at least two .xlsx files.'); return;
+    }
+    const fd = new FormData();
+    selectedExcelFiles.forEach(f => fd.append('files', f));
+    processExcelAction('/api/excel/merge', `Merging ${selectedExcelFiles.length} workbooks...`, fd);
+});
+
+// === PPT Page ===
+
+let selectedPptFile = null;
+let selectedPptFiles = [];
+
+const pptDropZone = document.getElementById('ppt-drop-zone');
+const pptFileInput = document.getElementById('ppt-file-input');
+const pptFilenameDisplay = document.getElementById('ppt-filename-display');
+const pptFileInfo = document.getElementById('ppt-file-info');
+
+function handlePptFiles(files) {
+    if (pptFileInput.multiple) {
+        const pptxs = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
+        if (pptxs.length === 0) { alert('Please select .pptx files.'); return; }
+        selectedPptFiles = pptxs;
+        selectedPptFile = pptxs[0];
+        pptFilenameDisplay.textContent = pptxs.length === 1
+            ? pptxs[0].name
+            : `${pptxs.length} files: ${pptxs.map(f => f.name).join(', ')}`;
+    } else {
+        if (!files[0].name.toLowerCase().endsWith('.pptx')) {
+            alert('Please select a .pptx file.'); return;
+        }
+        selectedPptFile = files[0];
+        selectedPptFiles = [files[0]];
+        pptFilenameDisplay.textContent = files[0].name;
+    }
+    pptFileInfo.classList.remove('hidden');
+    document.getElementById('ppt-status-display').classList.add('hidden');
+    document.getElementById('ppt-result-display').classList.add('hidden');
+}
+
+if (pptDropZone) {
+    pptDropZone.onclick = () => pptFileInput.click();
+    pptFileInput.onchange = e => { if (e.target.files.length) handlePptFiles(Array.from(e.target.files)); };
+    pptDropZone.ondragover = e => { e.preventDefault(); pptDropZone.classList.add('drag-over'); };
+    pptDropZone.ondragleave = () => pptDropZone.classList.remove('drag-over');
+    pptDropZone.ondrop = e => {
+        e.preventDefault();
+        pptDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) handlePptFiles(Array.from(e.dataTransfer.files));
+    };
+}
+
+function hidePptActionAreas() {
+    ['ppt-to-pdf-area', 'ppt-to-images-area', 'merge-ppt-area']
+        .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById('ppt-result-display')?.classList.add('hidden');
+}
+
+function setPptMergeMode(on) {
+    if (pptFileInput) pptFileInput.multiple = !!on;
+    if (!on) selectedPptFiles = [];
+}
+
+document.getElementById('ppt-to-pdf-btn')?.addEventListener('click', () => {
+    setPptMergeMode(false);
+    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    hidePptActionAreas();
+    document.getElementById('ppt-to-pdf-area').classList.remove('hidden');
+});
+document.getElementById('ppt-to-images-btn')?.addEventListener('click', () => {
+    setPptMergeMode(false);
+    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    hidePptActionAreas();
+    document.getElementById('ppt-to-images-area').classList.remove('hidden');
+});
+document.getElementById('merge-ppt-btn')?.addEventListener('click', () => {
+    setPptMergeMode(true);
+    hidePptActionAreas();
+    document.getElementById('merge-ppt-area').classList.remove('hidden');
+});
+
+async function processPptAction(url, text, formData) {
+    const statusDisplay = document.getElementById('ppt-status-display');
+    const statusText = document.getElementById('ppt-status-text');
+    const resultDisplay = document.getElementById('ppt-result-display');
+
+    statusDisplay.classList.remove('hidden');
+    statusText.textContent = text;
+    resultDisplay.classList.add('hidden');
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'POST', body: formData });
+        if (response.ok) {
+            const data = await response.json();
+            resultDisplay.classList.remove('hidden');
+            document.getElementById('ppt-result-message').textContent = `${data.message}: ${data.filename}`;
+            updateDownloadLink(document.getElementById('ppt-download-link'), data.filename);
+        } else {
+            const data = await response.json().catch(() => ({ detail: 'Failed' }));
+            alert('Error: ' + (data.detail || 'Failed'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        statusDisplay.classList.add('hidden');
+    }
+}
+
+document.getElementById('process-ppt-to-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedPptFile);
+    processPptAction('/api/ppt/to-pdf', 'Converting PPT to PDF...', fd);
+});
+document.getElementById('process-ppt-to-images-btn')?.addEventListener('click', () => {
+    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedPptFile);
+    fd.append('fmt', document.getElementById('ppt-images-format').value);
+    processPptAction('/api/ppt/to-images', 'Rendering slides...', fd);
+});
+document.getElementById('process-merge-ppt-btn')?.addEventListener('click', () => {
+    if (!selectedPptFiles || selectedPptFiles.length < 2) {
+        alert('Please select at least two .pptx files.'); return;
+    }
+    const fd = new FormData();
+    selectedPptFiles.forEach(f => fd.append('files', f));
+    processPptAction('/api/ppt/merge', `Merging ${selectedPptFiles.length} presentations...`, fd);
+});
 
 // Global Accessibility: Handle keyboard activation for role="button"
 document.addEventListener('keydown', (e) => {
