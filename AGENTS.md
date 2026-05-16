@@ -36,6 +36,14 @@
 
 > **CRITICAL**: Add entry here BEFORE every commit.
 
+### 2026-05-16
+
+- **fix**: Removed import-time hard dependencies in `scripts/pdf_utils.py` by deferring heavy libraries (`pdf2docx`, `PyMuPDF`, `OpenCV`, `python-docx`) to function scope, so app/module import no longer crashes when optional native libs are unavailable.
+- **fix**: Corrected Paddle model directory resolution to use repository-level `models/` as fallback when `scripts/models/` is absent.
+- **test**: Added resilience tests covering optional-dependency import behavior and models path resolution logic.
+- **Files**: `scripts/pdf_utils.py`, `tests/test_pdf_utils_import_resilience.py`, `AGENTS.md`
+- **Verification**: `PYTHONPATH=. pytest -q tests/test_pdf_utils_import_resilience.py` passed.
+
 ### 2026-04-21
 
 - **feat**: Automatically delete files in `/outputs` after downloading to save disk space

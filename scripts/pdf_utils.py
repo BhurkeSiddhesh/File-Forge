@@ -2,7 +2,6 @@ import threading
 import uuid
 import pikepdf
 from pathlib import Path
-from pdf2docx import Converter
 import os
 from typing import List
 
@@ -15,17 +14,22 @@ os.environ['FLAGS_enable_mkldnn'] = '0'
 # Force CPU-only mode with basic backend
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-import fitz
-import cv2
-import numpy as np
-from docxcompose.composer import Composer
-from docx import Document as Document_docx
 import shutil
 
 
 # Global cache for PaddleOCR engine to avoid expensive re-initialization
 _PADDLE_ENGINE = None
 _ENGINE_LOCK = threading.Lock()
+
+
+def _resolve_models_dir() -> Path:
+    """Resolve the Paddle models directory from common project layouts."""
+    script_dir = Path(__file__).resolve().parent
+    candidates = [script_dir / "models", script_dir.parent / "models"]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[1]
 
 def get_paddle_engine():
     """Returns cached PaddleOCR engine instance, initializing if needed (thread-safe)."""
@@ -41,8 +45,7 @@ def get_paddle_engine():
                     print(f"[AI] Error: PaddleOCR not installed correctly. {e}")
                     raise ImportError("PaddleOCR engine is missing. If you are on the Free Tier, it might have failed to install due to size limits.")
 
-                base_dir = Path(__file__).parent
-                paddle_dir = base_dir / "models"
+                paddle_dir = _resolve_models_dir()
                 layout_dir = paddle_dir / "layout" / "picodet_lcnet_x1_0_fgd_layout_infer"
                 table_dir = paddle_dir / "table" / "en_ppstructure_mobile_v2.0_SLANet_inference"
                 det_dir = paddle_dir / "det" / "en" / "en_PP-OCRv3_det_infer"
@@ -189,6 +192,7 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
     Returns dict with output_path, original_size, compressed_size, reduction_pct.
     """
     import io
+    import fitz
     from PIL import Image as PILImage
 
     input_file = Path(input_path)
@@ -270,6 +274,8 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
 
 def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
+    from pdf2docx import Converter
+
     input_file = Path(input_path)
     output_file = Path(output_dir) / f"{input_file.stem}.docx"
 
@@ -332,6 +338,8 @@ def add_watermark(
     password: str = None,
 ) -> str:
     """Stamp a text watermark on every page."""
+    import fitz
+
     if not text or not text.strip():
         raise ValueError("Watermark text cannot be empty.")
     try:
@@ -408,6 +416,7 @@ def pdf_to_images_zip(
 ) -> dict:
     """Render every PDF page to an image and return a zip."""
     import zipfile
+    import fitz
 
     try:
         dpi = int(dpi)
@@ -463,6 +472,8 @@ def sign_pdf(
     x, y, width are normalized (0-1) relative to page size. (x, y) is the top-left
     of the signature box.
     """
+    import fitz
+
     try:
         page = int(page)
         x = float(x)
@@ -521,6 +532,9 @@ def sign_pdf(
 
 def merge_docx_files(input_files: list, output_file: str) -> None:
     """Merges multiple DOCX files into one, inserting page breaks between them."""
+    from docxcompose.composer import Composer
+    from docx import Document as Document_docx
+
     if not input_files:
         raise ValueError("No input files provided for merging.")
 
@@ -535,6 +549,10 @@ def merge_docx_files(input_files: list, output_file: str) -> None:
 
 def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
+    import cv2
+    import fitz
+    import numpy as np
+
     # Deferred imports for utility functions that depend on paddleocr
     try:
         from paddleocr import save_structure_res
