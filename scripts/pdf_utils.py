@@ -668,3 +668,922 @@ def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -
                 print(f"Warning: Could not fully clean up {temp_dir}")
 
     return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #53: Protect PDF (Add Password)
+# ──────────────────────────────────────────────
+
+def protect_pdf(
+    input_path: str,
+    output_dir: str,
+    user_password: str,
+    owner_password: str = None,
+    allow_print: bool = True,
+    allow_copy: bool = False,
+    allow_edit: bool = False,
+    password: str = None,
+) -> str:
+    """Add password protection and access restrictions to a PDF.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save protected PDF.
+        user_password: Password required to open the document.
+        owner_password: Password granting unrestricted access (defaults to user_password).
+        allow_print: Whether to allow printing.
+        allow_copy: Whether to allow text copying.
+        allow_edit: Whether to allow editing.
+        password: Existing password if the PDF is already encrypted.
+
+    Returns:
+        Path to the protected PDF.
+    """
+    if not user_password:
+        raise ValueError("User password cannot be empty.")
+
+    owner_pw = owner_password or user_password
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_protected.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        permissions = pikepdf.Permissions(
+            print_lowres=allow_print,
+            print_highres=allow_print,
+            extract=allow_copy,
+            modify_annotation=allow_edit,
+            modify_assembly=allow_edit,
+            modify_form=allow_edit,
+            modify_other=allow_edit,
+            accessibility=True,  # Always allow accessibility
+        )
+        encryption = pikepdf.Encryption(
+            user=user_password,
+            owner=owner_pw,
+            allow=permissions,
+        )
+        with pikepdf.open(decrypted_path) as pdf:
+            pdf.save(output_file, encryption=encryption)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #54: Image to PDF
+# ──────────────────────────────────────────────
+
+def images_to_pdf(
+    input_paths: List[str],
+    output_dir: str,
+    page_size: str = "A4",
+    fit_mode: str = "fit",
+    margin_pt: int = 36,
+) -> str:
+    """Convert one or more images into a single multi-page PDF.
+
+    Args:
+        input_paths: Ordered list of image file paths.
+        output_dir: Directory to save the PDF.
+        page_size: 'A4', 'Letter', or 'auto' (use image dimensions).
+        fit_mode: 'fit' (scale to page), 'stretch', or 'original'.
+        margin_pt: Page margin in points (default 36 = 0.5 inch).
+
+    Returns:
+        Path to the created PDF.
+    """
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import A4, LETTER
+    from PIL import Image as PILImage
+
+    if not input_paths:
+        raise ValueError("At least one image file is required.")
+
+    PAGE_SIZES = {"a4": A4, "letter": LETTER}
+    page_size_key = page_size.lower()
+
+    output_name = f"images_to_pdf_{uuid.uuid4().hex[:8]}.pdf"
+    output_file = Path(output_dir) / output_name
+
+    # Use a temp canvas path, we'll rebuild after getting page sizes
+    c = rl_canvas.Canvas(str(output_file))
+
+    for img_path in input_paths:
+        with PILImage.open(img_path) as img:
+            img_w, img_h = img.size
+
+        if page_size_key == "auto":
+            pw, ph = float(img_w), float(img_h)
+        else:
+            pw, ph = PAGE_SIZES.get(page_size_key, A4)
+
+        c.setPageSize((pw, ph))
+
+        available_w = pw - 2 * margin_pt
+        available_h = ph - 2 * margin_pt
+
+        if fit_mode == "original":
+            draw_w = min(float(img_w), available_w)
+            draw_h = draw_w * (img_h / img_w)
+        else:
+            scale = min(available_w / img_w, available_h / img_h)
+            draw_w = img_w * scale
+            draw_h = img_h * scale
+
+        x = margin_pt + (available_w - draw_w) / 2
+        y = margin_pt + (available_h - draw_h) / 2
+
+        c.drawImage(img_path, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True)
+        c.showPage()
+
+    c.save()
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #55: Word to PDF
+# ──────────────────────────────────────────────
+
+def word_to_pdf(input_path: str, output_dir: str) -> str:
+    """Convert a DOCX/DOC file to PDF.
+
+    Tries LibreOffice first; falls back to a pure-Python
+    python-docx + reportlab converter.
+
+    Args:
+        input_path: Path to the DOCX/DOC file.
+        output_dir: Directory to save the PDF.
+
+    Returns:
+        Path to the converted PDF.
+    """
+    import subprocess
+
+    input_file = Path(input_path)
+    suffix = input_file.suffix.lower()
+    if suffix not in (".docx", ".doc", ".odt", ".rtf"):
+        raise ValueError("Input must be a .docx, .doc, .odt, or .rtf file.")
+
+    output_file = Path(output_dir) / f"{input_file.stem}.pdf"
+
+    # ── Try LibreOffice first ──────────────────────────────────
+    try:
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf",
+             "--outdir", str(output_dir), str(input_file)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0 and output_file.exists():
+            return str(output_file)
+    except Exception:
+        pass
+
+    # ── Pure-Python fallback (DOCX only) ──────────────────────
+    if suffix != ".docx":
+        raise RuntimeError(
+            "LibreOffice conversion failed. Pure-Python fallback only supports .docx files."
+        )
+
+    try:
+        from docx import Document as DocxDocument
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError as e:
+        raise RuntimeError(f"python-docx or reportlab is required for DOCX→PDF fallback: {e}")
+
+    docx = DocxDocument(str(input_file))
+    doc = SimpleDocTemplate(str(output_file), pagesize=A4,
+                            leftMargin=inch, rightMargin=inch,
+                            topMargin=inch, bottomMargin=inch)
+
+    styles = getSampleStyleSheet()
+    heading_style = ParagraphStyle("Heading", parent=styles["Heading1"], spaceAfter=6)
+    body_style = ParagraphStyle("Body", parent=styles["Normal"], fontSize=11,
+                                leading=15, spaceAfter=4)
+
+    def _escape(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    elements = []
+    for para in docx.paragraphs:
+        text = para.text.strip()
+        if not text:
+            elements.append(Spacer(1, 6))
+            continue
+        style = heading_style if para.style.name.startswith("Heading") else body_style
+        elements.append(Paragraph(_escape(text), style))
+
+    for table in docx.tables:
+        data = []
+        for row in table.rows:
+            data.append([_escape(cell.text) for cell in row.cells])
+        if data:
+            tbl = Table(data, repeatRows=1)
+            tbl.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ]))
+            elements.append(tbl)
+            elements.append(Spacer(1, 8))
+
+    if not elements:
+        elements.append(Paragraph("(Empty document)", body_style))
+
+    doc.build(elements)
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #56: PDF to Excel (Table Extraction)
+# ──────────────────────────────────────────────
+
+def pdf_to_excel(input_path: str, output_dir: str, password: str = None) -> dict:
+    """Extract tables from a PDF and save to an Excel workbook.
+
+    Uses PyMuPDF's find_tables for extraction.
+
+    Args:
+        input_path: Path to the input PDF.
+        output_dir: Directory to save the Excel file.
+        password: PDF password if encrypted.
+
+    Returns:
+        dict with output_path and tables_found count.
+    """
+    import openpyxl
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_tables.xlsx"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)  # Remove default empty sheet
+        tables_found = 0
+
+        for page_num, page in enumerate(doc, start=1):
+            tables = page.find_tables()
+            if not tables or not tables.tables:
+                continue
+            for tbl_idx, table in enumerate(tables.tables):
+                tables_found += 1
+                sheet_name = f"P{page_num}_T{tbl_idx + 1}"[:31]  # Excel max 31 chars
+                ws = wb.create_sheet(title=sheet_name)
+                for row in table.extract():
+                    ws.append([cell if cell is not None else "" for cell in row])
+
+        doc.close()
+
+        if tables_found == 0:
+            # No tables found — extract raw text into a single sheet as fallback
+            doc2 = fitz.open(decrypted_path)
+            ws = wb.create_sheet(title="Text Content")
+            ws.append(["Page", "Text"])
+            for page_num, page in enumerate(doc2, start=1):
+                text = page.get_text().strip()
+                if text:
+                    ws.append([page_num, text])
+            doc2.close()
+
+        wb.save(output_file)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return {"output_path": str(output_file), "tables_found": tables_found}
+
+
+# ──────────────────────────────────────────────
+# Feature #57: PDF to PowerPoint
+# ──────────────────────────────────────────────
+
+def pdf_to_pptx(
+    input_path: str,
+    output_dir: str,
+    dpi: int = 150,
+    password: str = None,
+) -> str:
+    """Convert each PDF page to a slide in a PowerPoint presentation.
+
+    Each page is rendered as a high-res image and used as the slide background.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the PPTX file.
+        dpi: Rendering resolution.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the created PPTX file.
+    """
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    import io
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}.pptx"
+
+    try:
+        dpi = int(dpi)
+        if dpi < 72 or dpi > 300:
+            raise ValueError("DPI must be between 72 and 300.")
+    except (TypeError, ValueError):
+        raise ValueError("DPI must be an integer between 72 and 300.")
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        prs = Presentation()
+
+        for page in doc:
+            rect = page.rect
+            # Set slide size to match page aspect ratio (in inches)
+            slide_w = rect.width / 72.0  # points to inches
+            slide_h = rect.height / 72.0
+            prs.slide_width = int(slide_w * 914400)   # inches to EMU
+            prs.slide_height = int(slide_h * 914400)
+
+            # Render page to image bytes
+            pix = page.get_pixmap(dpi=dpi)
+            img_bytes = io.BytesIO(pix.tobytes("png"))
+
+            blank_layout = prs.slide_layouts[6]  # blank layout
+            slide = prs.slides.add_slide(blank_layout)
+
+            # Add image as full-slide background
+            slide.shapes.add_picture(
+                img_bytes, 0, 0,
+                width=prs.slide_width,
+                height=prs.slide_height,
+            )
+            pix = None
+
+        doc.close()
+        prs.save(str(output_file))
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #58: Extract Text from PDF
+# ──────────────────────────────────────────────
+
+def extract_text_from_pdf(
+    input_path: str,
+    output_dir: str,
+    preserve_layout: bool = False,
+    password: str = None,
+) -> dict:
+    """Extract all text content from a PDF to a .txt file.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the text file.
+        preserve_layout: If True, use 'blocks' layout; otherwise plain text.
+        password: PDF password if encrypted.
+
+    Returns:
+        dict with output_path and page_count.
+    """
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_text.txt"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        all_text = []
+        page_count = len(doc)
+
+        for page_num, page in enumerate(doc, start=1):
+            if preserve_layout:
+                text = page.get_text("blocks")
+                page_text = "\n".join(b[4].strip() for b in text if b[4].strip())
+            else:
+                page_text = page.get_text().strip()
+
+            if page_text:
+                all_text.append(f"--- Page {page_num} ---\n{page_text}")
+
+        doc.close()
+
+        full_text = "\n\n".join(all_text) if all_text else "(No text found in document)"
+        output_file.write_text(full_text, encoding="utf-8")
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return {"output_path": str(output_file), "page_count": page_count}
+
+
+# ──────────────────────────────────────────────
+# Feature #59: Organize PDF (Reorder/Delete/Duplicate)
+# ──────────────────────────────────────────────
+
+def organize_pdf(
+    input_path: str,
+    output_dir: str,
+    page_order: List[int],
+    password: str = None,
+) -> str:
+    """Reorder, delete, or duplicate PDF pages.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the reorganized PDF.
+        page_order: 1-based list of page numbers in desired order.
+                    Repeat a number to duplicate; omit to delete.
+                    Example: [3, 1, 2, 1] — puts page 3 first, duplicates page 1.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the reorganized PDF.
+    """
+    if not page_order:
+        raise ValueError("page_order cannot be empty.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_organized.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            total = len(pdf.pages)
+            # Validate all page numbers
+            for pnum in page_order:
+                if not isinstance(pnum, int) or pnum < 1 or pnum > total:
+                    raise ValueError(
+                        f"Page number {pnum} is out of range (document has {total} pages)."
+                    )
+
+            new_pdf = pikepdf.Pdf.new()
+            for pnum in page_order:
+                new_pdf.pages.append(pdf.pages[pnum - 1])
+            new_pdf.save(output_file)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #60: Add Page Numbers to PDF
+# ──────────────────────────────────────────────
+
+def add_page_numbers(
+    input_path: str,
+    output_dir: str,
+    position: str = "bottom-center",
+    start_number: int = 1,
+    font_size: int = 12,
+    skip_first: int = 0,
+    fmt: str = "decimal",
+    password: str = None,
+) -> str:
+    """Insert page numbers on each page of a PDF.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the numbered PDF.
+        position: One of 'bottom-center', 'bottom-left', 'bottom-right',
+                  'top-center', 'top-left', 'top-right'.
+        start_number: First page number to use.
+        font_size: Font size for page numbers.
+        skip_first: Number of pages to skip from the beginning (e.g., cover page).
+        fmt: 'decimal' (1,2,3), 'roman' (I,II,III), 'alpha' (A,B,C).
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the numbered PDF.
+    """
+    valid_positions = {
+        "bottom-center", "bottom-left", "bottom-right",
+        "top-center", "top-left", "top-right",
+    }
+    if position not in valid_positions:
+        raise ValueError(f"position must be one of: {', '.join(sorted(valid_positions))}")
+    if fmt not in ("decimal", "roman", "alpha"):
+        raise ValueError("fmt must be 'decimal', 'roman', or 'alpha'.")
+    if start_number < 0:
+        raise ValueError("start_number must be >= 0.")
+    if font_size < 4 or font_size > 72:
+        raise ValueError("font_size must be between 4 and 72.")
+
+    def _to_roman(n: int) -> str:
+        val = [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+               (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+               (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+        result = ""
+        for v, s in val:
+            while n >= v:
+                result += s
+                n -= v
+        return result
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_numbered.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        for i, page in enumerate(doc):
+            if i < skip_first:
+                continue
+
+            page_num = start_number + (i - skip_first)
+            if fmt == "roman":
+                label = _to_roman(page_num)
+            elif fmt == "alpha":
+                label = chr(64 + page_num) if page_num <= 26 else str(page_num)
+            else:
+                label = str(page_num)
+
+            rect = page.rect
+            margin = 20
+            y_bottom = rect.height - margin
+            y_top = margin + font_size
+
+            if "bottom" in position:
+                y = y_bottom
+            else:
+                y = y_top
+
+            if "left" in position:
+                x = margin
+            elif "right" in position:
+                x = rect.width - margin - font_size * len(label) * 0.5
+            else:  # center
+                x = rect.width / 2 - font_size * len(label) * 0.25
+
+            page.insert_text(
+                fitz.Point(x, y),
+                label,
+                fontname="helv",
+                fontsize=font_size,
+                color=(0, 0, 0),
+            )
+
+        doc.save(str(output_file), garbage=3, deflate=True)
+        doc.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #61: Repair PDF
+# ──────────────────────────────────────────────
+
+def repair_pdf(input_path: str, output_dir: str) -> dict:
+    """Attempt to recover/repair a corrupted or damaged PDF.
+
+    Args:
+        input_path: Path to the damaged PDF.
+        output_dir: Directory to save the repaired PDF.
+
+    Returns:
+        dict with output_path and repair_status message.
+    """
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_repaired.pdf"
+
+    repair_status = "unknown"
+    try:
+        with pikepdf.open(input_file, allow_overwriting_input=False) as pdf:
+            pdf.save(output_file)
+            repair_status = "success"
+    except pikepdf.PdfError:
+        # Try with recovery mode
+        try:
+            with pikepdf.open(input_file, suppress_warnings=True) as pdf:
+                pdf.save(output_file)
+                repair_status = "partial_recovery"
+        except Exception as e:
+            # Try PyMuPDF as last resort
+            try:
+                doc = fitz.open(str(input_file))
+                doc.save(str(output_file), garbage=4, deflate=True, clean=True)
+                doc.close()
+                repair_status = "recovered_via_mupdf"
+            except Exception as e2:
+                raise RuntimeError(
+                    f"Could not repair PDF: {e2}. The file may be too severely damaged."
+                )
+
+    return {"output_path": str(output_file), "repair_status": repair_status}
+
+
+# ──────────────────────────────────────────────
+# Feature #62: Create PDF from Scratch
+# ──────────────────────────────────────────────
+
+def create_pdf_from_text(
+    output_dir: str,
+    content: str,
+    title: str = "Document",
+    font_size: int = 12,
+    page_size: str = "A4",
+    margin_pt: int = 72,
+) -> str:
+    """Create a new PDF from plain text content.
+
+    Args:
+        output_dir: Directory to save the PDF.
+        content: Text content to write into the PDF.
+        title: Document title (used in filename and metadata).
+        font_size: Body text font size.
+        page_size: 'A4' or 'Letter'.
+        margin_pt: Page margin in points.
+
+    Returns:
+        Path to the created PDF.
+    """
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import A4, LETTER
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    if not content or not content.strip():
+        raise ValueError("Content cannot be empty.")
+
+    page_sizes = {"a4": A4, "letter": LETTER}
+    psize = page_sizes.get(page_size.lower(), A4)
+
+    safe_title = "".join(c for c in title if c.isalnum() or c in " _-")[:50] or "document"
+    output_name = f"{safe_title.replace(' ', '_')}_{uuid.uuid4().hex[:6]}.pdf"
+    output_file = Path(output_dir) / output_name
+
+    doc = SimpleDocTemplate(
+        str(output_file),
+        pagesize=psize,
+        leftMargin=margin_pt,
+        rightMargin=margin_pt,
+        topMargin=margin_pt,
+        bottomMargin=margin_pt,
+        title=title,
+    )
+
+    styles = getSampleStyleSheet()
+    body_style = ParagraphStyle(
+        "body",
+        parent=styles["Normal"],
+        fontSize=font_size,
+        leading=font_size * 1.4,
+        spaceAfter=6,
+    )
+
+    elements = []
+    for paragraph in content.split("\n"):
+        if paragraph.strip():
+            elements.append(Paragraph(paragraph.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), body_style))
+        else:
+            elements.append(Spacer(1, font_size * 0.5))
+
+    doc.build(elements)
+    return str(output_file)
+
+
+def create_blank_pdf(
+    output_dir: str,
+    num_pages: int = 1,
+    page_size: str = "A4",
+) -> str:
+    """Create a blank PDF with the specified number of pages.
+
+    Args:
+        output_dir: Directory to save the PDF.
+        num_pages: Number of blank pages (1–100).
+        page_size: 'A4' or 'Letter'.
+
+    Returns:
+        Path to the created PDF.
+    """
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import A4, LETTER
+
+    if not 1 <= num_pages <= 100:
+        raise ValueError("num_pages must be between 1 and 100.")
+
+    page_sizes = {"a4": A4, "letter": LETTER}
+    psize = page_sizes.get(page_size.lower(), A4)
+
+    output_name = f"blank_{num_pages}pages_{uuid.uuid4().hex[:6]}.pdf"
+    output_file = Path(output_dir) / output_name
+
+    c = rl_canvas.Canvas(str(output_file), pagesize=psize)
+    for _ in range(num_pages):
+        c.showPage()
+    c.save()
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #63: Annotate / Edit PDF
+# ──────────────────────────────────────────────
+
+def annotate_pdf(
+    input_path: str,
+    output_dir: str,
+    annotations: list,
+    password: str = None,
+) -> str:
+    """Add annotations (highlight, underline, strikeout, note, text box, redact) to a PDF.
+
+    Each annotation dict must contain:
+        type: 'highlight' | 'underline' | 'strikeout' | 'note' | 'text' | 'redact'
+        page: 1-based page number
+        rect: [x0, y0, x1, y1] in PDF points
+        content: text for 'note' / 'text' types (optional for others)
+        color: optional [r,g,b] floats 0-1 (used for highlight color)
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save annotated PDF.
+        annotations: List of annotation dicts.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the annotated PDF.
+    """
+    VALID_TYPES = {"highlight", "underline", "strikeout", "note", "text", "redact"}
+
+    if not isinstance(annotations, list):
+        raise ValueError("annotations must be a list.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_annotated.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+        total_pages = len(doc)
+
+        for ann in annotations:
+            ann_type = ann.get("type", "").lower()
+            if ann_type not in VALID_TYPES:
+                raise ValueError(f"Unknown annotation type '{ann_type}'. Must be one of: {', '.join(sorted(VALID_TYPES))}")
+
+            page_num = int(ann.get("page", 1))
+            if page_num < 1 or page_num > total_pages:
+                raise ValueError(f"Page {page_num} is out of range (document has {total_pages} pages).")
+
+            page = doc[page_num - 1]
+            raw_rect = ann.get("rect", [0, 0, 100, 20])
+            rect = fitz.Rect(*raw_rect)
+            content = ann.get("content", "")
+            color = ann.get("color", [1, 1, 0])  # default yellow for highlights
+
+            if ann_type == "highlight":
+                page.add_highlight_annot(rect).set_colors(stroke=color)
+            elif ann_type == "underline":
+                page.add_underline_annot(rect)
+            elif ann_type == "strikeout":
+                page.add_strikeout_annot(rect)
+            elif ann_type == "note":
+                page.add_text_annot(rect.tl, content)
+            elif ann_type == "text":
+                page.insert_textbox(rect, content, fontname="helv", fontsize=11, color=(0, 0, 0))
+            elif ann_type == "redact":
+                page.add_redact_annot(rect)
+                page.apply_redactions()
+
+        doc.save(str(output_file), garbage=3, deflate=True)
+        doc.close()
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+# ──────────────────────────────────────────────
+# Feature #64: PDF Metadata Editor
+# ──────────────────────────────────────────────
+
+def edit_pdf_metadata(
+    input_path: str,
+    output_dir: str,
+    title: str = None,
+    author: str = None,
+    subject: str = None,
+    keywords: str = None,
+    creator: str = None,
+    clear_all: bool = False,
+    password: str = None,
+) -> str:
+    """View and edit PDF metadata (document properties).
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the updated PDF.
+        title: New document title (None = keep existing).
+        author: New author name.
+        subject: New subject.
+        keywords: New keywords string.
+        creator: New creator application name.
+        clear_all: If True, remove all existing metadata before applying new values.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the updated PDF.
+    """
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_metadata.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            with pdf.open_metadata(set_pikepdf_as_editor=False) as meta:
+                if clear_all:
+                    # Remove standard XMP metadata fields
+                    for key in list(meta.keys()):
+                        try:
+                            del meta[key]
+                        except Exception:
+                            pass
+
+                field_map = {
+                    "dc:title": title,
+                    "dc:creator": author,
+                    "dc:description": subject,
+                    "pdf:Keywords": keywords,
+                    "xmp:CreatorTool": creator,
+                }
+                for xmp_key, value in field_map.items():
+                    if value is not None:
+                        meta[xmp_key] = value
+
+            # Also update the classic docinfo dict for compatibility
+            docinfo = pdf.docinfo
+            if title is not None:
+                docinfo["/Title"] = title
+            if author is not None:
+                docinfo["/Author"] = author
+            if subject is not None:
+                docinfo["/Subject"] = subject
+            if keywords is not None:
+                docinfo["/Keywords"] = keywords
+            if creator is not None:
+                docinfo["/Creator"] = creator
+
+            pdf.save(output_file)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
+
+def get_pdf_metadata(input_path: str, password: str = None) -> dict:
+    """Read metadata from a PDF without modifying it.
+
+    Args:
+        input_path: Path to input PDF.
+        password: PDF password if encrypted.
+
+    Returns:
+        dict with metadata fields.
+    """
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            docinfo = pdf.docinfo
+            return {
+                "title": str(docinfo.get("/Title", "")),
+                "author": str(docinfo.get("/Author", "")),
+                "subject": str(docinfo.get("/Subject", "")),
+                "keywords": str(docinfo.get("/Keywords", "")),
+                "creator": str(docinfo.get("/Creator", "")),
+                "producer": str(docinfo.get("/Producer", "")),
+                "page_count": len(pdf.pages),
+            }
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)

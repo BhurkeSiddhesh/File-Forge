@@ -20,6 +20,20 @@ from scripts.pdf_utils import (
     pdf_to_images_zip,
     sign_pdf,
     rotate_pdf,
+    protect_pdf,
+    images_to_pdf,
+    word_to_pdf,
+    pdf_to_excel,
+    pdf_to_pptx,
+    extract_text_from_pdf,
+    organize_pdf,
+    add_page_numbers,
+    repair_pdf,
+    create_pdf_from_text,
+    create_blank_pdf,
+    annotate_pdf,
+    edit_pdf_metadata,
+    get_pdf_metadata,
 )
 from scripts.image_utils import (
     heic_to_jpeg,
@@ -1055,6 +1069,483 @@ async def execute_workflow(
             "X-Accel-Buffering": "no"
         }
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #53: Protect PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/protect")
+async def api_protect_pdf(
+    file: UploadFile = File(...),
+    user_password: str = Form(...),
+    owner_password: str = Form(None),
+    allow_print: bool = Form(True),
+    allow_copy: bool = Form(False),
+    allow_edit: bool = Form(False),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Add password protection and permissions to a PDF."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(
+            protect_pdf, str(temp_path), str(OUTPUT_DIR),
+            user_password, owner_password, allow_print, allow_copy, allow_edit, password or None
+        )
+        return {"status": "success", "message": "PDF protected with password", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #54: Image to PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/image/to-pdf")
+async def api_images_to_pdf(
+    files: List[UploadFile] = File(...),
+    page_size: str = Form("A4"),
+    fit_mode: str = Form("fit"),
+    margin_pt: int = Form(36),
+    _auth: str = Depends(require_auth),
+):
+    """Convert one or more images into a single PDF."""
+    temp_paths = []
+    try:
+        for f in files:
+            safe = Path(f.filename.replace("\\", "/")).name
+            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
+            with tp.open("wb") as buf:
+                shutil.copyfileobj(f.file, buf)
+            temp_paths.append(tp)
+
+        output_path = await run_in_threadpool(
+            images_to_pdf, [str(p) for p in temp_paths], str(OUTPUT_DIR), page_size, fit_mode, margin_pt
+        )
+        return {"status": "success", "message": f"Created PDF from {len(files)} image(s)", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        for p in temp_paths:
+            if p.exists():
+                try:
+                    os.remove(p)
+                except PermissionError:
+                    pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #55: Word to PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/word/to-pdf")
+async def api_word_to_pdf(
+    file: UploadFile = File(...),
+    _auth: str = Depends(require_auth),
+):
+    """Convert a Word document (DOCX/DOC) to PDF."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        return {"status": "success", "message": "Word document converted to PDF", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #56: PDF to Excel
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/to-excel")
+async def api_pdf_to_excel(
+    file: UploadFile = File(...),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Extract tables from a PDF and convert to Excel."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        result = await run_in_threadpool(pdf_to_excel, str(temp_path), str(OUTPUT_DIR), password or None)
+        return {
+            "status": "success",
+            "message": f"Extracted {result['tables_found']} table(s) to Excel",
+            "filename": Path(result["output_path"]).name,
+            "tables_found": result["tables_found"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #57: PDF to PowerPoint
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/to-pptx")
+async def api_pdf_to_pptx(
+    file: UploadFile = File(...),
+    dpi: int = Form(150),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Convert PDF pages to a PowerPoint presentation."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(pdf_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi, password or None)
+        return {"status": "success", "message": "PDF converted to PowerPoint", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #58: Extract Text from PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/extract-text")
+async def api_extract_text(
+    file: UploadFile = File(...),
+    preserve_layout: bool = Form(False),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Extract all text content from a PDF to a .txt file."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        result = await run_in_threadpool(
+            extract_text_from_pdf, str(temp_path), str(OUTPUT_DIR), preserve_layout, password or None
+        )
+        return {
+            "status": "success",
+            "message": f"Text extracted from {result['page_count']} page(s)",
+            "filename": Path(result["output_path"]).name,
+            "page_count": result["page_count"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #59: Organize PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/organize")
+async def api_organize_pdf(
+    file: UploadFile = File(...),
+    page_order: str = Form(...),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Reorder, delete, or duplicate PDF pages. page_order is comma-separated 1-based page numbers."""
+    import json as _json
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Parse page_order: accepts "1,3,2" or "[1,3,2]"
+        raw = page_order.strip()
+        if raw.startswith("["):
+            order = _json.loads(raw)
+        else:
+            order = [int(x.strip()) for x in raw.split(",") if x.strip()]
+
+        output_path = await run_in_threadpool(organize_pdf, str(temp_path), str(OUTPUT_DIR), order, password or None)
+        return {"status": "success", "message": f"PDF organized ({len(order)} pages in output)", "filename": Path(output_path).name}
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #60: Add Page Numbers
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/add-page-numbers")
+async def api_add_page_numbers(
+    file: UploadFile = File(...),
+    position: str = Form("bottom-center"),
+    start_number: int = Form(1),
+    font_size: int = Form(12),
+    skip_first: int = Form(0),
+    fmt: str = Form("decimal"),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Insert page numbers onto each PDF page."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(
+            add_page_numbers, str(temp_path), str(OUTPUT_DIR),
+            position, start_number, font_size, skip_first, fmt, password or None
+        )
+        return {"status": "success", "message": "Page numbers added", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #61: Repair PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/repair")
+async def api_repair_pdf(
+    file: UploadFile = File(...),
+    _auth: str = Depends(require_auth),
+):
+    """Attempt to recover/repair a corrupted PDF."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        result = await run_in_threadpool(repair_pdf, str(temp_path), str(OUTPUT_DIR))
+        return {
+            "status": "success",
+            "message": f"PDF repair status: {result['repair_status']}",
+            "filename": Path(result["output_path"]).name,
+            "repair_status": result["repair_status"],
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #62: Create PDF from Scratch
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/create-from-text")
+async def api_create_pdf_from_text(
+    content: str = Form(...),
+    title: str = Form("Document"),
+    font_size: int = Form(12),
+    page_size: str = Form("A4"),
+    margin_pt: int = Form(72),
+    _auth: str = Depends(require_auth),
+):
+    """Create a new PDF from plain text content."""
+    try:
+        output_path = await run_in_threadpool(
+            create_pdf_from_text, str(OUTPUT_DIR), content, title, font_size, page_size, margin_pt
+        )
+        return {"status": "success", "message": "PDF created from text", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/pdf/create-blank")
+async def api_create_blank_pdf(
+    num_pages: int = Form(1),
+    page_size: str = Form("A4"),
+    _auth: str = Depends(require_auth),
+):
+    """Create a blank PDF with the given number of pages."""
+    try:
+        output_path = await run_in_threadpool(create_blank_pdf, str(OUTPUT_DIR), num_pages, page_size)
+        return {"status": "success", "message": f"Created blank PDF with {num_pages} page(s)", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #63: Annotate / Edit PDF
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/annotate")
+async def api_annotate_pdf(
+    file: UploadFile = File(...),
+    annotations: str = Form(...),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Add annotations (highlight/underline/strikeout/note/text/redact) to a PDF.
+    annotations is a JSON array of annotation objects."""
+    import json as _json
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        ann_list = _json.loads(annotations)
+        if not isinstance(ann_list, list):
+            raise ValueError("annotations must be a JSON array.")
+
+        output_path = await run_in_threadpool(
+            annotate_pdf, str(temp_path), str(OUTPUT_DIR), ann_list, password or None
+        )
+        return {"status": "success", "message": f"Added {len(ann_list)} annotation(s)", "filename": Path(output_path).name}
+    except (ValueError, _json.JSONDecodeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #64: PDF Metadata Editor
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/metadata")
+async def api_edit_pdf_metadata(
+    file: UploadFile = File(...),
+    title: str = Form(None),
+    author: str = Form(None),
+    subject: str = Form(None),
+    keywords: str = Form(None),
+    creator: str = Form(None),
+    clear_all: bool = Form(False),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Edit PDF metadata (title, author, subject, keywords, creator)."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await run_in_threadpool(
+            edit_pdf_metadata, str(temp_path), str(OUTPUT_DIR),
+            title, author, subject, keywords, creator, clear_all, password or None
+        )
+        return {"status": "success", "message": "PDF metadata updated", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/metadata/read")
+async def api_read_pdf_metadata(
+    file: UploadFile = File(...),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Read metadata from a PDF without modifying it."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        metadata = await run_in_threadpool(get_pdf_metadata, str(temp_path), password or None)
+        return {"status": "success", "metadata": metadata}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
 
 
 def delete_file_after_download(path: Path) -> None:
