@@ -19,6 +19,7 @@ from scripts.pdf_utils import (
     add_watermark,
     pdf_to_images_zip,
     sign_pdf,
+    rotate_pdf,
 )
 from scripts.image_utils import (
     heic_to_jpeg,
@@ -333,6 +334,41 @@ async def api_add_watermark(
     except Exception as e:
         import traceback
         print(f"[ERROR] Watermark failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/rotate")
+async def api_rotate_pdf(
+    file: UploadFile = File(...),
+    angle: int = Form(...),
+    pages: str = Form(None),
+    password: str = Form(None),
+    _auth: str = Depends(require_auth),
+):
+    """Rotate PDF pages by specified angle (90, 180, 270 degrees)."""
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        output_path = await run_in_threadpool(
+            rotate_pdf, str(temp_path), str(OUTPUT_DIR), angle, pages or None, password or None
+        )
+        return {"status": "success", "message": f"PDF rotated by {angle}°", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] PDF rotation failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     finally:

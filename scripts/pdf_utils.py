@@ -18,8 +18,13 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 import fitz
 import cv2
 import numpy as np
-from docxcompose.composer import Composer
-from docx import Document as Document_docx
+try:
+    from docxcompose.composer import Composer
+    from docx import Document as Document_docx
+except ImportError:
+    # Optional for testing environments without full dependencies
+    Composer = None
+    Document_docx = None
 import shutil
 
 
@@ -524,6 +529,9 @@ def merge_docx_files(input_files: list, output_file: str) -> None:
     if not input_files:
         raise ValueError("No input files provided for merging.")
 
+    if Document_docx is None or Composer is None:
+        raise ImportError("docxcompose and python-docx are required for DOCX merging")
+
     master = Document_docx(input_files[0])
     composer = Composer(master)
 
@@ -532,6 +540,53 @@ def merge_docx_files(input_files: list, output_file: str) -> None:
         composer.append(Document_docx(str(docx_path)))
 
     composer.save(output_file)
+
+def rotate_pdf(input_path: str, output_dir: str, angle: int, pages: str = None, password: str = None) -> str:
+    """Rotate PDF pages by specified angle (90, 180, 270).
+
+    Args:
+        input_path: Path to input PDF
+        output_dir: Directory to save output PDF
+        angle: Rotation angle (90, 180, 270, or -90, -180, -270)
+        pages: Page selection string (e.g., '1,3-5', 'all'). If None, rotates all pages.
+        password: PDF password if encrypted
+
+    Returns:
+        Path to rotated PDF file
+    """
+    if angle not in (90, 180, 270, -90, -180, -270):
+        raise ValueError("Angle must be 90, 180, 270, -90, -180, or -270 degrees.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / f"{input_file.stem}_rotated.pdf"
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            total_pages = len(pdf.pages)
+
+            # Parse page selection (default to all if not specified)
+            if pages is None:
+                selected_indices = list(range(total_pages))
+            else:
+                selected_indices = _parse_page_selection(pages, total_pages)
+
+            # Rotate selected pages
+            for idx in selected_indices:
+                page = pdf.pages[idx]
+                # pikepdf uses /Rotate key: 0, 90, 180, 270 (only these values)
+                current_rotation = int(page.get('/Rotate', 0))
+                new_rotation = (current_rotation + angle) % 360
+                page['/Rotate'] = new_rotation
+
+            pdf.save(output_file)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
+
 
 def pdf_to_word_paddle(input_path: str, output_dir: str, password: str = None) -> str:
     """Converts PDF to DOCX using PaddleOCR Layout Recovery (Slow, AI-based)."""
