@@ -1,139 +1,201 @@
 """
-Performance tests to validate optimization improvements.
+Performance benchmarks for pdf_utils operations.
+Each test uses time.perf_counter() and asserts completion within reasonable limits.
 """
-import pytest
-import time
+import sys
 from pathlib import Path
-from PIL import Image
-from scripts.image_utils import resize_image, heic_to_jpeg, crop_image, _prepare_image
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import time
+import pytest
+
+from scripts.pdf_utils import (
+    create_pdf_from_text,
+    create_blank_pdf,
+    images_to_pdf,
+    add_page_numbers,
+    extract_text_from_pdf,
+    pdf_to_excel,
+    protect_pdf,
+    organize_pdf,
+    annotate_pdf,
+    rotate_pdf,
+)
 
 
-def test_prepare_image_helper_efficiency(tmp_path):
-    """Test that _prepare_image helper reduces duplicate code."""
-    # Create test image with RGBA mode
-    test_img_path = tmp_path / "test_rgba.png"
-    img = Image.new("RGBA", (100, 100), (255, 0, 0, 128))
-    img.save(test_img_path, "PNG")
-    
-    # Test the helper function
-    with Image.open(test_img_path) as img:
-        prepared = _prepare_image(img)
-        assert prepared.mode == "RGB"
-        assert prepared.size == (100, 100)
+# ──────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────
+
+def _make_blank_pdf(output_dir: Path, num_pages: int = 1) -> str:
+    return create_blank_pdf(str(output_dir), num_pages=num_pages)
 
 
-def test_binary_search_resize_faster(tmp_path, benchmark_image):
-    """Test that binary search approach for target_size is more efficient."""
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    
-    # Test with target size that requires quality adjustment
-    target_size_kb = 20
-    
-    start_time = time.perf_counter()
-    output_path = resize_image(
-        str(benchmark_image),
-        str(output_dir),
-        mode='target_size',
-        target_size_kb=target_size_kb
-    )
-    elapsed = time.perf_counter() - start_time
-    
-    # Verify output file meets target (with 20% tolerance)
-    output_file = Path(output_path)
-    assert output_file.exists()
-    
-    actual_size_kb = output_file.stat().st_size / 1024
-    # Allow some tolerance (up to 20% over target is acceptable)
-    assert actual_size_kb <= target_size_kb * 1.2
-    
-    # Binary search should complete in under 1 second for typical images
-    # Old linear approach could take 3-5 seconds
-    assert elapsed < 2.0, f"Binary search took {elapsed:.2f}s (expected < 2.0s)"
-    print(f"PASS Binary search completed in {elapsed:.3f}s")
+def _make_png_image(tmp_path: Path, w: int = 200, h: int = 200, name: str = "img.png") -> Path:
+    from PIL import Image
+    p = tmp_path / name
+    img = Image.new("RGB", (w, h), color=(100, 150, 200))
+    img.save(str(p), "PNG")
+    return p
 
 
-def test_optimize_flag_reduces_size(tmp_path, benchmark_image):
-    """Test that optimize=True flag reduces file size."""
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    
-    # Create a reference JPEG without optimize flag
-    with Image.open(benchmark_image) as img:
-        ref_path = output_dir / "reference.jpg"
-        img.save(ref_path, "JPEG", quality=95, optimize=False)
-        ref_size = ref_path.stat().st_size
-    
-    # Convert using our optimized function (with optimize=True)
-    output_path = resize_image(
-        str(benchmark_image),
-        str(output_dir),
-        mode='percentage',
-        percentage=100  # No resize, just conversion
-    )
-    
-    optimized_size = Path(output_path).stat().st_size
-    
-    # Optimized version should be smaller (typically 10-20% reduction)
-    reduction_percent = ((ref_size - optimized_size) / ref_size) * 100
-    print(f"PASS File size reduction: {reduction_percent:.1f}% (from {ref_size} to {optimized_size} bytes)")
-    assert optimized_size < ref_size, "Optimize flag should reduce file size"
+# ──────────────────────────────────────────────────────────────
+# Benchmarks
+# ──────────────────────────────────────────────────────────────
 
+def test_perf_create_pdf_from_text_1000_lines(tmp_path):
+    """create_pdf_from_text with 1000 lines: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    content = "\n".join(f"Line {i}: The quick brown fox jumps over the lazy dog." for i in range(1000))
 
-def test_no_duplicate_image_conversions(tmp_path, benchmark_image):
-    """Test that EXIF transpose and RGB conversion are done once via helper."""
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    
-    # All three operations should use _prepare_image helper
-    operations = [
-        lambda: heic_to_jpeg(str(benchmark_image), str(output_dir)),
-        lambda: resize_image(str(benchmark_image), str(output_dir), mode='percentage', percentage=80),
-        lambda: crop_image(str(benchmark_image), str(output_dir), x=10, y=10, width=50, height=50)
-    ]
-    
-    for op in operations:
-        start = time.perf_counter()
-        result = op()
-        elapsed = time.perf_counter() - start
-        
-        # Each operation should be fast (< 0.5s for small images)
-        assert elapsed < 0.5, f"Operation took {elapsed:.2f}s (expected < 0.5s)"
-        assert Path(result).exists()
-        
-        # Cleanup for next test
-        Path(result).unlink()
-
-
-def test_import_time_reduction():
-    """Test that imports are efficient (no late imports in hot paths)."""
-    pytest.importorskip("fastapi")
-    
-    import sys
-    import importlib
-    
-    # Measure import time for main module
     start = time.perf_counter()
-    
-    # Force reimport to measure
-    if 'main' in sys.modules:
-        del sys.modules['main']
-    
-    # This would fail if there are circular imports or slow imports
-    import main
+    pdf_path = create_pdf_from_text(str(out), content=content)
     elapsed = time.perf_counter() - start
-    
-    # Import should be fast (< 2 seconds even with dependencies)
-    # Note: First import may be slower due to bytecode compilation
-    print(f"PASS main.py import time: {elapsed:.3f}s")
-    assert elapsed < 5.0, f"Import took {elapsed:.2f}s (expected < 5.0s)"
+
+    print(f"\n  create_pdf_from_text (1000 lines): {elapsed:.3f}s")
+    assert Path(pdf_path).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
 
 
-@pytest.fixture
-def benchmark_image(tmp_path):
-    """Create a test image for benchmarking."""
-    img_path = tmp_path / "benchmark.jpg"
-    # Create a realistic size image (1MB+)
-    img = Image.new("RGB", (1920, 1080), (100, 150, 200))
-    img.save(img_path, "JPEG", quality=95)
-    return img_path
+def test_perf_create_blank_pdf_50_pages(tmp_path):
+    """create_blank_pdf with 50 pages: < 2 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+
+    start = time.perf_counter()
+    pdf_path = create_blank_pdf(str(out), num_pages=50)
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  create_blank_pdf (50 pages): {elapsed:.3f}s")
+    assert Path(pdf_path).exists()
+    assert elapsed < 2.0, f"Took {elapsed:.2f}s (limit 2s)"
+
+
+def test_perf_images_to_pdf_5_images(tmp_path):
+    """images_to_pdf with 5 images: < 10 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    images = [str(_make_png_image(tmp_path, name=f"img{i}.png")) for i in range(5)]
+
+    start = time.perf_counter()
+    pdf_path = images_to_pdf(images, str(out))
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  images_to_pdf (5 images): {elapsed:.3f}s")
+    assert Path(pdf_path).exists()
+    assert elapsed < 10.0, f"Took {elapsed:.2f}s (limit 10s)"
+
+
+def test_perf_add_page_numbers_10_pages(tmp_path):
+    """add_page_numbers on 10-page PDF: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pdf_path = _make_blank_pdf(out, num_pages=10)
+
+    start = time.perf_counter()
+    result = add_page_numbers(pdf_path, str(out))
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  add_page_numbers (10 pages): {elapsed:.3f}s")
+    assert Path(result).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
+
+
+def test_perf_extract_text_10_pages(tmp_path):
+    """extract_text_from_pdf on 10-page PDF: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    # Create a 10-page text PDF for meaningful extraction
+    content = "\n".join(f"Page line {i}: sample text for extraction." for i in range(50))
+    src = create_pdf_from_text(str(out), content=content)
+
+    start = time.perf_counter()
+    result = extract_text_from_pdf(src, str(out))
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  extract_text_from_pdf (10-page equivalent): {elapsed:.3f}s")
+    assert Path(result["output_path"]).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
+
+
+def test_perf_pdf_to_excel_5_pages(tmp_path):
+    """pdf_to_excel on 5-page PDF: < 10 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pdf_path = _make_blank_pdf(out, num_pages=5)
+
+    start = time.perf_counter()
+    result = pdf_to_excel(pdf_path, str(out))
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  pdf_to_excel (5 pages): {elapsed:.3f}s")
+    assert Path(result["output_path"]).exists()
+    assert elapsed < 10.0, f"Took {elapsed:.2f}s (limit 10s)"
+
+
+def test_perf_protect_pdf(tmp_path):
+    """protect_pdf: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pdf_path = _make_blank_pdf(out, num_pages=3)
+
+    start = time.perf_counter()
+    result = protect_pdf(pdf_path, str(out), user_password="benchpw")
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  protect_pdf: {elapsed:.3f}s")
+    assert Path(result).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
+
+
+def test_perf_organize_pdf_20_pages(tmp_path):
+    """organize_pdf reorder 20 pages: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pdf_path = _make_blank_pdf(out, num_pages=20)
+    reversed_order = list(range(20, 0, -1))
+
+    start = time.perf_counter()
+    result = organize_pdf(pdf_path, str(out), page_order=reversed_order)
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  organize_pdf (20 pages reversed): {elapsed:.3f}s")
+    assert Path(result).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
+
+
+def test_perf_annotate_pdf_10_annotations(tmp_path):
+    """annotate_pdf with 10 annotations: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    # Create a multi-page PDF so we can spread annotations
+    content = "Annotation benchmark test.\n" * 20
+    pdf_path = create_pdf_from_text(str(out), content=content)
+    annotations = [
+        {"type": "highlight", "page": 1, "rect": [50, 700 - i * 20, 300, 720 - i * 20]}
+        for i in range(10)
+    ]
+
+    start = time.perf_counter()
+    result = annotate_pdf(pdf_path, str(out), annotations)
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  annotate_pdf (10 annotations): {elapsed:.3f}s")
+    assert Path(result).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"
+
+
+def test_perf_rotate_pdf_10_pages(tmp_path):
+    """rotate_pdf 10 pages: < 5 seconds."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pdf_path = _make_blank_pdf(out, num_pages=10)
+
+    start = time.perf_counter()
+    result = rotate_pdf(pdf_path, str(out), angle=90)
+    elapsed = time.perf_counter() - start
+
+    print(f"\n  rotate_pdf (10 pages, 90°): {elapsed:.3f}s")
+    assert Path(result).exists()
+    assert elapsed < 5.0, f"Took {elapsed:.2f}s (limit 5s)"

@@ -120,6 +120,7 @@ function showDrillDown(tool) {
     else if (tool === 'image') pageId = 'image-page';
     else if (tool === 'excel') pageId = 'excel-page';
     else if (tool === 'ppt') pageId = 'ppt-page';
+    else if (tool === 'word') pageId = 'word-page';
     else if (tool === 'workflow') pageId = 'workflow-page';
     else return;
 
@@ -140,6 +141,7 @@ function showHome() {
     else if (currentTool === 'image') pageId = 'image-page';
     else if (currentTool === 'excel') pageId = 'excel-page';
     else if (currentTool === 'ppt') pageId = 'ppt-page';
+    else if (currentTool === 'word') pageId = 'word-page';
     else if (currentTool === 'workflow') pageId = 'workflow-page';
     else pageId = 'pdf-page';
 
@@ -203,6 +205,17 @@ function hidePdfActionAreas() {
     document.getElementById('watermark-area')?.classList.add('hidden');
     document.getElementById('to-images-area')?.classList.add('hidden');
     document.getElementById('sign-area')?.classList.add('hidden');
+    document.getElementById('rotate-pdf-area')?.classList.add('hidden');
+    document.getElementById('protect-pdf-area')?.classList.add('hidden');
+    document.getElementById('extract-text-area')?.classList.add('hidden');
+    document.getElementById('organize-pdf-area')?.classList.add('hidden');
+    document.getElementById('page-numbers-area')?.classList.add('hidden');
+    document.getElementById('repair-pdf-area')?.classList.add('hidden');
+    document.getElementById('create-pdf-area')?.classList.add('hidden');
+    document.getElementById('annotate-pdf-area')?.classList.add('hidden');
+    document.getElementById('pdf-metadata-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-excel-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-pptx-area')?.classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 }
 
@@ -608,6 +621,17 @@ function resetUI() {
     document.getElementById('watermark-area')?.classList.add('hidden');
     document.getElementById('to-images-area')?.classList.add('hidden');
     document.getElementById('sign-area')?.classList.add('hidden');
+    document.getElementById('rotate-pdf-area')?.classList.add('hidden');
+    document.getElementById('protect-pdf-area')?.classList.add('hidden');
+    document.getElementById('extract-text-area')?.classList.add('hidden');
+    document.getElementById('organize-pdf-area')?.classList.add('hidden');
+    document.getElementById('page-numbers-area')?.classList.add('hidden');
+    document.getElementById('repair-pdf-area')?.classList.add('hidden');
+    document.getElementById('create-pdf-area')?.classList.add('hidden');
+    document.getElementById('annotate-pdf-area')?.classList.add('hidden');
+    document.getElementById('pdf-metadata-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-excel-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-pptx-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
     const extractInput = document.getElementById('extract-pages-input');
@@ -686,7 +710,7 @@ function handleImageFile(file) {
 }
 
 function hideImageActionAreas() {
-    ['rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area']
+    ['rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area', 'image-to-pdf-area']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
 }
 
@@ -1917,6 +1941,324 @@ document.getElementById('process-merge-ppt-btn')?.addEventListener('click', () =
     const fd = new FormData();
     selectedPptFiles.forEach(f => fd.append('files', f));
     processPptAction('/api/ppt/merge', `Merging ${selectedPptFiles.length} presentations...`, fd);
+});
+
+// === New PDF Feature Handlers ===
+
+// Helper: show a PDF option panel (same pattern as existing sign/watermark/etc. buttons)
+function showPdfOptionPanel(areaId) {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return false; }
+    hidePdfActionAreas();
+    document.getElementById(areaId)?.classList.remove('hidden');
+    return true;
+}
+
+// --- Rotate PDF ---
+document.getElementById('rotate-pdf-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('rotate-pdf-area');
+});
+document.getElementById('process-rotate-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const angle = document.getElementById('rotate-pdf-angle').value;
+    const pages = document.getElementById('rotate-pdf-pages').value.trim();
+    const password = document.getElementById('rotate-pdf-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('angle', angle);
+    if (pages) fd.append('pages', pages);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/rotate', `Rotating PDF ${angle}°...`, fd);
+});
+
+// --- Protect PDF ---
+document.getElementById('protect-pdf-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('protect-pdf-area');
+});
+document.getElementById('process-protect-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const userPwd = document.getElementById('protect-user-password').value;
+    if (!userPwd) { alert('Please enter a user password.'); return; }
+    const ownerPwd = document.getElementById('protect-owner-password').value;
+    const allowPrint = document.getElementById('protect-allow-print').checked;
+    const allowCopy = document.getElementById('protect-allow-copy').checked;
+    const allowEdit = document.getElementById('protect-allow-edit').checked;
+    const existingPwd = document.getElementById('protect-existing-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('user_password', userPwd);
+    if (ownerPwd) fd.append('owner_password', ownerPwd);
+    fd.append('allow_print', allowPrint);
+    fd.append('allow_copy', allowCopy);
+    fd.append('allow_edit', allowEdit);
+    if (existingPwd) fd.append('password', existingPwd);
+    processAction('/api/pdf/protect', 'Protecting PDF...', fd);
+});
+
+// --- Extract Text ---
+document.getElementById('extract-text-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('extract-text-area');
+});
+document.getElementById('process-extract-text-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const preserveLayout = document.getElementById('extract-text-layout').checked;
+    const password = document.getElementById('extract-text-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('preserve_layout', preserveLayout);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/extract-text', 'Extracting text...', fd);
+});
+
+// --- Organize PDF ---
+document.getElementById('organize-pdf-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('organize-pdf-area');
+});
+document.getElementById('process-organize-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const order = document.getElementById('organize-page-order').value.trim();
+    if (!order) { alert('Please enter a page order (e.g. 1,3,2).'); return; }
+    const password = document.getElementById('organize-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('page_order', order);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/organize', 'Organizing pages...', fd);
+});
+
+// --- Add Page Numbers ---
+document.getElementById('page-numbers-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('page-numbers-area');
+});
+document.getElementById('process-page-numbers-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const position = document.getElementById('page-numbers-position').value;
+    const format = document.getElementById('page-numbers-format').value;
+    const start = document.getElementById('page-numbers-start').value;
+    const skip = document.getElementById('page-numbers-skip').value;
+    const password = document.getElementById('page-numbers-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('position', position);
+    fd.append('format', format);
+    fd.append('start', start);
+    fd.append('skip', skip);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/add-page-numbers', 'Adding page numbers...', fd);
+});
+
+// --- Repair PDF ---
+document.getElementById('repair-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    hidePdfActionAreas();
+    document.getElementById('repair-pdf-area')?.classList.remove('hidden');
+});
+document.getElementById('process-repair-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    processAction('/api/pdf/repair', 'Repairing PDF...', fd);
+});
+
+// --- Create PDF ---
+document.getElementById('create-pdf-btn')?.addEventListener('click', () => {
+    hidePdfActionAreas();
+    document.getElementById('create-pdf-area')?.classList.remove('hidden');
+});
+
+function toggleCreatePdfMode() {
+    const mode = document.querySelector('input[name="create-pdf-mode"]:checked')?.value;
+    const textOpts = document.getElementById('create-pdf-text-opts');
+    const blankOpts = document.getElementById('create-pdf-blank-opts');
+    if (mode === 'blank') {
+        textOpts?.classList.add('hidden');
+        blankOpts?.classList.remove('hidden');
+    } else {
+        textOpts?.classList.remove('hidden');
+        blankOpts?.classList.add('hidden');
+    }
+}
+
+document.getElementById('process-create-pdf-btn')?.addEventListener('click', () => {
+    const mode = document.querySelector('input[name="create-pdf-mode"]:checked')?.value || 'text';
+    const pagesize = document.getElementById('create-pdf-pagesize').value;
+    const fd = new FormData();
+    fd.append('pagesize', pagesize);
+    if (mode === 'text') {
+        const content = document.getElementById('create-pdf-content').value;
+        const title = document.getElementById('create-pdf-title').value;
+        if (!content.trim()) { alert('Please enter some text content.'); return; }
+        fd.append('content', content);
+        if (title) fd.append('title', title);
+        processAction('/api/pdf/create-from-text', 'Creating PDF from text...', fd);
+    } else {
+        const pages = document.getElementById('create-pdf-pages').value;
+        fd.append('pages', pages);
+        processAction('/api/pdf/create-blank', 'Creating blank PDF...', fd);
+    }
+});
+
+// --- Annotate PDF ---
+document.getElementById('annotate-pdf-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('annotate-pdf-area');
+});
+document.getElementById('process-annotate-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const annotType = document.getElementById('annot-type').value;
+    const page = document.getElementById('annot-page').value;
+    const x0 = document.getElementById('annot-x0').value;
+    const y0 = document.getElementById('annot-y0').value;
+    const x1 = document.getElementById('annot-x1').value;
+    const y1 = document.getElementById('annot-y1').value;
+    const content = document.getElementById('annot-content').value;
+    const password = document.getElementById('annotate-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('annot_type', annotType);
+    fd.append('page', page);
+    fd.append('x0', x0);
+    fd.append('y0', y0);
+    fd.append('x1', x1);
+    fd.append('y1', y1);
+    if (content) fd.append('content', content);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/annotate', 'Adding annotation...', fd);
+});
+
+// --- PDF Metadata ---
+document.getElementById('pdf-metadata-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('pdf-metadata-area');
+});
+document.getElementById('process-pdf-metadata-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const title = document.getElementById('meta-title').value;
+    const author = document.getElementById('meta-author').value;
+    const subject = document.getElementById('meta-subject').value;
+    const keywords = document.getElementById('meta-keywords').value;
+    const clearAll = document.getElementById('meta-clear-all').checked;
+    const password = document.getElementById('meta-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    if (title) fd.append('title', title);
+    if (author) fd.append('author', author);
+    if (subject) fd.append('subject', subject);
+    if (keywords) fd.append('keywords', keywords);
+    fd.append('clear_all', clearAll);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/metadata', 'Updating metadata...', fd);
+});
+
+// --- PDF to Excel ---
+document.getElementById('pdf-to-excel-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('pdf-to-excel-area');
+});
+document.getElementById('process-pdf-to-excel-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const password = document.getElementById('pdf-to-excel-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/to-excel', 'Extracting tables to Excel...', fd);
+});
+
+// --- PDF to PowerPoint ---
+document.getElementById('pdf-to-pptx-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('pdf-to-pptx-area');
+});
+document.getElementById('process-pdf-to-pptx-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const dpi = document.getElementById('pdf-to-pptx-dpi').value;
+    const password = document.getElementById('pdf-to-pptx-password').value;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('dpi', dpi);
+    if (password) fd.append('password', password);
+    processAction('/api/pdf/to-pptx', 'Converting to PowerPoint...', fd);
+});
+
+// === Word Tools Page ===
+
+let selectedWordFile = null;
+
+const wordDropZone = document.getElementById('word-drop-zone');
+const wordFileInput = document.getElementById('word-file-input');
+
+if (wordDropZone) {
+    wordDropZone.onclick = () => wordFileInput.click();
+    wordFileInput.onchange = e => {
+        if (e.target.files.length) {
+            selectedWordFile = e.target.files[0];
+            document.getElementById('word-filename-display').textContent = selectedWordFile.name;
+            document.getElementById('word-file-info').classList.remove('hidden');
+            document.getElementById('word-status-display').classList.add('hidden');
+            document.getElementById('word-result-display').classList.add('hidden');
+        }
+    };
+    wordDropZone.ondragover = e => { e.preventDefault(); wordDropZone.classList.add('drag-over'); };
+    wordDropZone.ondragleave = () => wordDropZone.classList.remove('drag-over');
+    wordDropZone.ondrop = e => {
+        e.preventDefault();
+        wordDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) {
+            selectedWordFile = e.dataTransfer.files[0];
+            document.getElementById('word-filename-display').textContent = selectedWordFile.name;
+            document.getElementById('word-file-info').classList.remove('hidden');
+            document.getElementById('word-status-display').classList.add('hidden');
+            document.getElementById('word-result-display').classList.add('hidden');
+        }
+    };
+}
+
+async function processWordAction(url, statusText, formData) {
+    const statusDisplay = document.getElementById('word-status-display');
+    const statusTextEl = document.getElementById('word-status-text');
+    const resultDisplay = document.getElementById('word-result-display');
+
+    statusDisplay.classList.remove('hidden');
+    statusTextEl.textContent = statusText;
+    resultDisplay.classList.add('hidden');
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'POST', body: formData });
+        if (response.ok) {
+            const data = await response.json();
+            resultDisplay.classList.remove('hidden');
+            document.getElementById('word-result-message').textContent = `${data.message}: ${data.filename}`;
+            updateDownloadLink(document.getElementById('word-download-link'), data.filename);
+        } else {
+            const data = await response.json().catch(() => ({ detail: 'Failed' }));
+            alert('Error: ' + (data.detail || 'Failed'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        statusDisplay.classList.add('hidden');
+    }
+}
+
+document.getElementById('word-to-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    document.getElementById('word-to-pdf-area').classList.remove('hidden');
+});
+document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedWordFile);
+    processWordAction('/api/word/to-pdf', 'Converting Word to PDF...', fd);
+});
+
+// --- Image to PDF ---
+document.getElementById('image-to-pdf-btn')?.addEventListener('click', () => {
+    showImageOptionPanel('image-to-pdf-area');
+});
+document.getElementById('process-image-to-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    const pagesize = document.getElementById('image-to-pdf-pagesize').value;
+    const fit = document.getElementById('image-to-pdf-fit').value;
+    const fd = new FormData();
+    fd.append('file', selectedImageFile);
+    fd.append('pagesize', pagesize);
+    fd.append('fit', fit);
+    processImageAction('/api/image/to-pdf', 'Converting image to PDF...', fd);
 });
 
 // Global Accessibility: Handle keyboard activation for role="button"

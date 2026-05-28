@@ -73,6 +73,15 @@
                     <p>PPT → PDF, PPT → Images, and merge presentations.</p>
                     <div class="badge">New</div>
                 </div>
+
+                <div class="tool-card active" onclick="showDrillDown('word')" role="button" tabindex="0">
+                    <div class="icon-wrapper" style="background: linear-gradient(135deg,#2b5797,#1a3a6e);">
+                        <i class="fas fa-file-word"></i>
+                    </div>
+                    <h3>Word Tools</h3>
+                    <p>Convert DOCX to PDF and more Word operations.</p>
+                    <div class="badge">New</div>
+                </div>
             </div>
         </section>
 
@@ -161,6 +170,83 @@
                             <div class="action-text">
                                 <h4>Sign PDF <span class="free-badge">Paid on Adobe</span></h4>
                                 <p>Stamp a signature image onto a page</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="rotate-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-sync-alt"></i>
+                            <div class="action-text">
+                                <h4>Rotate PDF</h4>
+                                <p>Rotate pages 90°, 180° or 270°</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="protect-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-lock"></i>
+                            <div class="action-text">
+                                <h4>Protect PDF</h4>
+                                <p>Add password protection</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="extract-text-btn" role="button" tabindex="0">
+                            <i class="fas fa-font"></i>
+                            <div class="action-text">
+                                <h4>Extract Text</h4>
+                                <p>Export all text to .txt file</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="organize-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-sort"></i>
+                            <div class="action-text">
+                                <h4>Organize PDF</h4>
+                                <p>Reorder, delete or duplicate pages</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="page-numbers-btn" role="button" tabindex="0">
+                            <i class="fas fa-list-ol"></i>
+                            <div class="action-text">
+                                <h4>Add Page Numbers</h4>
+                                <p>Insert numbered footers or headers</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="repair-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-wrench"></i>
+                            <div class="action-text">
+                                <h4>Repair PDF</h4>
+                                <p>Fix corrupted or damaged PDFs</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="create-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-plus-circle"></i>
+                            <div class="action-text">
+                                <h4>Create PDF</h4>
+                                <p>Generate from text or blank</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="annotate-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-highlighter"></i>
+                            <div class="action-text">
+                                <h4>Annotate PDF</h4>
+                                <p>Highlight, underline and add notes</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-metadata-btn" role="button" tabindex="0">
+                            <i class="fas fa-info-circle"></i>
+                            <div class="action-text">
+                                <h4>Edit Metadata</h4>
+                                <p>Change title, author and keywords</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-to-excel-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-excel"></i>
+                            <div class="action-text">
+                                <h4>PDF → Excel</h4>
+                                <p>Extract tables to spreadsheet</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-to-pptx-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-powerpoint"></i>
+                            <div class="action-text">
+                                <h4>PDF → PowerPoint</h4>
+                                <p>Convert pages to presentation</p>
                             </div>
                         </div>
                     </div>
@@ -269,6 +355,151 @@
                         <input type="range" id="sign-width" min="0.05" max="0.6" step="0.01" value="0.2">
                         <input type="password" id="sign-password" placeholder="PDF Password (optional)" aria-label="PDF Password">
                         <button id="process-sign-btn" class="primary-btn">Sign PDF</button>
+                    </div>
+
+                    <!-- Rotate PDF Options -->
+                    <div id="rotate-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Rotation angle:</p>
+                        <select id="rotate-pdf-angle" aria-label="Rotation angle">
+                            <option value="90">90° Clockwise</option>
+                            <option value="180">180°</option>
+                            <option value="270">270° Clockwise</option>
+                            <option value="-90">90° Counter-Clockwise</option>
+                        </select>
+                        <input type="text" id="rotate-pdf-pages" placeholder="Pages (e.g. 1,3-5 or leave blank for all)" aria-label="Pages">
+                        <input type="password" id="rotate-pdf-password" placeholder="PDF Password (optional)">
+                        <button id="process-rotate-pdf-btn" class="primary-btn">Rotate PDF</button>
+                    </div>
+
+                    <!-- Protect PDF Options -->
+                    <div id="protect-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Set password protection:</p>
+                        <input type="password" id="protect-user-password" placeholder="User Password (required to open)" required>
+                        <input type="password" id="protect-owner-password" placeholder="Owner Password (optional)">
+                        <label><input type="checkbox" id="protect-allow-print" checked> Allow printing</label>
+                        <label><input type="checkbox" id="protect-allow-copy"> Allow copying text</label>
+                        <label><input type="checkbox" id="protect-allow-edit"> Allow editing</label>
+                        <input type="password" id="protect-existing-password" placeholder="Existing password (if already protected)">
+                        <button id="process-protect-pdf-btn" class="primary-btn">Protect PDF</button>
+                    </div>
+
+                    <!-- Extract Text Options -->
+                    <div id="extract-text-area" class="password-area hidden">
+                        <p class="helper-text">Extract all text content:</p>
+                        <label><input type="checkbox" id="extract-text-layout"> Preserve layout structure</label>
+                        <input type="password" id="extract-text-password" placeholder="PDF Password (optional)">
+                        <button id="process-extract-text-btn" class="primary-btn">Extract Text</button>
+                    </div>
+
+                    <!-- Organize PDF Options -->
+                    <div id="organize-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Enter page order (comma-separated, 1-based). Repeat to duplicate, omit to delete.<br>Example: <code>3,1,2,1</code></p>
+                        <input type="text" id="organize-page-order" placeholder="e.g. 1,3,2 or 4,3,2,1" aria-label="Page order">
+                        <input type="password" id="organize-password" placeholder="PDF Password (optional)">
+                        <button id="process-organize-pdf-btn" class="primary-btn">Organize</button>
+                    </div>
+
+                    <!-- Add Page Numbers Options -->
+                    <div id="page-numbers-area" class="password-area hidden">
+                        <p class="helper-text">Add page numbers:</p>
+                        <select id="page-numbers-position" aria-label="Position">
+                            <option value="bottom-center" selected>Bottom Center</option>
+                            <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-right">Bottom Right</option>
+                            <option value="top-center">Top Center</option>
+                            <option value="top-left">Top Left</option>
+                            <option value="top-right">Top Right</option>
+                        </select>
+                        <select id="page-numbers-format" aria-label="Format">
+                            <option value="decimal" selected>1, 2, 3 ...</option>
+                            <option value="roman">I, II, III ...</option>
+                            <option value="alpha">A, B, C ...</option>
+                        </select>
+                        <input type="number" id="page-numbers-start" value="1" min="1" placeholder="Start number">
+                        <input type="number" id="page-numbers-skip" value="0" min="0" placeholder="Skip first N pages">
+                        <input type="password" id="page-numbers-password" placeholder="PDF Password (optional)">
+                        <button id="process-page-numbers-btn" class="primary-btn">Add Numbers</button>
+                    </div>
+
+                    <!-- Repair PDF Options -->
+                    <div id="repair-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Attempt to repair and recover a corrupted PDF:</p>
+                        <button id="process-repair-pdf-btn" class="primary-btn">Repair PDF</button>
+                    </div>
+
+                    <!-- Create PDF Options -->
+                    <div id="create-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Create a new PDF:</p>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                            <label><input type="radio" name="create-pdf-mode" value="text" checked onchange="toggleCreatePdfMode()"> From Text</label>
+                            <label><input type="radio" name="create-pdf-mode" value="blank" onchange="toggleCreatePdfMode()"> Blank Pages</label>
+                        </div>
+                        <div id="create-pdf-text-opts">
+                            <textarea id="create-pdf-content" placeholder="Enter your text content here..." rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;resize:vertical;"></textarea>
+                            <input type="text" id="create-pdf-title" placeholder="Document title">
+                        </div>
+                        <div id="create-pdf-blank-opts" class="hidden">
+                            <input type="number" id="create-pdf-pages" value="1" min="1" max="100" placeholder="Number of pages">
+                        </div>
+                        <select id="create-pdf-pagesize" aria-label="Page size">
+                            <option value="A4" selected>A4</option>
+                            <option value="Letter">Letter</option>
+                        </select>
+                        <button id="process-create-pdf-btn" class="primary-btn">Create PDF</button>
+                    </div>
+
+                    <!-- Annotate PDF Options -->
+                    <div id="annotate-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Add a highlight annotation (basic mode):</p>
+                        <select id="annot-type" aria-label="Annotation type">
+                            <option value="highlight">Highlight</option>
+                            <option value="underline">Underline</option>
+                            <option value="strikeout">Strikeout</option>
+                            <option value="note">Sticky Note</option>
+                            <option value="redact">Redact</option>
+                        </select>
+                        <input type="number" id="annot-page" value="1" min="1" placeholder="Page number">
+                        <p class="helper-text" style="font-size:0.8em;">Rect (x0,y0,x1,y1 in points):</p>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;">
+                            <input type="number" id="annot-x0" value="50" placeholder="x0">
+                            <input type="number" id="annot-y0" value="700" placeholder="y0">
+                            <input type="number" id="annot-x1" value="300" placeholder="x1">
+                            <input type="number" id="annot-y1" value="730" placeholder="y1">
+                        </div>
+                        <input type="text" id="annot-content" placeholder="Note text (for note/text types)">
+                        <input type="password" id="annotate-password" placeholder="PDF Password (optional)">
+                        <button id="process-annotate-pdf-btn" class="primary-btn">Add Annotation</button>
+                    </div>
+
+                    <!-- PDF Metadata Options -->
+                    <div id="pdf-metadata-area" class="password-area hidden">
+                        <p class="helper-text">Edit PDF document properties:</p>
+                        <input type="text" id="meta-title" placeholder="Title">
+                        <input type="text" id="meta-author" placeholder="Author">
+                        <input type="text" id="meta-subject" placeholder="Subject">
+                        <input type="text" id="meta-keywords" placeholder="Keywords (comma-separated)">
+                        <label><input type="checkbox" id="meta-clear-all"> Clear all existing metadata first</label>
+                        <input type="password" id="meta-password" placeholder="PDF Password (optional)">
+                        <button id="process-pdf-metadata-btn" class="primary-btn">Update Metadata</button>
+                    </div>
+
+                    <!-- PDF to Excel Options -->
+                    <div id="pdf-to-excel-area" class="password-area hidden">
+                        <p class="helper-text">Extract tables from PDF to Excel (.xlsx):</p>
+                        <input type="password" id="pdf-to-excel-password" placeholder="PDF Password (optional)">
+                        <button id="process-pdf-to-excel-btn" class="primary-btn">Extract to Excel</button>
+                    </div>
+
+                    <!-- PDF to PowerPoint Options -->
+                    <div id="pdf-to-pptx-area" class="password-area hidden">
+                        <p class="helper-text">Convert each page to a presentation slide:</p>
+                        <select id="pdf-to-pptx-dpi" aria-label="Quality">
+                            <option value="96">96 DPI (fast)</option>
+                            <option value="150" selected>150 DPI (balanced)</option>
+                            <option value="200">200 DPI (high quality)</option>
+                        </select>
+                        <input type="password" id="pdf-to-pptx-password" placeholder="PDF Password (optional)">
+                        <button id="process-pdf-to-pptx-btn" class="primary-btn">Convert to PPTX</button>
                     </div>
 
                     <!-- Password Modal-style Input (inline) -->
@@ -432,6 +663,13 @@
                                 <p>Stamp text on the image</p>
                             </div>
                         </div>
+                        <div class="action-card" id="image-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Image → PDF</h4>
+                                <p>Convert image(s) to a PDF document</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Rotate options -->
@@ -486,6 +724,21 @@
                         <label class="helper-text" for="watermark-image-opacity">Opacity: <span id="watermark-image-opacity-value">0.4</span></label>
                         <input type="range" id="watermark-image-opacity" min="0.05" max="1" step="0.05" value="0.4">
                         <button id="process-watermark-image-btn" class="primary-btn">Add Watermark</button>
+                    </div>
+
+                    <!-- Image to PDF Options -->
+                    <div id="image-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Convert image to PDF:</p>
+                        <select id="image-to-pdf-pagesize" aria-label="Page size">
+                            <option value="A4" selected>A4</option>
+                            <option value="Letter">Letter</option>
+                            <option value="auto">Auto (fit to image)</option>
+                        </select>
+                        <select id="image-to-pdf-fit" aria-label="Fit mode">
+                            <option value="fit" selected>Fit to page</option>
+                            <option value="original">Original size</option>
+                        </select>
+                        <button id="process-image-to-pdf-btn" class="primary-btn">Create PDF</button>
                     </div>
 
                     <div id="image-status-display" class="status-display hidden">
@@ -676,6 +929,60 @@
                         <h3>Process Complete!</h3>
                         <p id="ppt-result-message"></p>
                         <a id="ppt-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Word Tools Page -->
+        <section id="word-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="word-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload Word file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your DOCX or <span class="browse-text">browse</span></p>
+                        <input type="file" id="word-file-input" accept=".docx,.doc" hidden>
+                        <div id="word-file-info" class="file-info hidden">
+                            <i class="fas fa-file-word"></i>
+                            <span id="word-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Word</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="word-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Word → PDF</h4>
+                                <p>Convert DOCX to a PDF document</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="word-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Convert your Word document to PDF:</p>
+                        <button id="process-word-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="word-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="word-status-text">Processing...</p>
+                    </div>
+
+                    <div id="word-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="word-result-message"></p>
+                        <a id="word-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
                     </div>

@@ -1035,6 +1035,85 @@ async def execute_workflow(
                     result = await run_in_threadpool(ppt_to_images_zip, str(current_file), str(OUTPUT_DIR), fmt)
                     current_file = Path(result['output_path'])
 
+                elif step_type == 'rotate_pdf':
+                    angle = int(config.get('angle', 90))
+                    pages = config.get('pages') or None
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(rotate_pdf, str(current_file), str(OUTPUT_DIR), angle, pages, password)
+                    current_file = Path(output_path)
+
+                elif step_type == 'protect_pdf':
+                    user_pw = config.get('user_password', '')
+                    if not user_pw:
+                        yield f"data: {json.dumps({'event': 'error', 'detail': 'user_password required for protect_pdf step'})}\n\n"
+                        return
+                    output_path = await run_in_threadpool(
+                        protect_pdf, str(current_file), str(OUTPUT_DIR),
+                        user_pw, config.get('owner_password'), True, False, False, config.get('password')
+                    )
+                    current_file = Path(output_path)
+
+                elif step_type == 'word_to_pdf':
+                    output_path = await run_in_threadpool(word_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    current_file = Path(output_path)
+
+                elif step_type == 'pdf_to_excel':
+                    password = config.get('password') or None
+                    result = await run_in_threadpool(pdf_to_excel, str(current_file), str(OUTPUT_DIR), password)
+                    current_file = Path(result['output_path'])
+
+                elif step_type == 'pdf_to_pptx':
+                    dpi = int(config.get('dpi', 150))
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(pdf_to_pptx, str(current_file), str(OUTPUT_DIR), dpi, password)
+                    current_file = Path(output_path)
+
+                elif step_type == 'extract_text':
+                    preserve = config.get('preserve_layout', False)
+                    password = config.get('password') or None
+                    result = await run_in_threadpool(extract_text_from_pdf, str(current_file), str(OUTPUT_DIR), preserve, password)
+                    current_file = Path(result['output_path'])
+
+                elif step_type == 'organize_pdf':
+                    page_order = config.get('page_order', [])
+                    if not page_order:
+                        yield f"data: {json.dumps({'event': 'error', 'detail': 'page_order required for organize_pdf step'})}\n\n"
+                        return
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(organize_pdf, str(current_file), str(OUTPUT_DIR), page_order, password)
+                    current_file = Path(output_path)
+
+                elif step_type == 'add_page_numbers':
+                    output_path = await run_in_threadpool(
+                        add_page_numbers, str(current_file), str(OUTPUT_DIR),
+                        config.get('position', 'bottom-center'),
+                        int(config.get('start_number', 1)),
+                        int(config.get('font_size', 12)),
+                        int(config.get('skip_first', 0)),
+                        config.get('fmt', 'decimal'),
+                        config.get('password') or None,
+                    )
+                    current_file = Path(output_path)
+
+                elif step_type == 'repair_pdf':
+                    result = await run_in_threadpool(repair_pdf, str(current_file), str(OUTPUT_DIR))
+                    current_file = Path(result['output_path'])
+
+                elif step_type == 'annotate_pdf':
+                    annotations = config.get('annotations', [])
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(annotate_pdf, str(current_file), str(OUTPUT_DIR), annotations, password)
+                    current_file = Path(output_path)
+
+                elif step_type == 'edit_metadata':
+                    output_path = await run_in_threadpool(
+                        edit_pdf_metadata, str(current_file), str(OUTPUT_DIR),
+                        config.get('title'), config.get('author'), config.get('subject'),
+                        config.get('keywords'), config.get('creator'),
+                        bool(config.get('clear_all', False)), config.get('password') or None,
+                    )
+                    current_file = Path(output_path)
+
                 else:
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
                     return
