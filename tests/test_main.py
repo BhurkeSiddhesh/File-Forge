@@ -43,7 +43,7 @@ def test_api_remove_password(locked_pdf, mock_dirs, auth_client):
 
 def test_api_remove_password_wrong_password(locked_pdf, mock_dirs, auth_client):
     file_path = locked_pdf["path"]
-    wrong_password = "wrong"
+    wrong_password = "wrong"  # ggignore
 
     with open(file_path, "rb") as f:
         files = {"file": (file_path.name, f, "application/pdf")}

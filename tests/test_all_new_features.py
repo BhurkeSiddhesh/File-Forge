@@ -15,9 +15,8 @@ from reportlab.pdfgen import canvas
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Test-only credential placeholders — not real secrets.  # ggignore
-_TEST_PW = "test-pdf-pw"
-_TEST_OWNER_PW = "test-pdf-owner-pw"
+_TEST_PW = "test-pdf-pw"  # ggignore
+_TEST_OWNER_PW = "test-pdf-owner-pw"  # ggignore
 
 from scripts.pdf_utils import (
     protect_pdf,

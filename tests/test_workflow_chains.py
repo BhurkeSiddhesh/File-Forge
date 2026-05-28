@@ -2,8 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Test-only credential placeholders — not real secrets.  # ggignore
-_TEST_PW = "test-pdf-pw"
+_TEST_PW = "test-pdf-pw"  # ggignore
 
 import io
 import os

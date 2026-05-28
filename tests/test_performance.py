@@ -141,7 +141,7 @@ def test_perf_protect_pdf(tmp_path):
     pdf_path = _make_blank_pdf(out, num_pages=3)
 
     start = time.perf_counter()
-    result = protect_pdf(pdf_path, str(out), user_password="benchpw")
+    result = protect_pdf(pdf_path, str(out), user_password="benchpw")  # ggignore
     elapsed = time.perf_counter() - start
 
     print(f"\n  protect_pdf: {elapsed:.3f}s")

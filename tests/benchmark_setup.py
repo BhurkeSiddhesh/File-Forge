@@ -6,7 +6,7 @@ def create_benchmark_data():
     output_dir = Path("benchmark_data")
     output_dir.mkdir(exist_ok=True)
 
-    password = "benchmark"
+    password = "benchmark"  # ggignore
 
     print(f"Generating 10 password-protected PDFs in {output_dir}...")
 

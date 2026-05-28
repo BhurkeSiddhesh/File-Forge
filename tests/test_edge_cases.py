@@ -83,12 +83,12 @@ class TestNestedEncryption:
         out.mkdir()
         pdf_path = _make_blank_pdf(out)
         # First protect
-        protected1 = protect_pdf(pdf_path, str(out), user_password="first")
+        protected1 = protect_pdf(pdf_path, str(out), user_password="first")  # ggignore
         assert Path(protected1).exists()
         # Second protect — should either succeed (by decrypting first) or raise a clear error
         try:
             protected2 = protect_pdf(
-                protected1, str(out), user_password="second", password="first"
+                protected1, str(out), user_password="second", password="first"  # ggignore
             )
             assert Path(protected2).exists()
         except (ValueError, RuntimeError, Exception) as e:

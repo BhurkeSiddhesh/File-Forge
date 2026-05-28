@@ -35,7 +35,7 @@ def multi_page_pdf(tmp_path):
 def locked_pdf(tmp_path, sample_pdf):
     """Creates a password-protected PDF file."""
     file_path = tmp_path / "locked.pdf"
-    password = "secret_password"
+    password = "secret_password"  # ggignore
     with pikepdf.open(sample_pdf) as pdf:
         pdf.save(
             file_path,

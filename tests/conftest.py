@@ -36,7 +36,7 @@ def locked_pdf(tmp_path_factory, sample_pdf):
     """Creates a password-protected PDF file."""
     d = tmp_path_factory.mktemp("locked_data")
     file_path = d / "locked.pdf"
-    password = "secret_password"
+    password = "secret_password"  # ggignore
 
     with pikepdf.open(sample_pdf) as pdf:
         # Encrypt the PDF
