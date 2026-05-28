@@ -2,6 +2,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Test-only credential placeholders — not real secrets.  # ggignore
+_TEST_PW = "test-pdf-pw"
+
 import io
 import os
 import pytest
@@ -99,7 +102,7 @@ def test_chain_text_compress_protect(tmp_path):
     assert Path(compressed_path).exists()
 
     # Step 3: protect
-    protected_path = protect_pdf(compressed_path, str(out), user_password="chainpw")
+    protected_path = protect_pdf(compressed_path, str(out), user_password=_TEST_PW)
     assert Path(protected_path).exists()
 
     # Verify it's password protected: opening without password should fail
@@ -107,7 +110,7 @@ def test_chain_text_compress_protect(tmp_path):
         pikepdf.open(protected_path)
 
     # Opening with password should succeed
-    with pikepdf.open(protected_path, password="chainpw") as pdf:
+    with pikepdf.open(protected_path, password=_TEST_PW) as pdf:
         assert len(pdf.pages) >= 1
 
 
@@ -207,12 +210,12 @@ def test_chain_word_rotate_protect(tmp_path):
     assert Path(rotated_path).exists()
 
     # Step 3: protect
-    protected_path = protect_pdf(rotated_path, str(out), user_password="word2pdf")
+    protected_path = protect_pdf(rotated_path, str(out), user_password=_TEST_PW)
     assert Path(protected_path).exists()
 
     # Verify password protection
     with pytest.raises(pikepdf.PasswordError):
         pikepdf.open(protected_path)
 
-    with pikepdf.open(protected_path, password="word2pdf") as pdf:
+    with pikepdf.open(protected_path, password=_TEST_PW) as pdf:
         assert len(pdf.pages) >= 1

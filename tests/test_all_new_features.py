@@ -15,6 +15,10 @@ from reportlab.pdfgen import canvas
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Test-only credential placeholders — not real secrets.  # ggignore
+_TEST_PW = "test-pdf-pw"
+_TEST_OWNER_PW = "test-pdf-owner-pw"
+
 from scripts.pdf_utils import (
     protect_pdf,
     images_to_pdf,
@@ -136,22 +140,22 @@ class TestProtectPDF:
     def test_protect_creates_file(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
-        result = protect_pdf(str(simple_pdf), str(out), user_password="pass123")
+        result = protect_pdf(str(simple_pdf), str(out), user_password=_TEST_PW)
         assert Path(result).exists()
         assert "_protected.pdf" in result
 
     def test_protected_pdf_requires_password(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
-        result = protect_pdf(str(simple_pdf), str(out), user_password="mypass")
+        result = protect_pdf(str(simple_pdf), str(out), user_password=_TEST_PW)
         with pytest.raises(pikepdf.PasswordError):
             pikepdf.open(result)
 
     def test_protected_pdf_opens_with_correct_password(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
-        result = protect_pdf(str(simple_pdf), str(out), user_password="correct")
-        with pikepdf.open(result, password="correct") as pdf:
+        result = protect_pdf(str(simple_pdf), str(out), user_password=_TEST_PW)
+        with pikepdf.open(result, password=_TEST_PW) as pdf:
             assert len(pdf.pages) >= 1
 
     def test_protect_empty_password_raises(self, simple_pdf, tmp_path):
@@ -165,7 +169,7 @@ class TestProtectPDF:
         out.mkdir()
         result = protect_pdf(
             str(locked_pdf["path"]), str(out),
-            user_password="newpass",
+            user_password=_TEST_PW,
             password=locked_pdf["password"],
         )
         assert Path(result).exists()
@@ -173,15 +177,15 @@ class TestProtectPDF:
     def test_protect_preserves_page_count(self, multi_page_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
-        result = protect_pdf(str(multi_page_pdf), str(out), user_password="pw")
-        with pikepdf.open(result, password="pw") as pdf:
+        result = protect_pdf(str(multi_page_pdf), str(out), user_password=_TEST_PW)
+        with pikepdf.open(result, password=_TEST_PW) as pdf:
             assert len(pdf.pages) == 4
 
     def test_protect_with_owner_password(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
-        result = protect_pdf(str(simple_pdf), str(out), user_password="user", owner_password="owner")
-        with pikepdf.open(result, password="user") as pdf:
+        result = protect_pdf(str(simple_pdf), str(out), user_password=_TEST_PW, owner_password=_TEST_OWNER_PW)
+        with pikepdf.open(result, password=_TEST_PW) as pdf:
             assert len(pdf.pages) >= 1
 
 
