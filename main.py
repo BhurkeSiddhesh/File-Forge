@@ -890,10 +890,10 @@ async def execute_workflow(
     """Execute a multi-step workflow on a file with SSE progress streaming."""
     import json
     from fastapi.responses import StreamingResponse
-    
-    # Sanitize filename to prevent path traversal
+
+    # Sanitize filename and add UUID prefix to prevent path traversal and concurrent collisions
     safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / safe_filename
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
     
     print(f"[DEBUG] Workflow started: {file.filename}, steps={steps}")
     

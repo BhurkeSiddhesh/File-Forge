@@ -776,6 +776,8 @@ def images_to_pdf(
     for img_path in input_paths:
         with PILImage.open(img_path) as img:
             img_w, img_h = img.size
+        if img_w == 0 or img_h == 0:
+            raise ValueError(f"Image {img_path} has zero-dimension (width={img_w}, height={img_h}).")
 
         if page_size_key == "auto":
             pw, ph = float(img_w), float(img_h)
@@ -1181,8 +1183,8 @@ def add_page_numbers(
         raise ValueError(f"position must be one of: {', '.join(sorted(valid_positions))}")
     if fmt not in ("decimal", "roman", "alpha"):
         raise ValueError("fmt must be 'decimal', 'roman', or 'alpha'.")
-    if start_number < 0:
-        raise ValueError("start_number must be >= 0.")
+    if start_number < 1:
+        raise ValueError("start_number must be >= 1.")
     if font_size < 4 or font_size > 72:
         raise ValueError("font_size must be between 4 and 72.")
 
@@ -1585,5 +1587,3 @@ def get_pdf_metadata(input_path: str, password: str = None) -> dict:
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
-
-    return str(output_file)
