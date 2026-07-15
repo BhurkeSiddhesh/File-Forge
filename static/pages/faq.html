@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ — File Forge Free PDF &amp; Image Tools</title>
+    <meta name="description"
+        content="Answers to common questions about File Forge: is it free, how files are deleted, file size limits, security, self-hosting, and supported formats.">
+    <link rel="canonical" href="{{BASE_URL}}/faq">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="File Forge">
+    <meta property="og:title" content="FAQ — File Forge Free PDF &amp; Image Tools">
+    <meta property="og:description" content="Is it free? Where do my files go? Can I self-host? All answered here.">
+    <meta property="og:url" content="{{BASE_URL}}/faq">
+    <meta name="twitter:card" content="summary">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css?v=20260615">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Is File Forge really free?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes — every tool is free with no daily limits, watermarks, or accounts. The project is open source (MIT/Apache-2.0), and the public site is supported by unobtrusive ads." }
+            },
+            {
+                "@type": "Question",
+                "name": "What happens to my files after I upload them?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Files are processed automatically, the upload is removed when processing finishes, and the result is deleted from the server the moment you download it. A background sweeper purges anything older than an hour. Because the code is open source, all of this is publicly verifiable." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is there a file size limit?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes, uploads are capped (50 MB by default on the public site) to keep the free service fast and available for everyone. If you self-host, you can raise the limit with one environment variable." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I run File Forge on my own computer or server?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Clone the GitHub repository, install the Python requirements, and run main.py — or use the included Dockerfile. Your files then never leave your machine at all." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can File Forge crack a PDF password I don't know?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. The Unlock PDF tool only removes encryption from documents whose password you already know. It does not guess, brute-force, or bypass passwords." }
+            }
+        ]
+    }
+    </script>
+</head>
+
+<body class="seo-page">
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+    <main class="page-wrap">
+        <nav class="page-nav"><a href="/">&larr; File Forge — all tools</a></nav>
+
+        <h1>Frequently Asked Questions</h1>
+
+        <h2>Is File Forge really free?</h2>
+        <p>Yes. Every tool is free with no daily limits, no watermarks, and no account. The project is open source
+            (MIT / Apache-2.0), and the public site is supported by unobtrusive ads so it can stay free.</p>
+
+        <h2>What happens to my files after I upload them?</h2>
+        <p>Three things, all automatic: the upload is removed as soon as processing finishes; the result is deleted
+            from the server the moment you download it; and a background sweeper purges anything older than one hour.
+            No human ever looks at your files. Unlike closed-source tools, you don't have to take our word for it — the
+            <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">code that does this
+                is public</a>.</p>
+
+        <h2>Is there a file size limit?</h2>
+        <p>Uploads are capped (50 MB by default on the public site) to keep the free service fast for everyone. If you
+            self-host, you can raise the limit with a single environment variable.</p>
+
+        <h2>Can I run File Forge myself?</h2>
+        <p>Yes — that's the point of being open source. Clone the <a
+                href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">repository</a>,
+            install the Python requirements, and run <code>python main.py</code>, or use the included Dockerfile. Your
+            files then never leave your machine.</p>
+
+        <h2>Can File Forge crack a PDF password I don't know?</h2>
+        <p>No. <a href="/unlock-pdf">Unlock PDF</a> removes encryption only when you provide the correct password. It
+            does not guess, brute-force, or bypass anything.</p>
+
+        <h2>Why did my conversion fail?</h2>
+        <p>The most common causes: the file is over the size cap, the PDF password was wrong, or the file is corrupted.
+            Try again, and if it keeps failing, <a href="/contact">tell us</a> — ideally with the error message you
+            saw.</p>
+
+        <h2>Which tools are available?</h2>
+        <p><a href="/unlock-pdf">Unlock PDF</a>, <a href="/pdf-to-word">PDF to Word</a>, <a
+                href="/compress-pdf">Compress PDF</a>, <a href="/extract-pdf-pages">Extract PDF Pages</a>, <a
+                href="/pdf-to-text">PDF to Text</a>, <a href="/heic-to-jpeg">HEIC to JPG</a>, and <a
+                href="/resize-image">Resize / Crop Image</a> — plus a <a href="/?tool=workflow">Workflow Builder</a>
+            that chains steps together.</p>
+
+        <footer class="page-footer">
+            <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>
+            · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a
+                href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">GitHub</a>
+        </footer>
+    </main>
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: file-forge
+    env: docker # Correct key to tell Render to build from Dockerfile
+    plan: free # Zero cost. Standard tools work fine; AI layout mode needs >1 GB RAM, so it is disabled below.
+    region: ohio
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DISABLE_AI
+        value: "1" # Free tier has 512 MB RAM — remove this (and use plan: starter) to enable AI Layout Recovery
+      # Set your custom domain here so canonicals/sitemap/robots all point to it:
+      # - key: BASE_URL
+      #   value: https://forgefiles.org
+      # After AdSense approval, serve /ads.txt by setting your publisher line:
+      # - key: ADSENSE_ADS_TXT
+      #   value: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

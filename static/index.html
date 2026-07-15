@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{SITE_VERIFICATION}}
+    <title>File Forge — Free Online PDF, Image, Excel &amp; PPT Tools | No Signup, Open Source</title>
+    <meta name="description"
+        content="Free, open-source online file tools: unlock, merge, compress and convert PDFs, extract pages and text, convert HEIC to JPG, resize and crop images, Excel and PowerPoint converters. No signup, no watermarks, and your files are deleted automatically.">
+    <link rel="canonical" href="{{BASE_URL}}/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="File Forge">
+    <meta property="og:title" content="File Forge — Free Online PDF, Image, Excel &amp; PPT Tools">
+    <meta property="og:description"
+        content="Unlock, merge, compress and convert PDFs. Convert HEIC to JPG, resize and crop images, Excel and PowerPoint tools. 100% free, open source, no signup — files are deleted automatically.">
+    <meta property="og:url" content="{{BASE_URL}}/">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="File Forge — Free Online PDF, Image, Excel &amp; PPT Tools">
+    <meta name="twitter:description"
+        content="Free, open-source PDF, image, Excel and PowerPoint tools. No signup, no watermarks, files deleted automatically.">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "File Forge",
+        "url": "{{BASE_URL}}/",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Any",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "Free, open-source online file tools: unlock, merge, compress and convert PDFs, extract pages and text, convert HEIC to JPG, resize and crop images, Excel and PowerPoint converters.",
+        "featureList": [
+            "Remove PDF password",
+            "Convert PDF to Word (DOCX)",
+            "Compress PDF",
+            "Merge PDFs",
+            "Extract pages from PDF",
+            "Extract text from PDF",
+            "PDF to Excel and PowerPoint",
+            "Convert HEIC to JPEG",
+            "Resize and crop images",
+            "Excel to PDF, CSV to XLSX",
+            "PowerPoint to PDF"
+        ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "File Forge tools",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Merge PDF", "url": "{{BASE_URL}}/merge-pdf" },
+            { "@type": "ListItem", "position": 2, "name": "Compress PDF", "url": "{{BASE_URL}}/compress-pdf" },
+            { "@type": "ListItem", "position": 3, "name": "PDF to Word", "url": "{{BASE_URL}}/pdf-to-word" },
+            { "@type": "ListItem", "position": 4, "name": "Unlock PDF", "url": "{{BASE_URL}}/unlock-pdf" },
+            { "@type": "ListItem", "position": 5, "name": "Split PDF", "url": "{{BASE_URL}}/split-pdf" },
+            { "@type": "ListItem", "position": 6, "name": "PDF to JPG", "url": "{{BASE_URL}}/pdf-to-jpg" },
+            { "@type": "ListItem", "position": 7, "name": "Image to PDF", "url": "{{BASE_URL}}/image-to-pdf" },
+            { "@type": "ListItem", "position": 8, "name": "HEIC to JPG", "url": "{{BASE_URL}}/heic-to-jpeg" },
+            { "@type": "ListItem", "position": 9, "name": "Resize Image", "url": "{{BASE_URL}}/resize-image" },
+            { "@type": "ListItem", "position": 10, "name": "Word to PDF", "url": "{{BASE_URL}}/word-to-pdf" },
+            { "@type": "ListItem", "position": 11, "name": "Excel to PDF", "url": "{{BASE_URL}}/excel-to-pdf" },
+            { "@type": "ListItem", "position": 12, "name": "PowerPoint to PDF", "url": "{{BASE_URL}}/powerpoint-to-pdf" }
+        ]
+    }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    <link rel="stylesheet" href="/static/style.css?v=20260711">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
+    {{ADSENSE_HEAD}}
+    <script>
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    </script>
+</head>
+
+<body>
+    <button class="theme-toggle" id="theme-toggle-btn" aria-label="Toggle Dark Mode">
+        <i class="fas fa-moon" id="theme-icon"></i>
+    </button>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="app-container">
+        <!-- Main Page -->
+        <section id="home-page" class="view active">
+            <header class="hero">
+                <h1>File <span class="accent">Forge</span></h1>
+                <div style="display:flex;justify-content:center;">
+                    <p class="trust-strip">
+                        <span>Free PDF, image, Excel &amp; PPT tools</span>
+                        <span><i class="fas fa-check"></i> 100% free</span>
+                        <span><i class="fab fa-github"></i> <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">Open source</a></span>
+                        <span><i class="fas fa-user-slash"></i> No signup</span>
+                        <span><i class="fas fa-trash-alt"></i> Files auto-deleted</span>
+                    </p>
+                </div>
+            </header>
+
+            <div class="tool-grid">
+                <div class="tool-card active" onclick="showDrillDown('pdf')" role="button" tabindex="0">
+                    <div class="icon-wrapper pdf">
+                        <i class="fas fa-file-pdf"></i>
+                    </div>
+                    <h3>PDF Tools</h3>
+                    <p>Unlock, convert, and compress PDF files effortlessly.</p>
+                    <div class="badge">Available</div>
+                </div>
+
+                <div class="tool-card active" onclick="showDrillDown('image')" role="button" tabindex="0">
+                    <div class="icon-wrapper image">
+                        <i class="fas fa-image"></i>
+                    </div>
+                    <h3>Image Tools</h3>
+                    <p>Convert HEIC to JPEG and more image transformations.</p>
+                    <div class="badge">Available</div>
+                </div>
+
+                <div class="tool-card active" onclick="showDrillDown('workflow')" role="button" tabindex="0">
+                    <div class="icon-wrapper workflow">
+                        <i class="fas fa-project-diagram"></i>
+                    </div>
+                    <h3>Workflow</h3>
+                    <p>Chain operations: PDF unlock → Word and more pipelines.</p>
+                    <div class="badge">New</div>
+                </div>
+
+                <div class="tool-card active" onclick="showDrillDown('excel')" role="button" tabindex="0">
+                    <div class="icon-wrapper excel">
+                        <i class="fas fa-file-excel"></i>
+                    </div>
+                    <h3>Excel Tools</h3>
+                    <p>Excel → PDF, CSV ↔ XLSX, and merge workbooks.</p>
+                    <div class="badge">New</div>
+                </div>
+
+                <div class="tool-card active" onclick="showDrillDown('ppt')" role="button" tabindex="0">
+                    <div class="icon-wrapper ppt">
+                        <i class="fas fa-file-powerpoint"></i>
+                    </div>
+                    <h3>PPT Tools</h3>
+                    <p>PPT → PDF, PPT → Images, and merge presentations.</p>
+                    <div class="badge">New</div>
+                </div>
+
+                <div class="tool-card active" onclick="showDrillDown('word')" role="button" tabindex="0">
+                    <div class="icon-wrapper word">
+                        <i class="fas fa-file-word"></i>
+                    </div>
+                    <h3>Word Tools</h3>
+                    <p>Convert DOCX to PDF and more Word operations.</p>
+                    <div class="badge">New</div>
+                </div>
+            </div>
+
+            {{ADSENSE_SLOT}}
+        </section>
+
+        <!-- Drill Down Page (PDF) -->
+        <section id="pdf-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PDF file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your PDF or <span class="browse-text">browse</span></p>
+                        <input type="file" id="file-input" accept=".pdf" hidden>
+                        <div id="file-info" class="file-info hidden">
+                            <i class="fas fa-file-pdf"></i>
+                            <span id="filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for PDF</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="remove-password-btn" role="button" tabindex="0">
+                            <i class="fas fa-unlock"></i>
+                            <div class="action-text">
+                                <h4>Remove Password</h4>
+                                <p>Unlock protected PDF files</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="convert-word-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-word"></i>
+                            <div class="action-text">
+                                <h4>Convert to Word</h4>
+                                <p>Transform PDF into editable DOCX</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="extract-pages-btn" role="button" tabindex="0">
+                            <i class="fas fa-cut"></i>
+                            <div class="action-text">
+                                <h4>Extract Pages</h4>
+                                <p>Cut selected pages into a new PDF</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="compress-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-archive"></i>
+                            <div class="action-text">
+                                <h4>Compress PDF</h4>
+                                <p>Shrink file size without quality loss</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="merge-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge PDFs</h4>
+                                <p>Combine multiple PDFs into one</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="watermark-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-stamp"></i>
+                            <div class="action-text">
+                                <h4>Add Watermark</h4>
+                                <p>Stamp text across every page</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="to-images-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-images"></i>
+                            <div class="action-text">
+                                <h4>PDF → JPG</h4>
+                                <p>Render each page as an image (zip)</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="sign-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-signature"></i>
+                            <div class="action-text">
+                                <h4>Sign PDF</h4>
+                                <p>Stamp a signature image onto a page</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="rotate-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-sync-alt"></i>
+                            <div class="action-text">
+                                <h4>Rotate PDF</h4>
+                                <p>Rotate pages 90°, 180° or 270°</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="protect-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-lock"></i>
+                            <div class="action-text">
+                                <h4>Protect PDF</h4>
+                                <p>Add password protection</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="extract-text-btn" role="button" tabindex="0">
+                            <i class="fas fa-font"></i>
+                            <div class="action-text">
+                                <h4>Extract Text</h4>
+                                <p>Export all text to .txt file</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="organize-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-sort"></i>
+                            <div class="action-text">
+                                <h4>Organize PDF</h4>
+                                <p>Reorder, delete or duplicate pages</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="page-numbers-btn" role="button" tabindex="0">
+                            <i class="fas fa-list-ol"></i>
+                            <div class="action-text">
+                                <h4>Add Page Numbers</h4>
+                                <p>Insert numbered footers or headers</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="repair-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-wrench"></i>
+                            <div class="action-text">
+                                <h4>Repair PDF</h4>
+                                <p>Fix corrupted or damaged PDFs</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="create-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-plus-circle"></i>
+                            <div class="action-text">
+                                <h4>Create PDF</h4>
+                                <p>Generate from text or blank</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="annotate-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-highlighter"></i>
+                            <div class="action-text">
+                                <h4>Annotate PDF</h4>
+                                <p>Highlight, underline and add notes</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-metadata-btn" role="button" tabindex="0">
+                            <i class="fas fa-info-circle"></i>
+                            <div class="action-text">
+                                <h4>Edit Metadata</h4>
+                                <p>Change title, author and keywords</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-to-excel-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-excel"></i>
+                            <div class="action-text">
+                                <h4>PDF → Excel</h4>
+                                <p>Extract tables to spreadsheet</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="pdf-to-pptx-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-powerpoint"></i>
+                            <div class="action-text">
+                                <h4>PDF → PowerPoint</h4>
+                                <p>Convert pages to presentation</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Compress PDF Options -->
+                    <div id="compress-area" class="compress-area hidden">
+                        <p class="helper-text">Select compression level:</p>
+                        <div class="compress-levels">
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="low">
+                                <span class="level-card">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                    <strong>Low</strong>
+                                    <small>Best quality</small>
+                                </span>
+                            </label>
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="medium" checked>
+                                <span class="level-card">
+                                    <i class="fas fa-balance-scale"></i>
+                                    <strong>Medium</strong>
+                                    <small>Balanced</small>
+                                </span>
+                            </label>
+                            <label class="compress-level-option">
+                                <input type="radio" name="compress-level" value="high">
+                                <span class="level-card">
+                                    <i class="fas fa-compress-arrows-alt"></i>
+                                    <strong>High</strong>
+                                    <small>Smallest size</small>
+                                </span>
+                            </label>
+                        </div>
+                        <button id="process-compress-btn" class="primary-btn">Compress Now</button>
+                    </div>
+
+                    <!-- Convert to Word Options -->
+                    <div id="convert-password-area" class="password-area hidden">
+                        <div class="options-panel">
+                            <label class="toggle-control">
+                                <input type="checkbox" id="ai-mode-toggle">
+                                <span class="control"></span>
+                                <span class="label">Use AI Layout Recovery (Slow, High Fidelity)</span>
+                            </label>
+                        </div>
+                        <button id="process-convert-btn" class="primary-btn">Convert Now</button>
+                    </div>
+
+                    <!-- Extract Pages Input -->
+                    <div id="extract-pages-area" class="password-area hidden">
+                        <p class="helper-text">Enter pages to extract (e.g., 1,3,5-7 or all):</p>
+                        <input type="text" id="extract-pages-input" placeholder="Pages to extract" aria-label="Pages to extract">
+                        <button id="process-extract-btn" class="primary-btn">Extract Pages</button>
+                    </div>
+
+                    <!-- Merge PDFs Options -->
+                    <div id="merge-area" class="password-area hidden">
+                        <p class="helper-text">Select 2 or more PDFs (use the upload area above — multi-select enabled).</p>
+                        <button id="process-merge-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <!-- Watermark Options -->
+                    <div id="watermark-area" class="password-area hidden">
+                        <p class="helper-text">Watermark settings:</p>
+                        <input type="text" id="watermark-text" placeholder="Watermark text (e.g. DRAFT)" aria-label="Watermark text">
+                        <select id="watermark-position" aria-label="Watermark position">
+                            <option value="diagonal" selected>Diagonal</option>
+                            <option value="top">Top</option>
+                            <option value="center">Center</option>
+                            <option value="bottom">Bottom</option>
+                        </select>
+                        <label class="helper-text" for="watermark-opacity">Opacity: <span id="watermark-opacity-value">0.3</span></label>
+                        <input type="range" id="watermark-opacity" min="0.1" max="1" step="0.05" value="0.3">
+                        <button id="process-watermark-btn" class="primary-btn">Add Watermark</button>
+                    </div>
+
+                    <!-- PDF to Images Options -->
+                    <div id="to-images-area" class="password-area hidden">
+                        <p class="helper-text">Render every page to an image:</p>
+                        <select id="to-images-dpi" aria-label="DPI">
+                            <option value="72">72 DPI (small)</option>
+                            <option value="150" selected>150 DPI (balanced)</option>
+                            <option value="300">300 DPI (high quality)</option>
+                        </select>
+                        <select id="to-images-format" aria-label="Format">
+                            <option value="jpg" selected>JPG</option>
+                            <option value="png">PNG</option>
+                        </select>
+                        <button id="process-to-images-btn" class="primary-btn">Render Pages</button>
+                    </div>
+
+                    <!-- Sign PDF Options -->
+                    <div id="sign-area" class="password-area hidden">
+                        <p class="helper-text">Upload your signature image (PNG with transparency works best):</p>
+                        <input type="file" id="signature-image" accept="image/png,image/jpeg" aria-label="Signature image">
+                        <input type="number" id="sign-page" min="1" value="1" placeholder="Page number" aria-label="Page number">
+                        <select id="sign-position" aria-label="Signature position">
+                            <option value="bottom-right" selected>Bottom right</option>
+                            <option value="bottom-center">Bottom center</option>
+                            <option value="bottom-left">Bottom left</option>
+                            <option value="top-right">Top right</option>
+                        </select>
+                        <label class="helper-text" for="sign-width">Width: <span id="sign-width-value">20%</span></label>
+                        <input type="range" id="sign-width" min="0.05" max="0.6" step="0.01" value="0.2">
+                        <button id="process-sign-btn" class="primary-btn">Sign PDF</button>
+                    </div>
+
+                    <!-- Rotate PDF Options -->
+                    <div id="rotate-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Rotation angle:</p>
+                        <select id="rotate-pdf-angle" aria-label="Rotation angle">
+                            <option value="90">90° Clockwise</option>
+                            <option value="180">180°</option>
+                            <option value="270">270° Clockwise</option>
+                            <option value="-90">90° Counter-Clockwise</option>
+                        </select>
+                        <input type="text" id="rotate-pdf-pages" placeholder="Pages (e.g. 1,3-5 or leave blank for all)" aria-label="Pages">
+                        <button id="process-rotate-pdf-btn" class="primary-btn">Rotate PDF</button>
+                    </div>
+
+                    <!-- Protect PDF Options -->
+                    <div id="protect-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Set password protection:</p>
+                        <input type="password" id="protect-user-password" placeholder="User Password (required to open)" required>
+                        <input type="password" id="protect-owner-password" placeholder="Owner Password (optional)">
+                        <label><input type="checkbox" id="protect-allow-print" checked> Allow printing</label>
+                        <label><input type="checkbox" id="protect-allow-copy"> Allow copying text</label>
+                        <label><input type="checkbox" id="protect-allow-edit"> Allow editing</label>
+                        <button id="process-protect-pdf-btn" class="primary-btn">Protect PDF</button>
+                    </div>
+
+                    <!-- Extract Text Options -->
+                    <div id="extract-text-area" class="password-area hidden">
+                        <p class="helper-text">Extract all text content:</p>
+                        <label><input type="checkbox" id="extract-text-layout"> Preserve layout structure</label>
+                        <button id="process-extract-text-btn" class="primary-btn">Extract Text</button>
+                    </div>
+
+                    <!-- Organize PDF Options -->
+                    <div id="organize-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Enter page order (comma-separated, 1-based). Repeat to duplicate, omit to delete.<br>Example: <code>3,1,2,1</code></p>
+                        <input type="text" id="organize-page-order" placeholder="e.g. 1,3,2 or 4,3,2,1" aria-label="Page order">
+                        <button id="process-organize-pdf-btn" class="primary-btn">Organize</button>
+                    </div>
+
+                    <!-- Add Page Numbers Options -->
+                    <div id="page-numbers-area" class="password-area hidden">
+                        <p class="helper-text">Add page numbers:</p>
+                        <select id="page-numbers-position" aria-label="Position">
+                            <option value="bottom-center" selected>Bottom Center</option>
+                            <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-right">Bottom Right</option>
+                            <option value="top-center">Top Center</option>
+                            <option value="top-left">Top Left</option>
+                            <option value="top-right">Top Right</option>
+                        </select>
+                        <select id="page-numbers-format" aria-label="Format">
+                            <option value="decimal" selected>1, 2, 3 ...</option>
+                            <option value="roman">I, II, III ...</option>
+                            <option value="alpha">A, B, C ...</option>
+                        </select>
+                        <input type="number" id="page-numbers-start" value="1" min="1" placeholder="Start number">
+                        <input type="number" id="page-numbers-skip" value="0" min="0" placeholder="Skip first N pages">
+                        <button id="process-page-numbers-btn" class="primary-btn">Add Numbers</button>
+                    </div>
+
+                    <!-- Repair PDF Options -->
+                    <div id="repair-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Attempt to repair and recover a corrupted PDF:</p>
+                        <button id="process-repair-pdf-btn" class="primary-btn">Repair PDF</button>
+                    </div>
+
+                    <!-- Create PDF Options -->
+                    <div id="create-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Create a new PDF:</p>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                            <label><input type="radio" name="create-pdf-mode" value="text" checked onchange="toggleCreatePdfMode()"> From Text</label>
+                            <label><input type="radio" name="create-pdf-mode" value="blank" onchange="toggleCreatePdfMode()"> Blank Pages</label>
+                        </div>
+                        <div id="create-pdf-text-opts">
+                            <textarea id="create-pdf-content" placeholder="Enter your text content here..." rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;resize:vertical;"></textarea>
+                            <input type="text" id="create-pdf-title" placeholder="Document title">
+                        </div>
+                        <div id="create-pdf-blank-opts" class="hidden">
+                            <input type="number" id="create-pdf-pages" value="1" min="1" max="100" placeholder="Number of pages">
+                        </div>
+                        <select id="create-pdf-pagesize" aria-label="Page size">
+                            <option value="A4" selected>A4</option>
+                            <option value="Letter">Letter</option>
+                        </select>
+                        <button id="process-create-pdf-btn" class="primary-btn">Create PDF</button>
+                    </div>
+
+                    <!-- Annotate PDF Options -->
+                    <div id="annotate-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Add a highlight annotation (basic mode):</p>
+                        <select id="annot-type" aria-label="Annotation type">
+                            <option value="highlight">Highlight</option>
+                            <option value="underline">Underline</option>
+                            <option value="strikeout">Strikeout</option>
+                            <option value="note">Sticky Note</option>
+                            <option value="redact">Redact</option>
+                        </select>
+                        <input type="number" id="annot-page" value="1" min="1" placeholder="Page number">
+                        <p class="helper-text" style="font-size:0.8em;">Rect (x0,y0,x1,y1 in points):</p>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;">
+                            <input type="number" id="annot-x0" value="50" placeholder="x0">
+                            <input type="number" id="annot-y0" value="700" placeholder="y0">
+                            <input type="number" id="annot-x1" value="300" placeholder="x1">
+                            <input type="number" id="annot-y1" value="730" placeholder="y1">
+                        </div>
+                        <input type="text" id="annot-content" placeholder="Note text (for note/text types)">
+                        <button id="process-annotate-pdf-btn" class="primary-btn">Add Annotation</button>
+                    </div>
+
+                    <!-- PDF Metadata Options -->
+                    <div id="pdf-metadata-area" class="password-area hidden">
+                        <p class="helper-text">Edit PDF document properties:</p>
+                        <input type="text" id="meta-title" placeholder="Title">
+                        <input type="text" id="meta-author" placeholder="Author">
+                        <input type="text" id="meta-subject" placeholder="Subject">
+                        <input type="text" id="meta-keywords" placeholder="Keywords (comma-separated)">
+                        <label><input type="checkbox" id="meta-clear-all"> Clear all existing metadata first</label>
+                        <button id="process-pdf-metadata-btn" class="primary-btn">Update Metadata</button>
+                    </div>
+
+                    <!-- PDF to Excel Options -->
+                    <div id="pdf-to-excel-area" class="password-area hidden">
+                        <p class="helper-text">Extract tables from PDF to Excel (.xlsx):</p>
+                        <button id="process-pdf-to-excel-btn" class="primary-btn">Extract to Excel</button>
+                    </div>
+
+                    <!-- PDF to PowerPoint Options -->
+                    <div id="pdf-to-pptx-area" class="password-area hidden">
+                        <p class="helper-text">Convert each page to a presentation slide:</p>
+                        <select id="pdf-to-pptx-dpi" aria-label="Quality">
+                            <option value="96">96 DPI (fast)</option>
+                            <option value="150" selected>150 DPI (balanced)</option>
+                            <option value="200">200 DPI (high quality)</option>
+                        </select>
+                        <button id="process-pdf-to-pptx-btn" class="primary-btn">Convert to PPTX</button>
+                    </div>
+
+                    <!-- Password Modal-style Input (inline) -->
+                    <div id="password-input-area" class="password-area hidden">
+                        <input type="password" id="pdf-password" placeholder="Enter PDF Password"
+                            aria-label="PDF Password">
+                        <button id="process-password-btn" class="primary-btn">Unlock Now</button>
+                    </div>
+
+                    <div id="status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="status-text">Processing...</p>
+                    </div>
+
+                    <div id="result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="result-message"></p>
+                        <a id="download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Drill Down Page (Image) -->
+        <section id="image-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="image-drop-zone" class="drop-zone" role="button" tabindex="0"
+                        aria-label="Upload Image file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
+                        <input type="file" id="image-file-input" accept="image/*,.heic,.heif" hidden>
+                        <div id="image-file-info" class="file-info hidden">
+                            <i class="fas fa-image"></i>
+                            <span id="image-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Image</h2>
+
+                    <div class="options-panel">
+                        <div class="switch-toggle">
+                            <input type="radio" id="mode-convert" name="image-mode" checked
+                                onchange="toggleImageMode()">
+                            <label for="mode-convert">Convert</label>
+
+                            <input type="radio" id="mode-resize" name="image-mode" onchange="toggleImageMode()">
+                            <label for="mode-resize">Resize</label>
+
+                            <input type="radio" id="mode-crop" name="image-mode" onchange="toggleImageMode()">
+                            <label for="mode-crop">Crop</label>
+                        </div>
+
+                        <!-- Options for Convert Mode -->
+                        <div id="convert-options" class="mode-options">
+                            <label class="quality-control">
+                                <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
+                                <input type="range" id="quality-slider" min="50" max="100" value="95">
+                            </label>
+                        </div>
+
+                        <!-- Options for Resize Mode -->
+                        <div id="resize-options" class="mode-options hidden">
+                            <label class="select-control">
+                                <span class="label">Resize Method</span>
+                                <select id="resize-method" onchange="toggleResizeInputs()">
+                                    <option value="dimensions">Dimensions (Width/Height)</option>
+                                    <option value="percentage">Percentage (Scale)</option>
+                                    <option value="target_size">Target File Size</option>
+                                </select>
+                            </label>
+
+                            <div id="input-dimensions" class="resize-inputs">
+                                <input type="number" id="resize-width" placeholder="Width (px)">
+                                <span class="separator">x</span>
+                                <input type="number" id="resize-height" placeholder="Height (px)">
+                            </div>
+
+                            <div id="input-percentage" class="resize-inputs hidden">
+                                <label class="quality-control">
+                                    <span class="label">Scale: <span id="scale-value">50</span>%</span>
+                                    <input type="range" id="scale-slider" min="1" max="200" value="50"
+                                        oninput="document.getElementById('scale-value').innerText = this.value">
+                                </label>
+                            </div>
+
+                            <div id="input-target-size" class="resize-inputs hidden">
+                                <input type="number" id="target-size-kb" placeholder="Max Size (KB)">
+                            </div>
+                        </div>
+
+                        <!-- Options for Crop Mode -->
+                        <div id="crop-options" class="mode-options hidden">
+                            <p class="helper-text">Drag handles to crop the image.</p>
+                            <div id="crop-editor-container" class="crop-editor-container hidden">
+                                <img id="crop-image-preview" src="" alt="Image to crop">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="convert-jpeg-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-image"></i>
+                            <div class="action-text">
+                                <h4>Convert to JPEG</h4>
+                                <p>Transform HEIC to standard JPEG format</p>
+                            </div>
+                        </div>
+
+                        <div class="action-card hidden" id="resize-btn" onclick="resizeImage()" role="button"
+                            tabindex="0">
+                            <i class="fas fa-compress-arrows-alt"></i>
+                            <div class="action-text">
+                                <h4>Resize Image</h4>
+                                <p>Change dimensions or file size</p>
+                            </div>
+                        </div>
+
+                        <div class="action-card hidden" id="crop-btn" onclick="cropImage()" role="button" tabindex="0">
+                            <i class="fas fa-crop-alt"></i>
+                            <div class="action-text">
+                                <h4>Crop Image</h4>
+                                <p>Apply cropping selection</p>
+                            </div>
+                        </div>
+
+                        <div class="action-card" id="rotate-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-redo"></i>
+                            <div class="action-text">
+                                <h4>Rotate</h4>
+                                <p>Rotate by 90°, 180° or 270°</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="compress-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-compress"></i>
+                            <div class="action-text">
+                                <h4>Compress</h4>
+                                <p>Reduce file size at chosen quality</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="convert-format-btn" role="button" tabindex="0">
+                            <i class="fas fa-exchange-alt"></i>
+                            <div class="action-text">
+                                <h4>Convert Format</h4>
+                                <p>JPG ↔ PNG ↔ WebP</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="watermark-image-btn" role="button" tabindex="0">
+                            <i class="fas fa-stamp"></i>
+                            <div class="action-text">
+                                <h4>Add Watermark</h4>
+                                <p>Stamp text on the image</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="image-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Image → PDF</h4>
+                                <p>Convert image(s) to a PDF document</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rotate options -->
+                    <div id="rotate-image-area" class="password-area hidden">
+                        <p class="helper-text">Choose rotation angle:</p>
+                        <select id="rotate-angle" aria-label="Rotation angle">
+                            <option value="90">90° counter-clockwise</option>
+                            <option value="180">180°</option>
+                            <option value="270">270° (90° clockwise)</option>
+                        </select>
+                        <button id="process-rotate-image-btn" class="primary-btn">Rotate</button>
+                    </div>
+
+                    <!-- Compress image options -->
+                    <div id="compress-image-area" class="password-area hidden">
+                        <label class="helper-text" for="compress-image-quality">Quality: <span id="compress-image-quality-value">70</span></label>
+                        <input type="range" id="compress-image-quality" min="10" max="95" value="70">
+                        <button id="process-compress-image-btn" class="primary-btn">Compress</button>
+                    </div>
+
+                    <!-- Convert format options -->
+                    <div id="convert-format-area" class="password-area hidden">
+                        <p class="helper-text">Target format:</p>
+                        <select id="convert-target-format" aria-label="Target format">
+                            <option value="jpg">JPG</option>
+                            <option value="png">PNG</option>
+                            <option value="webp">WebP</option>
+                        </select>
+                        <label class="helper-text" for="convert-format-quality">Quality (jpg/webp): <span id="convert-format-quality-value">90</span></label>
+                        <input type="range" id="convert-format-quality" min="10" max="100" value="90">
+                        <button id="process-convert-format-btn" class="primary-btn">Convert</button>
+                    </div>
+
+                    <!-- Watermark image options -->
+                    <div id="watermark-image-area" class="password-area hidden">
+                        <input type="text" id="watermark-image-text" placeholder="Watermark text" aria-label="Watermark text">
+                        <select id="watermark-image-position" aria-label="Position">
+                            <option value="bottom-right" selected>Bottom right</option>
+                            <option value="bottom-left">Bottom left</option>
+                            <option value="bottom-center">Bottom center</option>
+                            <option value="top-right">Top right</option>
+                            <option value="top-left">Top left</option>
+                            <option value="center">Center</option>
+                            <option value="diagonal">Diagonal</option>
+                        </select>
+                        <select id="watermark-image-color" aria-label="Color">
+                            <option value="white">White</option>
+                            <option value="black">Black</option>
+                            <option value="red">Red</option>
+                            <option value="blue">Blue</option>
+                        </select>
+                        <label class="helper-text" for="watermark-image-opacity">Opacity: <span id="watermark-image-opacity-value">0.4</span></label>
+                        <input type="range" id="watermark-image-opacity" min="0.05" max="1" step="0.05" value="0.4">
+                        <button id="process-watermark-image-btn" class="primary-btn">Add Watermark</button>
+                    </div>
+
+                    <!-- Image to PDF Options -->
+                    <div id="image-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Convert image to PDF:</p>
+                        <select id="image-to-pdf-pagesize" aria-label="Page size">
+                            <option value="A4" selected>A4</option>
+                            <option value="Letter">Letter</option>
+                            <option value="auto">Auto (fit to image)</option>
+                        </select>
+                        <select id="image-to-pdf-fit" aria-label="Fit mode">
+                            <option value="fit" selected>Fit to page</option>
+                            <option value="original">Original size</option>
+                        </select>
+                        <button id="process-image-to-pdf-btn" class="primary-btn">Create PDF</button>
+                    </div>
+
+                    <div id="image-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="image-status-text">Processing...</p>
+                    </div>
+
+                    <div id="image-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="image-result-message"></p>
+                        <a id="image-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Excel Page -->
+        <section id="excel-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="excel-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload Excel/CSV file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your Excel/CSV or <span class="browse-text">browse</span></p>
+                        <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv" hidden>
+                        <div id="excel-file-info" class="file-info hidden">
+                            <i class="fas fa-file-excel"></i>
+                            <span id="excel-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Excel/CSV</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="excel-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Excel → PDF</h4>
+                                <p>Render every sheet as a styled table</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="csv-to-xlsx-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-excel"></i>
+                            <div class="action-text">
+                                <h4>CSV → XLSX</h4>
+                                <p>Turn a CSV into a workbook</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="xlsx-to-csv-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-csv"></i>
+                            <div class="action-text">
+                                <h4>XLSX → CSV</h4>
+                                <p>Export a sheet to CSV</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="merge-excel-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge Workbooks</h4>
+                                <p>Combine multiple .xlsx files</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="excel-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Best-effort layout — cell colors, merged cells, and charts are approximated.</p>
+                        <button id="process-excel-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="csv-to-xlsx-area" class="password-area hidden">
+                        <p class="helper-text">Delimiter (default comma):</p>
+                        <select id="csv-delimiter" aria-label="CSV delimiter">
+                            <option value="," selected>Comma (,)</option>
+                            <option value=";">Semicolon (;)</option>
+                            <option value="\t">Tab</option>
+                            <option value="|">Pipe (|)</option>
+                        </select>
+                        <button id="process-csv-to-xlsx-btn" class="primary-btn">Convert to XLSX</button>
+                    </div>
+
+                    <div id="xlsx-to-csv-area" class="password-area hidden">
+                        <input type="text" id="xlsx-sheet-name" placeholder="Sheet name (blank = first sheet)" aria-label="XLSX sheet name">
+                        <button id="process-xlsx-to-csv-btn" class="primary-btn">Export CSV</button>
+                    </div>
+
+                    <div id="merge-excel-area" class="password-area hidden">
+                        <p class="helper-text">Select 2+ .xlsx files via the upload area above.</p>
+                        <button id="process-merge-excel-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <div id="excel-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="excel-status-text">Processing...</p>
+                    </div>
+
+                    <div id="excel-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="excel-result-message"></p>
+                        <a id="excel-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PPT Page -->
+        <section id="ppt-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="ppt-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PPTX file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your PPTX or <span class="browse-text">browse</span></p>
+                        <input type="file" id="ppt-file-input" accept=".pptx" hidden>
+                        <div id="ppt-file-info" class="file-info hidden">
+                            <i class="fas fa-file-powerpoint"></i>
+                            <span id="ppt-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for PPTX</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="ppt-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>PPT → PDF</h4>
+                                <p>Render slides into a PDF</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="ppt-to-images-btn" role="button" tabindex="0">
+                            <i class="fas fa-images"></i>
+                            <div class="action-text">
+                                <h4>PPT → Images</h4>
+                                <p>Each slide as PNG/JPG (zip)</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="merge-ppt-btn" role="button" tabindex="0">
+                            <i class="fas fa-object-group"></i>
+                            <div class="action-text">
+                                <h4>Merge PPTX</h4>
+                                <p>Combine multiple presentations</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="ppt-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Best-effort layout — animations, gradients, and SmartArt are not preserved.</p>
+                        <button id="process-ppt-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="ppt-to-images-area" class="password-area hidden">
+                        <p class="helper-text">Image format:</p>
+                        <select id="ppt-images-format" aria-label="Image format">
+                            <option value="png" selected>PNG</option>
+                            <option value="jpg">JPG</option>
+                        </select>
+                        <button id="process-ppt-to-images-btn" class="primary-btn">Render Slides</button>
+                    </div>
+
+                    <div id="merge-ppt-area" class="password-area hidden">
+                        <p class="helper-text">Select 2+ .pptx files via the upload area above.</p>
+                        <button id="process-merge-ppt-btn" class="primary-btn">Merge Now</button>
+                    </div>
+
+                    <div id="ppt-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="ppt-status-text">Processing...</p>
+                    </div>
+
+                    <div id="ppt-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="ppt-result-message"></p>
+                        <a id="ppt-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Word Tools Page -->
+        <section id="word-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="drill-down-content">
+                <div class="file-selector-area">
+                    <div id="word-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload Word file">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>Drag & drop your DOCX or <span class="browse-text">browse</span></p>
+                        <input type="file" id="word-file-input" accept=".docx,.doc" hidden>
+                        <div id="word-file-info" class="file-info hidden">
+                            <i class="fas fa-file-word"></i>
+                            <span id="word-filename-display">No file selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions-panel">
+                    <h2>Select Action for Word</h2>
+
+                    <div class="action-buttons">
+                        <div class="action-card" id="word-to-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-pdf"></i>
+                            <div class="action-text">
+                                <h4>Word → PDF</h4>
+                                <p>Convert DOCX to a PDF document</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="word-to-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Convert your Word document to PDF:</p>
+                        <button id="process-word-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="word-status-display" class="status-display hidden">
+                        <div class="loader"></div>
+                        <p id="word-status-text">Processing...</p>
+                    </div>
+
+                    <div id="word-result-display" class="result-display hidden">
+                        <i class="fas fa-check-circle success-icon"></i>
+                        <h3>Process Complete!</h3>
+                        <p id="word-result-message"></p>
+                        <a id="word-download-link" href="#" class="primary-btn download-btn">
+                            <i class="fas fa-download"></i> Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Workflow Builder Page -->
+        <section id="workflow-page" class="view">
+            <nav class="breadcrumb">
+                <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+            </nav>
+
+            <div class="workflow-builder">
+                <div class="workflow-header">
+                    <h2><i class="fas fa-project-diagram"></i> Workflow Builder</h2>
+                    <p class="helper-text">Drag steps from the palette to build your pipeline</p>
+                </div>
+
+                <div class="workflow-layout">
+                    <!-- File Input -->
+                    <div class="workflow-input-section">
+                        <h3>1. Input File</h3>
+                        <div id="workflow-drop-zone" class="drop-zone workflow-drop" role="button" tabindex="0"
+                            aria-label="Upload file for workflow">
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                            <p>Drop your file here or <span class="browse-text">browse</span></p>
+                            <input type="file" id="workflow-file-input" hidden>
+                            <div id="workflow-file-info" class="file-info hidden">
+                                <i class="fas fa-file"></i>
+                                <span id="workflow-filename-display">No file selected</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step Palette -->
+                    <div class="workflow-palette-section">
+                        <h3>2. Available Steps</h3>
+                        <div class="step-palette">
+                            <div class="step-item" draggable="true" data-step-type="remove_password"
+                                data-step-label="Unlock PDF" data-step-icon="fa-unlock" role="button" tabindex="0" aria-label="Add Unlock PDF step to workflow">
+                                <i class="fas fa-unlock"></i>
+                                <span>Unlock PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="pdf_to_word"
+                                data-step-label="PDF to Word" data-step-icon="fa-file-word" role="button" tabindex="0" aria-label="Add PDF to Word step to workflow">
+                                <i class="fas fa-file-word"></i>
+                                <span>PDF → Word</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="heic_to_jpeg"
+                                data-step-label="HEIC to JPEG" data-step-icon="fa-file-image" role="button" tabindex="0" aria-label="Add HEIC to JPEG step to workflow">
+                                <i class="fas fa-file-image"></i>
+                                <span>HEIC → JPEG</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="resize_image"
+                                data-step-label="Resize Image" data-step-icon="fa-compress-arrows-alt" role="button" tabindex="0" aria-label="Add Resize Image step to workflow">
+                                <i class="fas fa-compress-arrows-alt"></i>
+                                <span>Resize Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="compress_pdf"
+                                data-step-label="Compress PDF" data-step-icon="fa-file-archive" role="button" tabindex="0" aria-label="Add Compress PDF step to workflow">
+                                <i class="fas fa-file-archive"></i>
+                                <span>Compress PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="rotate_image"
+                                data-step-label="Rotate Image" data-step-icon="fa-redo" role="button" tabindex="0" aria-label="Add Rotate Image step">
+                                <i class="fas fa-redo"></i>
+                                <span>Rotate Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="compress_image"
+                                data-step-label="Compress Image" data-step-icon="fa-compress" role="button" tabindex="0" aria-label="Add Compress Image step">
+                                <i class="fas fa-compress"></i>
+                                <span>Compress Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="convert_image"
+                                data-step-label="Convert Image" data-step-icon="fa-exchange-alt" role="button" tabindex="0" aria-label="Add Convert Image step">
+                                <i class="fas fa-exchange-alt"></i>
+                                <span>Convert Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="watermark_image"
+                                data-step-label="Watermark Image" data-step-icon="fa-stamp" role="button" tabindex="0" aria-label="Add Watermark Image step">
+                                <i class="fas fa-stamp"></i>
+                                <span>Watermark Image</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="excel_to_pdf"
+                                data-step-label="Excel → PDF" data-step-icon="fa-file-pdf" role="button" tabindex="0" aria-label="Add Excel to PDF step">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>Excel → PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="csv_to_xlsx"
+                                data-step-label="CSV → XLSX" data-step-icon="fa-file-excel" role="button" tabindex="0" aria-label="Add CSV to XLSX step">
+                                <i class="fas fa-file-excel"></i>
+                                <span>CSV → XLSX</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="xlsx_to_csv"
+                                data-step-label="XLSX → CSV" data-step-icon="fa-file-csv" role="button" tabindex="0" aria-label="Add XLSX to CSV step">
+                                <i class="fas fa-file-csv"></i>
+                                <span>XLSX → CSV</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="ppt_to_pdf"
+                                data-step-label="PPT → PDF" data-step-icon="fa-file-pdf" role="button" tabindex="0" aria-label="Add PPT to PDF step">
+                                <i class="fas fa-file-pdf"></i>
+                                <span>PPT → PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="ppt_to_images"
+                                data-step-label="PPT → Images" data-step-icon="fa-images" role="button" tabindex="0" aria-label="Add PPT to Images step">
+                                <i class="fas fa-images"></i>
+                                <span>PPT → Images</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Workflow Canvas -->
+                <div class="workflow-canvas-section">
+                    <h3>3. Your Pipeline</h3>
+                    <div id="workflow-canvas" class="workflow-canvas">
+                        <div class="canvas-placeholder">
+                            <i class="fas fa-arrow-down"></i>
+                            <p>Drop steps here to build your workflow</p>
+                        </div>
+                        <div id="workflow-steps-container" class="workflow-steps hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Step Config Modal (appears when step needs config) -->
+                <div id="step-config-modal" class="step-config-modal hidden">
+                    <div class="modal-content">
+                        <h4 id="config-modal-title">Configure Step</h4>
+                        <div id="config-modal-body"></div>
+                        <div class="modal-actions">
+                            <button class="secondary-btn" onclick="closeConfigModal()">Cancel</button>
+                            <button class="primary-btn" onclick="saveStepConfig()">Save</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Run Workflow -->
+                <div class="workflow-run-section">
+                    <button id="run-workflow-btn" class="primary-btn large-btn" onclick="runWorkflow()">
+                        <i class="fas fa-play"></i> Run Workflow
+                    </button>
+                    <button class="secondary-btn" onclick="resetWorkflowUI()" style="margin-left: 1rem;">
+                        <i class="fas fa-trash-alt"></i> Clear
+                    </button>
+                </div>
+
+                <!-- Status & Result -->
+                <div id="workflow-status-display" class="status-display hidden">
+                    <div class="loader"></div>
+                    <p id="workflow-status-text">Processing workflow...</p>
+                </div>
+
+                <div id="workflow-result-display" class="result-display hidden">
+                    <i class="fas fa-check-circle success-icon"></i>
+                    <h3>Workflow Complete!</h3>
+                    <p id="workflow-result-message"></p>
+                    <a id="workflow-download-link" href="#" class="primary-btn download-btn">
+                        <i class="fas fa-download"></i> Download Result
+                    </a>
+                </div>
+            </div>
+        </section>
+        <footer class="site-footer">
+            <div class="footer-cols">
+                <div class="footer-col">
+                    <h4>PDF Tools</h4>
+                    <a href="/merge-pdf">Merge PDF</a>
+                    <a href="/split-pdf">Split PDF</a>
+                    <a href="/compress-pdf">Compress PDF</a>
+                    <a href="/unlock-pdf">Unlock PDF</a>
+                    <a href="/protect-pdf">Protect PDF</a>
+                    <a href="/rotate-pdf">Rotate PDF</a>
+                    <a href="/organize-pdf">Organize PDF</a>
+                    <a href="/extract-pdf-pages">Extract PDF Pages</a>
+                    <a href="/pdf-page-numbers">Add Page Numbers</a>
+                    <a href="/sign-pdf">Sign PDF</a>
+                    <a href="/watermark-pdf">Watermark PDF</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Convert PDF</h4>
+                    <a href="/pdf-to-word">PDF to Word</a>
+                    <a href="/pdf-to-text">PDF to Text</a>
+                    <a href="/pdf-to-jpg">PDF to JPG</a>
+                    <a href="/pdf-to-excel">PDF to Excel</a>
+                    <a href="/pdf-to-powerpoint">PDF to PowerPoint</a>
+                    <a href="/word-to-pdf">Word to PDF</a>
+                    <a href="/excel-to-pdf">Excel to PDF</a>
+                    <a href="/powerpoint-to-pdf">PowerPoint to PDF</a>
+                    <a href="/image-to-pdf">Image to PDF</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Image Tools</h4>
+                    <a href="/heic-to-jpeg">HEIC to JPG</a>
+                    <a href="/resize-image">Resize Image</a>
+                    <a href="/crop-image">Crop Image</a>
+                    <a href="/compress-image">Compress Image</a>
+                    <a href="/convert-image">Convert Image</a>
+                    <a href="/rotate-image">Rotate Image</a>
+                    <a href="/watermark-image">Watermark Image</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Excel &amp; PowerPoint</h4>
+                    <a href="/excel-to-pdf">Excel to PDF</a>
+                    <a href="/csv-to-xlsx">CSV to Excel</a>
+                    <a href="/xlsx-to-csv">Excel to CSV</a>
+                    <a href="/merge-excel">Merge Excel</a>
+                    <a href="/ppt-to-images">PPT to Images</a>
+                    <a href="/merge-ppt">Merge PowerPoint</a>
+                </div>
+                <div class="footer-col">
+                    <h4>File Forge</h4>
+                    <a href="/about">About</a>
+                    <a href="/faq">FAQ</a>
+                    <a href="/contact">Contact</a>
+                    <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">GitHub</a>
+                </div>
+                <div class="footer-col">
+                    <h4>Legal</h4>
+                    <a href="/privacy">Privacy Policy</a>
+                    <a href="/terms">Terms of Use</a>
+                </div>
+            </div>
+            <p class="footer-note">© 2026 File Forge — free &amp; open source (AGPLv3 / Commercial). Files are processed
+                automatically and deleted from the server after download.</p>
+        </footer>
+    </main>
+
+    <script src="/static/script.js?v=20260623"></script>
+</body>
+
+</html>

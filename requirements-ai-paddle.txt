@@ -1,0 +1,8 @@
+# Optional PaddleOCR backend (x86_64 only — no ARM64 wheels exist).
+# Enables full AI Layout Recovery (tables, columns) via PPStructure.
+# Install on top of the base requirements, then set OCR_BACKEND=paddle:
+#     pip install -r requirements.txt -r requirements-ai-paddle.txt
+# On some Linux distros paddlepaddle must come from the official mirror:
+#     pip install paddlepaddle==2.6.2 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+paddlepaddle==2.6.2
+paddleocr>=2.6,<3.0

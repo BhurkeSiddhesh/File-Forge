@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+test_artifacts/
+.env
+venv/
+outputs/
+uploads/
+Download Report_Aai_unlocked.pdf
+Download Report_Aai.pdf
+Download_Report_Baba_unlocked.pdf
+Download_Report_Baba.pdf
+outputs
+uploads
+outputs/Siddhesh Blood Report_unlocked.pdf
+test_output
+test_output/Download Report_Aai.docx
+outputs/Siddhesh Lab Smart Report_unlocked.pdf
+.venv
+.ai-context
+models/
+.claude/
+asset
+asset_outputs
+*.log
+server.log
