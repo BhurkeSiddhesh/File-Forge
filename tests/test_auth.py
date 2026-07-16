@@ -181,6 +181,29 @@ def test_consent_banner_and_ads_are_consent_gated_when_adsense_on():
     assert "'update'" in banner and "'granted'" in banner
 
 
+def test_ad_free_gate_hides_slots_from_backend_feature_when_adsense_on():
+    """task 4.5: before filling ads the head script consults GET /api/me and hides
+    the reserved .ad-slot boxes when features.ad_free is true — reading only the
+    backend feature flag, never entitlement internals. With no session token the
+    gate resolves to "show ads" (free-launch default), so behaviour is unchanged."""
+    import main
+
+    saved = main.ADSENSE_CLIENT
+    try:
+        main.ADSENSE_CLIENT = "ca-pub-test"
+        head = main._build_adsense_head()
+    finally:
+        main.ADSENSE_CLIENT = saved
+
+    # Reads the backend-controlled feature (not raw entitlement rows).
+    assert "__ffSession" in head and "/api/me" in head
+    assert "features.ad_free" in head and "hideSlots" in head
+    # No session token → callback(false) → ads still show (free-launch default).
+    assert "cb(false)" in head
+    # The gate runs before the lazy fill: ad-free hides slots and returns early.
+    assert "if(af){hideSlots();return;}runFill();" in head
+
+
 def test_consent_banner_substitutes_into_served_page_when_adsense_on(monkeypatch):
     """End-to-end: with AdSense configured, a real served page carries the
     consent banner + Consent-Mode-denied default, and the {{CONSENT_BANNER}}
