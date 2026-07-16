@@ -100,6 +100,14 @@ def _build_adsense_head() -> str:
     # once the visitor accepts via the consent banner (or on a prior 'granted'
     # choice persisted in localStorage). The banner calls window.__ffConsentInit()
     # on accept to fill any ads already in view. Declining leaves ads unfilled.
+    #
+    # Ad-free gate (build-prompt task 4.5): before filling, we make a best-effort
+    # call to the backend-controlled GET /api/me and skip ads entirely (hiding the
+    # reserved .ad-slot boxes) when features.ad_free is true. The public app only
+    # ever reads features.ad_free — never entitlement internals. The session token
+    # comes from window.__ffSession (populated by the auth layer once login is
+    # wired); with no token — the current free-launch default, payments off — the
+    # gate resolves to "show ads", so behaviour is identical to before.
     return (
         '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>\n'
         '    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}'
@@ -111,12 +119,21 @@ def _build_adsense_head() -> str:
         "    (function(){var K='ff_consent';function granted(){return localStorage.getItem(K)==='granted';}"
         'function fill(el){try{(adsbygoogle=window.adsbygoogle||[]).push({});'
         "el.setAttribute('data-lazy-filled','1');}catch(e){}}"
-        "function init(){if(!granted())return;"
+        "function hideSlots(){var s=document.querySelectorAll('.ad-slot');"
+        'for(var i=0;i<s.length;i++){s[i].style.display=\'none\';}}'
+        'function adFree(cb){var t=(window.__ffSession&&window.__ffSession.access_token);'
+        'if(!t){cb(false);return;}'
+        "fetch('/api/me',{headers:{Authorization:'Bearer '+t}})"
+        '.then(function(r){return r.ok?r.json():null;})'
+        '.then(function(d){cb(!!(d&&d.features&&d.features.ad_free));})'
+        '.catch(function(){cb(false);});}'
+        "function runFill(){if(!granted())return;"
         "var ads=document.querySelectorAll('ins.adsbygoogle:not([data-lazy-filled])');"
         "if(!('IntersectionObserver' in window)){ads.forEach(fill);return;}"
         'var io=new IntersectionObserver(function(es){es.forEach(function(e){'
         "if(e.isIntersecting){io.unobserve(e.target);fill(e.target);}});},{rootMargin:'250px'});"
         'ads.forEach(function(a){io.observe(a);});}'
+        'function init(){adFree(function(af){if(af){hideSlots();return;}runFill();});}'
         'window.__ffConsentInit=init;'
         "if(document.readyState!=='loading'){init();}else{document.addEventListener('DOMContentLoaded',init);}})();\n"
         '    </script>'
