@@ -4,6 +4,8 @@
 
 **Live App:** [https://forgefiles.org](https://forgefiles.org)
 
+<!-- mirror-smoke-test: this line only verifies the private->public mirror workflow -->
+
 > **Privacy by design — and verifiable.** Your upload is deleted as soon as processing finishes, the result is deleted the moment you download it, and a background sweeper purges anything older than an hour. Unlike closed-source tools that just *claim* they don't keep your files, every line of code that handles your documents is in this repository. Don't trust us? Read the code — or self-host it.
 
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/BhurkeSiddhesh/File-Forge?utm_source=oss&utm_medium=github&utm_campaign=BhurkeSiddhesh%2FFile-Forge&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
