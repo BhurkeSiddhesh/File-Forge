@@ -95,20 +95,69 @@ ADSENSE_SLOT = os.environ.get("ADSENSE_SLOT", "").strip()      # numeric data-ad
 def _build_adsense_head() -> str:
     if not ADSENSE_CLIENT:
         return ""
+    # Consent-gated (Google Consent Mode v2): storage/personalization default to
+    # 'denied' before the AdSense script runs, and the lazy ad-fill only happens
+    # once the visitor accepts via the consent banner (or on a prior 'granted'
+    # choice persisted in localStorage). The banner calls window.__ffConsentInit()
+    # on accept to fill any ads already in view. Declining leaves ads unfilled.
     return (
         '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>\n'
+        '    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}'
+        "gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',"
+        "ad_personalization:'denied',analytics_storage:'denied',wait_for_update:500});</script>\n"
         '    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client='
         + ADSENSE_CLIENT + '" crossorigin="anonymous"></script>\n'
         '    <script>\n'
-        '    (function(){function fill(el){try{(adsbygoogle=window.adsbygoogle||[]).push({});'
+        "    (function(){var K='ff_consent';function granted(){return localStorage.getItem(K)==='granted';}"
+        'function fill(el){try{(adsbygoogle=window.adsbygoogle||[]).push({});'
         "el.setAttribute('data-lazy-filled','1');}catch(e){}}"
-        "function init(){var ads=document.querySelectorAll('ins.adsbygoogle:not([data-lazy-filled])');"
+        "function init(){if(!granted())return;"
+        "var ads=document.querySelectorAll('ins.adsbygoogle:not([data-lazy-filled])');"
         "if(!('IntersectionObserver' in window)){ads.forEach(fill);return;}"
         'var io=new IntersectionObserver(function(es){es.forEach(function(e){'
         "if(e.isIntersecting){io.unobserve(e.target);fill(e.target);}});},{rootMargin:'250px'});"
         'ads.forEach(function(a){io.observe(a);});}'
+        'window.__ffConsentInit=init;'
         "if(document.readyState!=='loading'){init();}else{document.addEventListener('DOMContentLoaded',init);}})();\n"
         '    </script>'
+    )
+
+
+def _build_consent_banner() -> str:
+    """Cookie-consent banner shown until the visitor accepts/declines.
+
+    Only emitted when ADSENSE_CLIENT is set — with no ads there are no ad cookies
+    to consent to, so the banner (like the ad markup) is zero-markup when unset.
+    This is the consent mechanism AdSense requires before serving personalized
+    ads (build-prompt task 4.6). Accepting flips Consent Mode to 'granted' and
+    triggers the lazy ad-fill; declining persists the choice and leaves ads off.
+    """
+    if not ADSENSE_CLIENT:
+        return ""
+    return (
+        '<div id="ff-consent" role="dialog" aria-live="polite" aria-label="Cookie consent" hidden'
+        ' style="position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;flex-wrap:wrap;'
+        'gap:12px;align-items:center;justify-content:center;padding:14px 18px;'
+        'background:#181b22;color:#e8eaed;border-top:1px solid #262b35;'
+        'font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">'
+        '<span style="max-width:640px">We use cookies to serve ads that keep File Forge free. '
+        'See our <a href="/privacy" style="color:#4f8cff">Privacy Policy</a>.</span>'
+        '<span style="display:flex;gap:8px">'
+        '<button id="ff-consent-decline" type="button" style="cursor:pointer;border:1px solid #262b35;'
+        'border-radius:8px;padding:8px 16px;background:transparent;color:#e8eaed;font:inherit">Decline</button>'
+        '<button id="ff-consent-accept" type="button" style="cursor:pointer;border:0;'
+        'border-radius:8px;padding:8px 16px;background:#4f8cff;color:#fff;font:inherit;font-weight:600">Accept</button>'
+        '</span></div>\n'
+        '<script>(function(){'
+        "var K='ff_consent',b=document.getElementById('ff-consent');if(!b)return;"
+        'if(!localStorage.getItem(K)){b.hidden=false;}'
+        'function choose(v){localStorage.setItem(K,v);b.hidden=true;'
+        "if(v==='granted'){try{gtag('consent','update',{ad_storage:'granted',ad_user_data:'granted',"
+        "ad_personalization:'granted',analytics_storage:'granted'});}catch(e){}"
+        'if(window.__ffConsentInit)window.__ffConsentInit();}}'
+        "document.getElementById('ff-consent-accept').onclick=function(){choose('granted');};"
+        "document.getElementById('ff-consent-decline').onclick=function(){choose('denied');};"
+        '})();</script>'
     )
 
 
@@ -127,6 +176,7 @@ def _build_adsense_slot() -> str:
 
 ADSENSE_HEAD_HTML = _build_adsense_head()
 ADSENSE_SLOT_HTML = _build_adsense_slot()
+CONSENT_BANNER_HTML = _build_consent_banner()
 
 # --- Search engine site verification (optional, fully env-gated) ---
 # Paste the token (not the whole meta tag) from Google Search Console / Bing
@@ -342,6 +392,7 @@ def _substitute(html_text: str) -> str:
         .replace("{{BASE_URL}}", BASE_URL)
         .replace("{{ADSENSE_HEAD}}", ADSENSE_HEAD_HTML)
         .replace("{{ADSENSE_SLOT}}", ADSENSE_SLOT_HTML)
+        .replace("{{CONSENT_BANNER}}", CONSENT_BANNER_HTML)
         .replace("{{SITE_VERIFICATION}}", SITE_VERIFICATION_HTML)
     )
 

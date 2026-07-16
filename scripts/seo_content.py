@@ -30,6 +30,7 @@ GITHUB = "https://github.com/BhurkeSiddhesh/File-Forge"
 BASE = "{{BASE_URL}}"
 ADS_HEAD = "{{ADSENSE_HEAD}}"
 ADS_SLOT = "{{ADSENSE_SLOT}}"
+CONSENT_BANNER = "{{CONSENT_BANNER}}"
 SITE_VERIFY = "{{SITE_VERIFICATION}}"
 
 # category -> (deep-link tool param, human label)
@@ -1030,6 +1031,7 @@ def render_tool_page(slug: str) -> str:
                 href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
         </footer>
     </main>
+    {CONSENT_BANNER}
 </body>
 
 </html>

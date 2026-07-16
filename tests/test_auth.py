@@ -151,7 +151,47 @@ def test_adsense_is_disabled_by_default():
     for path in ("/", "/merge-pdf"):
         body = client.get(path).text
         assert "{{ADSENSE" not in body
+        assert "{{CONSENT_BANNER}}" not in body  # token always substituted (to empty)
         assert "adsbygoogle" not in body
+        assert "ff-consent" not in body  # no banner without ads to consent to
+
+
+def test_consent_banner_and_ads_are_consent_gated_when_adsense_on():
+    """When AdSense is configured, ads only fill after consent and a banner ships."""
+    import main
+
+    # Point the builders at a test publisher id without re-importing the app.
+    saved = main.ADSENSE_CLIENT
+    try:
+        main.ADSENSE_CLIENT = "ca-pub-test"
+        head = main._build_adsense_head()
+        banner = main._build_consent_banner()
+    finally:
+        main.ADSENSE_CLIENT = saved
+
+    # Consent Mode defaults to denied before the ad fill runs...
+    assert "'default'" in head and "'denied'" in head
+    # ...and the lazy fill is gated on a persisted 'granted' choice.
+    assert "ff_consent" in head and "granted()" in head
+    assert "window.__ffConsentInit" in head
+
+    # The banner offers a real accept/decline choice and flips consent on accept.
+    assert 'id="ff-consent"' in banner
+    assert "ff-consent-accept" in banner and "ff-consent-decline" in banner
+    assert "'update'" in banner and "'granted'" in banner
+
+
+def test_consent_builders_are_empty_without_adsense():
+    """Belt-and-suspenders: no AdSense id => no head script and no banner."""
+    import main
+
+    saved = main.ADSENSE_CLIENT
+    try:
+        main.ADSENSE_CLIENT = ""
+        assert main._build_adsense_head() == ""
+        assert main._build_consent_banner() == ""
+    finally:
+        main.ADSENSE_CLIENT = saved
 
 
 def test_homepage_has_seo_meta():
