@@ -181,6 +181,26 @@ def test_consent_banner_and_ads_are_consent_gated_when_adsense_on():
     assert "'update'" in banner and "'granted'" in banner
 
 
+def test_consent_banner_substitutes_into_served_page_when_adsense_on(monkeypatch):
+    """End-to-end: with AdSense configured, a real served page carries the
+    consent banner + Consent-Mode-denied default, and the {{CONSENT_BANNER}}
+    token is fully substituted (never leaks raw)."""
+    import main
+
+    monkeypatch.setattr(main, "ADSENSE_CLIENT", "ca-pub-test")
+    monkeypatch.setattr(main, "ADSENSE_HEAD_HTML", main._build_adsense_head())
+    monkeypatch.setattr(main, "CONSENT_BANNER_HTML", main._build_consent_banner())
+    main._render_page.cache_clear()  # drop the ad-free cached render
+    try:
+        body = TestClient(main.app).get("/").text
+        assert 'id="ff-consent"' in body            # banner present in the page
+        assert "consent','default'" in body          # Consent Mode default (denied)
+        assert "granted()" in body                    # ad fill is consent-gated
+        assert "{{CONSENT_BANNER}}" not in body       # token substituted, not leaked
+    finally:
+        main._render_page.cache_clear()  # don't poison the cache for other tests
+
+
 def test_consent_builders_are_empty_without_adsense():
     """Belt-and-suspenders: no AdSense id => no head script and no banner."""
     import main
