@@ -1,7 +1,7 @@
 
 function updateDownloadLink(element, filename) {
     if (!element) return;
-    const url = `/api/download/${encodeURIComponent(filename)}`;
+    const url = apiUrl(`/api/download/${encodeURIComponent(filename)}`);
     element.href = url;
 
     element.onclick = async (e) => {
@@ -303,7 +303,7 @@ document.getElementById('process-compress-btn').onclick = async () => {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch('/api/pdf/compress', {
+        const response = await fetch(apiUrl('/api/pdf/compress'), {
             method: 'POST',
             body: formData
         });
@@ -346,7 +346,7 @@ async function convertToWordWithProgress(formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch('/api/pdf/convert-to-word-stream', {
+        const response = await fetch(apiUrl('/api/pdf/convert-to-word-stream'), {
             method: 'POST',
             body: formData
         });
@@ -520,7 +520,7 @@ async function processAction(url, text, formData = null) {
     }
 
     try {
-        const response = await fetch(url, {
+        const response = await fetch(apiUrl(url), {
             method: 'POST',
             body: formData
         });
@@ -744,7 +744,7 @@ async function processImageAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(url, {
+        const response = await fetch(apiUrl(url), {
             method: 'POST',
             body: formData
         });
@@ -878,7 +878,7 @@ async function initCropper() {
             formData.append('file', selectedImageFile);
             formData.append('quality', 80); // Faster preview
 
-            const response = await fetch('/api/image/heic-to-jpeg', {
+            const response = await fetch(apiUrl('/api/image/heic-to-jpeg'), {
                 method: 'POST',
                 body: formData
             });
@@ -1010,7 +1010,7 @@ async function resizeImage() {
     statusText.innerText = "Resizing image...";
 
     try {
-        const response = await fetch('/api/image/resize', {
+        const response = await fetch(apiUrl('/api/image/resize'), {
             method: 'POST',
             body: formData
         });
@@ -1061,7 +1061,7 @@ async function cropImage() {
     statusText.innerText = "Cropping image...";
 
     try {
-        const response = await fetch('/api/image/crop', {
+        const response = await fetch(apiUrl('/api/image/crop'), {
             method: 'POST',
             body: formData
         });
@@ -1440,7 +1440,7 @@ async function runWorkflow() {
     }))));
 
     try {
-        const response = await fetch('/api/workflow/execute', {
+        const response = await fetch(apiUrl('/api/workflow/execute'), {
             method: 'POST',
             body: formData
         });
@@ -1795,7 +1795,7 @@ async function processExcelAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(url, { method: 'POST', body: formData });
+        const response = await fetch(apiUrl(url), { method: 'POST', body: formData });
         if (response.ok) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');
@@ -1933,7 +1933,7 @@ async function processPptAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(url, { method: 'POST', body: formData });
+        const response = await fetch(apiUrl(url), { method: 'POST', body: formData });
         if (response.ok) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');
@@ -2226,7 +2226,7 @@ async function processWordAction(url, statusText, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(url, { method: 'POST', body: formData });
+        const response = await fetch(apiUrl(url), { method: 'POST', body: formData });
         if (response.ok) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');

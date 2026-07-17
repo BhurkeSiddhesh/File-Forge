@@ -78,6 +78,32 @@ app = FastAPI(
     openapi_url=None if PROD else "/openapi.json",
 )
 
+# --- CORS ---
+# The web frontend is served same-origin (no CORS needed there), but the
+# Capacitor mobile app loads its assets from capacitor://localhost (iOS) and
+# http://localhost (Android) and calls this API cross-origin. Allow those
+# origins plus any explicitly configured web origins (comma-separated in
+# CORS_EXTRA_ORIGINS, e.g. the production site domain).
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+_CORS_ORIGINS = [
+    "capacitor://localhost",
+    "http://localhost",
+    "https://localhost",
+]
+_CORS_ORIGINS += [
+    o.strip()
+    for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
 # --- Configuration ---
 BASE_URL = os.environ.get("BASE_URL", "https://file-forge.onrender.com").rstrip("/")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
