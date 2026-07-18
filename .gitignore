@@ -24,3 +24,6 @@ asset
 asset_outputs
 *.log
 server.log
+
+# Server-side operation event log (SQLite) — never commit
+data/

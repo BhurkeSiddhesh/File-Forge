@@ -69,6 +69,7 @@ from scripts.ppt_utils import (
     merge_pptx,
 )
 from scripts import seo_content
+from scripts.event_log import log_event, get_stats
 
 PROD = os.environ.get("ENV") == "production"
 app = FastAPI(
@@ -401,6 +402,45 @@ async def rate_limit_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
+# --- Operation event logging (server-side, anonymous — see scripts/event_log.py) ---
+SESSION_COOKIE_NAME = "ff_session"
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
+
+
+@app.middleware("http")
+async def session_id_middleware(request: Request, call_next):
+    """Ensure an anonymous random-UUID session id (no PII, no IP) is available
+    to the event log, minting a cookie on API responses when absent."""
+    existing = request.cookies.get(SESSION_COOKIE_NAME)
+    request.state.session_id = existing or str(uuid.uuid4())
+    response = await call_next(request)
+    if existing is None and request.url.path.startswith("/api/"):
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            request.state.session_id,
+            max_age=SESSION_COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=PROD,
+        )
+    return response
+
+
+def _log_operation(request: Request, operation: str, started: float,
+                   success: bool, use_ai: bool = False, error: str = None) -> None:
+    """Record one operation event; duration is measured from `started`
+    (a time.perf_counter() taken just before the actual operation call)."""
+    log_event(
+        operation=operation,
+        use_ai=use_ai,
+        success=success,
+        duration_ms=int((time.perf_counter() - started) * 1000),
+        error=error,
+        country=request.headers.get("cf-ipcountry"),
+        session_id=getattr(request.state, "session_id", None),
+    )
+
+
 # --- Input Validation Helpers (Issue #45) ---
 
 def validate_range(name: str, value, min_value=None, max_value=None):
@@ -457,14 +497,18 @@ async def read_index():
 
 @app.post("/api/pdf/remove-password")
 async def api_remove_password(
+    request: Request,
     file: UploadFile = File(...),
     password: str = Form(...)
 ):
     temp_path = save_upload(file)
+    started = time.perf_counter()
     try:
         output_path = remove_pdf_password(str(temp_path), password, str(OUTPUT_DIR))
+        _log_operation(request, "pdf_unlock", started, success=True)
         return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
     except Exception as e:
+        _log_operation(request, "pdf_unlock", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -475,6 +519,7 @@ async def api_remove_password(
 
 @app.post("/api/pdf/convert-to-word")
 async def api_convert_to_word(
+    request: Request,
     file: UploadFile = File(...),
     use_ai: bool = Form(False),
     password: str = Form(None)
@@ -484,25 +529,31 @@ async def api_convert_to_word(
     unique_filename = f"{uuid.uuid4()}_{safe_filename}"
     temp_path = UPLOAD_DIR / unique_filename
     logger.debug("Converting: %s, use_ai=%s, password=%s", safe_filename, use_ai, '***' if password else 'None')
+    operation = "pdf_to_word_ai" if use_ai else "pdf_to_word_standard"
+    started = None  # set just before the conversion so duration excludes the upload save
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
         logger.debug("File saved to: %s", temp_path)
-        
+
+        started = time.perf_counter()
         if use_ai:
-            # @jules: This can be very slow for large PDFs. 
+            # @jules: This can be very slow for large PDFs.
             # We should probably implement a progress bar or background task with polling.
             output_path = pdf_to_word_ai(str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word with AI Layout Recovery"
         else:
             output_path = await run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password)
             message = "Converted to Word (Standard)"
+        _log_operation(request, operation, started, success=True, use_ai=use_ai)
 
         logger.info("Conversion successful: %s", output_path)
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Conversion failed for %s", safe_filename)
+        if started is not None:
+            _log_operation(request, operation, started, success=False, use_ai=use_ai, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 
     finally:
@@ -514,6 +565,7 @@ async def api_convert_to_word(
 
 @app.post("/api/pdf/convert-to-word-stream")
 async def api_convert_to_word_stream(
+    request: Request,
     file: UploadFile = File(...),
     use_ai: bool = Form(False),
     password: str = Form(None)
@@ -540,6 +592,8 @@ async def api_convert_to_word_stream(
             events.put({"event": "progress", "page": page_done, "total": total_pages})
 
         def worker():
+            operation = "pdf_to_word_ai" if use_ai else "pdf_to_word_standard"
+            started = time.perf_counter()
             try:
                 if use_ai:
                     output_path = pdf_to_word_ai(
@@ -549,6 +603,7 @@ async def api_convert_to_word_stream(
                 else:
                     output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
                     message = "Converted to Word (Standard)"
+                _log_operation(request, operation, started, success=True, use_ai=use_ai)
                 events.put({
                     "event": "complete",
                     "message": message,
@@ -556,6 +611,7 @@ async def api_convert_to_word_stream(
                 })
             except Exception as e:
                 logger.exception("Streaming conversion failed for %s", safe_filename)
+                _log_operation(request, operation, started, success=False, use_ai=use_ai, error=str(e))
                 events.put({"event": "error", "detail": str(e)})
             finally:
                 events.put(None)  # sentinel: stream finished
@@ -589,6 +645,7 @@ async def api_convert_to_word_stream(
 
 @app.post("/api/pdf/extract-pages")
 async def api_extract_pages(
+    request: Request,
     file: UploadFile = File(...),
     pages: str = Form(...),
     password: str = Form(None),
@@ -596,16 +653,23 @@ async def api_extract_pages(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
     logger.debug("Extracting pages: %s, pages='%s', password=%s", safe_filename, pages, '***' if password else 'None')
+    started = None
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
+        started = time.perf_counter()
         output_path = await run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password)
+        _log_operation(request, "page_extract", started, success=True)
         return {"status": "success", "message": "Pages extracted", "filename": Path(output_path).name}
     except ValueError as e:
+        if started is not None:
+            _log_operation(request, "page_extract", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Page extraction failed for %s", safe_filename)
+        if started is not None:
+            _log_operation(request, "page_extract", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -842,6 +906,7 @@ async def api_sign_pdf(
 
 @app.post("/api/image/heic-to-jpeg")
 async def api_heic_to_jpeg(
+    request: Request,
     file: UploadFile = File(...),
     quality: int = Form(95),
 ):
@@ -851,14 +916,19 @@ async def api_heic_to_jpeg(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
     logger.debug("Converting HEIC: %s, quality=%d", safe_filename, quality)
+    started = None
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
+        started = time.perf_counter()
         output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
+        _log_operation(request, "heic_to_jpeg", started, success=True)
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("HEIC conversion failed for %s", safe_filename)
+        if started is not None:
+            _log_operation(request, "heic_to_jpeg", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -870,6 +940,7 @@ async def api_heic_to_jpeg(
 
 @app.post("/api/image/resize")
 async def api_resize_image(
+    request: Request,
     file: UploadFile = File(...),
     mode: str = Form(...),
     width: int = Form(None),
@@ -888,23 +959,28 @@ async def api_resize_image(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
     logger.debug("Resizing image: %s, mode=%s", safe_filename, mode)
+    started = None
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
         from scripts.image_utils import resize_image
+        started = time.perf_counter()
         output_path = resize_image(
-            str(temp_path), 
-            str(OUTPUT_DIR), 
+            str(temp_path),
+            str(OUTPUT_DIR),
             mode,
             width=width,
             height=height,
             percentage=percentage,
             target_size_kb=target_size_kb
         )
+        _log_operation(request, "resize", started, success=True)
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Image resize failed for %s", safe_filename)
+        if started is not None:
+            _log_operation(request, "resize", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -916,6 +992,7 @@ async def api_resize_image(
 
 @app.post("/api/image/crop")
 async def api_crop_image(
+    request: Request,
     file: UploadFile = File(...),
     x: int = Form(...),
     y: int = Form(...),
@@ -931,19 +1008,24 @@ async def api_crop_image(
     safe_filename = Path(file.filename.replace("\\", "/")).name
     temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
     logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", safe_filename, x, y, width, height)
+    started = None
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
         from scripts.image_utils import crop_image
+        started = time.perf_counter()
         output_path = crop_image(
-            str(temp_path), 
-            str(OUTPUT_DIR), 
+            str(temp_path),
+            str(OUTPUT_DIR),
             x=x, y=y, width=width, height=height
         )
+        _log_operation(request, "crop", started, success=True)
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Image crop failed for %s", safe_filename)
+        if started is not None:
+            _log_operation(request, "crop", started, success=False, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         if temp_path.exists():
@@ -1245,6 +1327,7 @@ async def api_merge_pptx(
 
 @app.post("/api/workflow/execute")
 async def execute_workflow(
+    request: Request,
     file: UploadFile = File(...),
     steps: str = Form(...),
 ):
@@ -1273,13 +1356,18 @@ async def execute_workflow(
     async def generate_progress():
         """Generator for SSE progress events."""
         current_file = temp_path
-        
+        step_type = None
+        step_started = None  # per-step timer; also flags whether a step's op actually ran
+        step_use_ai = False
+
         try:
             # Process each step
             for i, step in enumerate(step_list):
                 step_type = step.get('type')
                 config = step.get('config', {})
                 step_label = step.get('label', step_type)
+                step_started = None
+                step_use_ai = bool(config.get('use_ai', False))
                 
                 # Send "processing" event for this step
                 yield f"data: {json.dumps({'event': 'step_start', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
@@ -1289,7 +1377,9 @@ async def execute_workflow(
                 # Artificial delay to ensure UI updates are visible
                 import asyncio
                 await asyncio.sleep(1.0)
-                
+
+                step_started = time.perf_counter()
+
                 if step_type == 'remove_password':
                     password = config.get('password', '')
                     if not password:
@@ -1479,6 +1569,8 @@ async def execute_workflow(
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
                     return
                 
+                _log_operation(request, step_type, step_started, success=True, use_ai=step_use_ai)
+
                 # Send "completed" event for this step
                 yield f"data: {json.dumps({'event': 'step_complete', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
             
@@ -1488,6 +1580,9 @@ async def execute_workflow(
             
         except Exception as e:
             logger.exception("Workflow failed for %s", safe_filename)
+            if step_type and step_started is not None:
+                _log_operation(request, step_type, step_started, success=False,
+                               use_ai=step_use_ai, error=str(e))
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
         
         finally:
@@ -2057,6 +2152,32 @@ async def ads_txt():
     if not line:
         raise HTTPException(status_code=404, detail="ads.txt not configured")
     return PlainTextResponse(line + "\n")
+
+
+@app.get("/admin/stats")
+async def admin_stats(request: Request, since: Optional[str] = None):
+    """Operation-event aggregates (counts, success rate, avg/p95 duration,
+    top countries), bearer-protected by the ADMIN_STATS_KEY env var."""
+    import hmac
+
+    admin_key = os.environ.get("ADMIN_STATS_KEY", "").strip()
+    if not admin_key:
+        raise HTTPException(status_code=503, detail="Stats endpoint not configured (ADMIN_STATS_KEY unset)")
+
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
+    if not token or not hmac.compare_digest(token, admin_key):
+        raise HTTPException(status_code=401, detail="Invalid or missing bearer token")
+
+    since_dt = None
+    if since:
+        from datetime import datetime
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="since must be an ISO date, e.g. 2026-07-01")
+
+    return get_stats(since=since_dt)
 
 
 @app.get("/{slug}", response_class=HTMLResponse)
