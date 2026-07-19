@@ -9,6 +9,7 @@ import shutil
 import os
 import uuid
 import html
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -245,6 +246,32 @@ def _build_site_verification() -> str:
 
 SITE_VERIFICATION_HTML = _build_site_verification()
 
+# --- Cloudflare Web Analytics (optional, fully env-gated) ---
+# Paste the site token from the Cloudflare dashboard (Web Analytics → your site →
+# "JS snippet" — it's the value of data-cf-beacon's "token"). When unset, no
+# beacon is emitted, so there is zero third-party JS and zero performance cost.
+#
+# Cloudflare Web Analytics is cookieless and privacy-first: it records page views
+# and Core Web Vitals only (no custom events). That already gives the page-to-page
+# navigation funnel (home → tool page → …). The *"did they actually process a
+# file"* funnel steps are emitted client-side via window.zaraz.track() in
+# script.js — those show up in Cloudflare when Zaraz is enabled on the zone, and
+# are silent no-ops otherwise, so nothing here depends on Zaraz being present.
+CLOUDFLARE_ANALYTICS_TOKEN = os.environ.get("CLOUDFLARE_ANALYTICS_TOKEN", "").strip()
+
+
+def _build_cf_analytics() -> str:
+    if not CLOUDFLARE_ANALYTICS_TOKEN:
+        return ""
+    token = json.dumps(CLOUDFLARE_ANALYTICS_TOKEN)  # JSON-safe, quoted
+    return (
+        '<script defer src="https://static.cloudflareinsights.com/beacon.min.js" '
+        f"data-cf-beacon='{{\"token\": {token}}}'></script>"
+    )
+
+
+CF_ANALYTICS_HTML = _build_cf_analytics()
+
 AI_DISABLED_MESSAGE = (
     "AI Layout Recovery is disabled on this server (it needs more memory than the "
     "free hosting tier provides). Uncheck 'Use AI Layout Recovery' to use the standard converter."
@@ -476,6 +503,7 @@ def _substitute(html_text: str) -> str:
         .replace("{{ADSENSE_SLOT}}", ADSENSE_SLOT_HTML)
         .replace("{{CONSENT_BANNER}}", CONSENT_BANNER_HTML)
         .replace("{{SITE_VERIFICATION}}", SITE_VERIFICATION_HTML)
+        .replace("{{CF_ANALYTICS}}", CF_ANALYTICS_HTML)
     )
 
 

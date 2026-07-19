@@ -1,8 +1,35 @@
 
+// --- Funnel analytics (Cloudflare, privacy-first) -------------------------
+// Cloudflare Web Analytics (the beacon injected in <head> when
+// CLOUDFLARE_ANALYTICS_TOKEN is set) records page views automatically, which
+// already captures the page-to-page navigation funnel. It does NOT support
+// custom events, so the "did the visitor actually process a file" funnel steps
+// are sent here via Cloudflare Zaraz's zaraz.track(). Every call is best-effort
+// and completely silent when Zaraz isn't on the zone (or the visitor is a bot),
+// so tracking can never break the app and adds no third-party code by itself.
+// No file names or file contents are ever sent — only the coarse funnel stage.
+function ffTrack(event, props) {
+    try {
+        const data = Object.assign({}, props || {});
+        if (window.zaraz && typeof window.zaraz.track === 'function') {
+            window.zaraz.track(event, data);
+        }
+        // Also expose the same event on a dataLayer so any tag manager the
+        // operator wires up later (GTM, etc.) can read the funnel too.
+        (window.dataLayer = window.dataLayer || []).push(Object.assign({ event: 'ff_' + event }, data));
+    } catch (e) { /* analytics must never break the app */ }
+}
+window.ffTrack = ffTrack;
+
 function updateDownloadLink(element, filename) {
     if (!element) return;
     const url = apiUrl(`/api/download/${encodeURIComponent(filename)}`);
     element.href = url;
+
+    // A result is ready for download — the successful end of the processing
+    // funnel. Fired once per result, across every tool type, since every
+    // success path funnels through updateDownloadLink().
+    ffTrack('file_processed', { tool: currentTool || 'unknown' });
 
     element.onclick = async (e) => {
         // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
@@ -19,6 +46,7 @@ function updateDownloadLink(element, filename) {
 
             // If OK, let the browser proceed with the native download via element.href.
             // This avoids loading the entire file into memory as a Blob.
+            ffTrack('file_downloaded', { tool: currentTool || 'unknown' });
             return true;
 
         } catch (error) {
@@ -45,6 +73,9 @@ function showDrillDown(tool) {
     else if (tool === 'word') pageId = 'word-page';
     else if (tool === 'workflow') pageId = 'workflow-page';
     else return;
+
+    // Funnel step: visitor opened a tool category from the home grid.
+    ffTrack('tool_category_open', { category: tool });
 
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {

@@ -9,16 +9,25 @@
     <meta name="description"
         content="Free, open-source online file tools: unlock, merge, compress and convert PDFs, extract pages and text, convert HEIC to JPG, resize and crop images, Excel and PowerPoint converters. No signup, no watermarks, and your files are deleted automatically.">
     <link rel="canonical" href="{{BASE_URL}}/">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="keywords"
+        content="free PDF tools, merge PDF, compress PDF, PDF to Word, unlock PDF, HEIC to JPG, resize image, no watermark, no signup, ilovepdf alternative, smallpdf alternative, open source">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="File Forge">
     <meta property="og:title" content="File Forge — Free Online PDF, Image, Excel &amp; PPT Tools">
     <meta property="og:description"
         content="Unlock, merge, compress and convert PDFs. Convert HEIC to JPG, resize and crop images, Excel and PowerPoint tools. 100% free, open source, no signup — files are deleted automatically.">
     <meta property="og:url" content="{{BASE_URL}}/">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="{{BASE_URL}}/static/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="File Forge — free, open-source online PDF, image, Excel and PowerPoint tools">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="File Forge — Free Online PDF, Image, Excel &amp; PPT Tools">
     <meta name="twitter:description"
         content="Free, open-source PDF, image, Excel and PowerPoint tools. No signup, no watermarks, files deleted automatically.">
+    <meta name="twitter:image" content="{{BASE_URL}}/static/og-image.png">
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
@@ -65,6 +74,26 @@
         ]
     }
     </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "File Forge",
+        "url": "{{BASE_URL}}/",
+        "logo": "{{BASE_URL}}/static/og-image.png",
+        "description": "Free, open-source online file tools — a privacy-first, no-signup alternative to iLovePDF and Smallpdf.",
+        "sameAs": ["https://github.com/BhurkeSiddhesh/File-Forge"]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "File Forge",
+        "url": "{{BASE_URL}}/",
+        "description": "Free, open-source online PDF, image, Excel and PowerPoint tools. No signup, no watermarks, files deleted automatically."
+    }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
@@ -72,12 +101,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
     {{ADSENSE_HEAD}}
+    {{CF_ANALYTICS}}
     <script>
+        // Bright (light) mode is File Forge's default. We only switch away from it
+        // when the visitor has explicitly chosen a theme with the toggle before —
+        // we intentionally do NOT auto-follow the OS "prefers dark" setting, so a
+        // first-time visitor always lands in bright mode.
         const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) {
+        if (savedTheme === 'dark' || savedTheme === 'light') {
             document.documentElement.setAttribute('data-theme', savedTheme);
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            document.documentElement.setAttribute('data-theme', 'dark');
         }
     </script>
 </head>

@@ -32,6 +32,7 @@ ADS_HEAD = "{{ADSENSE_HEAD}}"
 ADS_SLOT = "{{ADSENSE_SLOT}}"
 CONSENT_BANNER = "{{CONSENT_BANNER}}"
 SITE_VERIFY = "{{SITE_VERIFICATION}}"
+CF_ANALYTICS = "{{CF_ANALYTICS}}"
 
 # category -> (deep-link tool param, human label)
 CATEGORIES = {
@@ -977,18 +978,26 @@ def render_tool_page(slug: str) -> str:
     <title>{_attr(page['title'])}</title>
     <meta name="description" content="{_attr(page['meta'])}">
     <link rel="canonical" href="{BASE}/{slug}">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta name="theme-color" content="#ffffff">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="{SITE}">
     <meta property="og:title" content="{_attr(og_title)}">
     <meta property="og:description" content="{_attr(og_desc)}">
     <meta property="og:url" content="{BASE}/{slug}">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="{BASE}/static/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="{_attr(og_title)}">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{_attr(og_title)}">
     <meta name="twitter:description" content="{_attr(og_desc)}">
+    <meta name="twitter:image" content="{BASE}/static/og-image.png">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
     {ADS_HEAD}
+    {CF_ANALYTICS}
 {schema_blocks}
 </head>
 
