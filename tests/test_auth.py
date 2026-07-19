@@ -244,3 +244,46 @@ def test_homepage_has_seo_meta():
     assert "meta name=\"description\"" in response.text
     assert "{{BASE_URL}}" not in response.text
     assert "application/ld+json" in response.text
+
+
+def test_analytics_beacon_is_disabled_by_default():
+    """With no CLOUDFLARE_ANALYTICS_TOKEN configured, no beacon script or token
+    leaks into pages."""
+    client = TestClient(app)
+    for path in ("/", "/about", "/merge-pdf"):
+        body = client.get(path).text
+        assert "{{CF_ANALYTICS}}" not in body  # token always substituted (to empty)
+        assert "cloudflareinsights.com" not in body
+
+
+def test_analytics_beacon_is_empty_without_token():
+    """Belt-and-suspenders: no CLOUDFLARE_ANALYTICS_TOKEN => no beacon markup."""
+    import main
+
+    saved = main.CLOUDFLARE_ANALYTICS_TOKEN
+    try:
+        main.CLOUDFLARE_ANALYTICS_TOKEN = ""
+        assert main._build_cf_analytics() == ""
+    finally:
+        main.CLOUDFLARE_ANALYTICS_TOKEN = saved
+
+
+def test_analytics_beacon_substitutes_into_served_page_when_configured(monkeypatch):
+    """End-to-end: with CLOUDFLARE_ANALYTICS_TOKEN configured, a real served page
+    carries the Cloudflare beacon script, and the {{CF_ANALYTICS}} token is fully
+    substituted (never leaks raw)."""
+    import main
+
+    monkeypatch.setattr(main, "CLOUDFLARE_ANALYTICS_TOKEN", "test-beacon-token")
+    monkeypatch.setattr(main, "CF_ANALYTICS_HTML", main._build_cf_analytics())
+    main._render_page.cache_clear()
+    main._render_tool_page.cache_clear()
+    try:
+        for path in ("/", "/merge-pdf"):
+            body = TestClient(main.app).get(path).text
+            assert "static.cloudflareinsights.com/beacon.min.js" in body
+            assert '"token": "test-beacon-token"' in body
+            assert "{{CF_ANALYTICS}}" not in body
+    finally:
+        main._render_page.cache_clear()
+        main._render_tool_page.cache_clear()
