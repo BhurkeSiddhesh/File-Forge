@@ -34,6 +34,20 @@ CONSENT_BANNER = "{{CONSENT_BANNER}}"
 SITE_VERIFY = "{{SITE_VERIFICATION}}"
 CF_ANALYTICS = "{{CF_ANALYTICS}}"
 
+# First-party page-view beacon for the server-rendered landing pages (which don't
+# load script.js). Posts a single anonymous page_view to /api/track — the same
+# first-party funnel endpoint the home app uses. No file data, cookies-only the
+# anonymous ff_sid the server sets. Best-effort and silent on any failure.
+FUNNEL_BEACON = (
+    "<script>(function(){try{"
+    "var p=JSON.stringify({event:'page_view',label:location.pathname||'/'});"
+    "var u='/api/track';"
+    "if(navigator.sendBeacon){navigator.sendBeacon(u,new Blob([p],{type:'application/json'}));}"
+    "else{fetch(u,{method:'POST',body:p,keepalive:true,"
+    "headers:{'Content-Type':'application/json'},credentials:'same-origin'});}"
+    "}catch(e){}})();</script>"
+)
+
 # category -> (deep-link tool param, human label)
 CATEGORIES = {
     "pdf": "PDF Tools",
@@ -1041,6 +1055,7 @@ def render_tool_page(slug: str) -> str:
         </footer>
     </main>
     {CONSENT_BANNER}
+    {FUNNEL_BEACON}
 </body>
 
 </html>

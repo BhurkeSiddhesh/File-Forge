@@ -1,25 +1,35 @@
 
-// --- Funnel analytics (Cloudflare, privacy-first) -------------------------
-// Cloudflare Web Analytics (the beacon injected in <head> when
-// CLOUDFLARE_ANALYTICS_TOKEN is set) records page views automatically, which
-// already captures the page-to-page navigation funnel. It does NOT support
-// custom events, so the "did the visitor actually process a file" funnel steps
-// are sent here via Cloudflare Zaraz's zaraz.track(). Every call is best-effort
-// and completely silent when Zaraz isn't on the zone (or the visitor is a bot),
-// so tracking can never break the app and adds no third-party code by itself.
-// No file names or file contents are ever sent — only the coarse funnel stage.
-function ffTrack(event, props) {
+// --- Funnel analytics (first-party, privacy-first) ------------------------
+// Sends anonymous funnel events to our own backend (POST /api/track), which
+// records them in the same event log that powers /admin/stats — no third-party
+// analytics, no cookies beyond the anonymous ff_sid session id the server already
+// sets. Only a coarse stage name + a short label (a tool category) are sent;
+// never a file name or file content. sendBeacon is used so events survive page
+// navigation/unload and never block the UI. Every call is best-effort: if the
+// beacon fails, the app carries on exactly as before.
+//
+// Event names must match event_log.FUNNEL_EVENTS on the server:
+//   page_view · tool_open · file_processed · file_downloaded
+function ffTrack(event, label) {
     try {
-        const data = Object.assign({}, props || {});
-        if (window.zaraz && typeof window.zaraz.track === 'function') {
-            window.zaraz.track(event, data);
+        const payload = JSON.stringify({ event: event, label: label || null });
+        const url = (typeof apiUrl === 'function') ? apiUrl('/api/track') : '/api/track';
+        if (navigator && typeof navigator.sendBeacon === 'function') {
+            navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+        } else {
+            fetch(url, {
+                method: 'POST', body: payload, keepalive: true,
+                headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+            });
         }
-        // Also expose the same event on a dataLayer so any tag manager the
-        // operator wires up later (GTM, etc.) can read the funnel too.
-        (window.dataLayer = window.dataLayer || []).push(Object.assign({ event: 'ff_' + event }, data));
     } catch (e) { /* analytics must never break the app */ }
 }
 window.ffTrack = ffTrack;
+
+// One page_view per app load. The home app is a single page (tool drill-downs
+// don't change the URL), so this fires once; the server-rendered landing pages
+// send their own page_view via a tiny inline beacon.
+try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 
 function updateDownloadLink(element, filename) {
     if (!element) return;
@@ -29,7 +39,7 @@ function updateDownloadLink(element, filename) {
     // A result is ready for download — the successful end of the processing
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
-    ffTrack('file_processed', { tool: currentTool || 'unknown' });
+    ffTrack('file_processed', currentTool || 'unknown');
 
     element.onclick = async (e) => {
         // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
@@ -46,7 +56,7 @@ function updateDownloadLink(element, filename) {
 
             // If OK, let the browser proceed with the native download via element.href.
             // This avoids loading the entire file into memory as a Blob.
-            ffTrack('file_downloaded', { tool: currentTool || 'unknown' });
+            ffTrack('file_downloaded', currentTool || 'unknown');
             return true;
 
         } catch (error) {
@@ -75,7 +85,7 @@ function showDrillDown(tool) {
     else return;
 
     // Funnel step: visitor opened a tool category from the home grid.
-    ffTrack('tool_category_open', { category: tool });
+    ffTrack('tool_open', tool);
 
     document.getElementById('home-page').classList.remove('active');
     setTimeout(() => {

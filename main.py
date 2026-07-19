@@ -406,6 +406,9 @@ app.state.rate_limiter = SlidingWindowRateLimiter()
 app.state.rate_limit_enabled = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in ("0", "false", "no")
 app.state.rate_limit_heavy = int(os.environ.get("RATE_LIMIT_HEAVY", "5"))    # req/min per IP
 app.state.rate_limit_light = int(os.environ.get("RATE_LIMIT_LIGHT", "20"))   # req/min per IP
+# Funnel beacons (/api/track) get their own generous bucket so page-view pings
+# never eat into a visitor's file-operation budget (the "light" tier).
+app.state.rate_limit_track = int(os.environ.get("RATE_LIMIT_TRACK", "120"))  # req/min per IP
 
 
 @app.middleware("http")
@@ -415,7 +418,9 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "unknown"
-    if request.url.path in RATE_LIMIT_HEAVY_PATHS:
+    if request.url.path == "/api/track":
+        tier, limit = "track", getattr(state, "rate_limit_track", 120)
+    elif request.url.path in RATE_LIMIT_HEAVY_PATHS:
         tier, limit = "heavy", state.rate_limit_heavy
     else:
         tier, limit = "light", state.rate_limit_light
@@ -2235,6 +2240,36 @@ async def admin_stats(request: Request, since: Optional[str] = None):
                 detail="Invalid 'since'; use ISO format like 2026-07-01 or 2026-07-01T12:00:00Z.",
             )
     return await run_in_threadpool(event_log.query_stats, since_norm)
+
+
+# --- Anonymous funnel beacon (first-party, no third-party analytics) ---
+@app.post("/api/track")
+async def api_track(request: Request):
+    """Record one anonymous navigation/funnel event (page_view, tool_open,
+    file_processed, file_downloaded) into the local event log.
+
+    This is the first-party replacement for a third-party analytics beacon: the
+    browser POSTs a tiny JSON body ({event, label}) via navigator.sendBeacon, and
+    the session id + coarse country come from the request-context middleware (this
+    route is under /api/, so the anonymous ff_sid cookie and CF-IPCountry header
+    are already applied). No file names, contents, IPs, or PII are ever stored.
+
+    Always answers 204: a tracking beacon must never surface an error to the UI,
+    and unknown event names are silently ignored inside log_funnel_event().
+    """
+    from functools import partial
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        event = str(body.get("event") or "")[:40]
+        label = body.get("label")
+        label = label if isinstance(label, str) else None
+        if event:
+            await run_in_threadpool(partial(event_log.log_funnel_event, event, label=label))
+    return Response(status_code=204)
 
 
 # --- SEO Routes ---

@@ -43,7 +43,30 @@ CREATE TABLE IF NOT EXISTS operation_events (
 );
 CREATE INDEX IF NOT EXISTS idx_operation_events_ts ON operation_events (timestamp);
 CREATE INDEX IF NOT EXISTS idx_operation_events_op_ts ON operation_events (operation, timestamp);
+
+-- Navigation / funnel events (page views + client-side funnel steps). Kept in a
+-- separate table from operation_events so the two never contend and each stays
+-- easy to reason about. Same privacy model: no PII, no IPs, no file names — just
+-- a coarse stage, an optional short label (a page path or tool category), a
+-- coarse country, and the anonymous session id used to stitch the funnel.
+CREATE TABLE IF NOT EXISTS funnel_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TEXT    NOT NULL,
+    event       TEXT    NOT NULL,
+    label       TEXT,
+    country     TEXT,
+    session_id  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_ts ON funnel_events (timestamp);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_ev_ts ON funnel_events (event, timestamp);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_sess ON funnel_events (session_id);
 """
+
+# The only funnel events we store. Anything else a client POSTs is ignored, so
+# the table can't be polluted by arbitrary event names. Order matters: it's the
+# funnel from broadest (landed on any page) to narrowest (downloaded a result).
+FUNNEL_EVENTS = ("page_view", "tool_open", "file_processed", "file_downloaded")
+_LABEL_MAX = 120
 
 _init_lock = threading.Lock()
 _initialized_paths: set = set()
@@ -218,6 +241,103 @@ def timed_call(
     return result
 
 
+def log_funnel_event(
+    event: str,
+    *,
+    label: Optional[str] = None,
+    country: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> bool:
+    """Record one navigation/funnel event. Never raises.
+
+    Returns True if the event was accepted (a known funnel stage) and a write was
+    attempted, False if the event name is unknown and was ignored.
+    """
+    if event not in FUNNEL_EVENTS:
+        return False
+    ctx_country, ctx_session = get_request_context()
+    if country is None:
+        country = ctx_country
+    if session_id is None:
+        session_id = ctx_session
+    if label is not None:
+        label = str(label)[:_LABEL_MAX]
+    try:
+        conn = _connect(_db_path())
+        try:
+            conn.execute(
+                "INSERT INTO funnel_events (timestamp, event, label, country, session_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                    event,
+                    label,
+                    country,
+                    session_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("Failed to record funnel event %s", event, exc_info=True)
+    return True
+
+
+def query_funnel(since: Optional[str] = None, top: int = 15) -> dict:
+    """Aggregate the navigation funnel for /admin/stats. `since` pre-normalized.
+
+    Returns per-stage unique-session counts (with the drop-off between stages),
+    plus the most-viewed pages and most-opened tool categories.
+    """
+    where = " WHERE timestamp >= ?" if since else ""
+    params = [since] if since else []
+
+    conn = _connect(_db_path())
+    try:
+        conn.row_factory = sqlite3.Row
+
+        # Unique sessions reaching each funnel stage.
+        stages = []
+        prev = None
+        for ev in FUNNEL_EVENTS:
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT session_id) AS n FROM funnel_events"
+                f"{where}{' AND' if where else ' WHERE'} event = ?",
+                params + [ev],
+            ).fetchone()
+            n = row["n"] or 0
+            # Conversion from the previous (broader) stage, e.g. of everyone who
+            # opened a tool, what fraction reached a downloaded result.
+            conv = round(n / prev, 4) if prev else None
+            stages.append({"event": ev, "sessions": n, "from_previous_rate": conv})
+            prev = n
+
+        total_events = conn.execute(
+            f"SELECT COUNT(*) AS n FROM funnel_events{where}", params
+        ).fetchone()["n"] or 0
+
+        def _by_label(event_name):
+            return [
+                {"label": r["label"] or "(none)", "count": r["n"]}
+                for r in conn.execute(
+                    "SELECT label, COUNT(*) AS n FROM funnel_events"
+                    f"{where}{' AND' if where else ' WHERE'} event = ?"
+                    " GROUP BY label ORDER BY n DESC, label LIMIT ?",
+                    params + [event_name, top],
+                )
+            ]
+
+        return {
+            "total_events": total_events,
+            "stages": stages,
+            "top_pages": _by_label("page_view"),
+            "top_tools_opened": _by_label("tool_open"),
+        }
+    finally:
+        conn.close()
+
+
 def normalize_since(since: str) -> str:
     """Normalize a user-supplied ISO date/datetime to the stored UTC format.
 
@@ -274,7 +394,7 @@ def query_stats(since: Optional[str] = None) -> dict:
                 params,
             )
         ]
-        return {
+        result = {
             "since": since,
             "total_events": total,
             "operations": operations,
@@ -282,3 +402,7 @@ def query_stats(since: Optional[str] = None) -> dict:
         }
     finally:
         conn.close()
+    # Navigation funnel (page views + client funnel steps) alongside the
+    # operation stats, so /admin/stats is a single call for the whole picture.
+    result["funnel"] = query_funnel(since)
+    return result
