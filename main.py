@@ -107,7 +107,7 @@ app.add_middleware(
 )
 
 # --- Configuration ---
-BASE_URL = os.environ.get("BASE_URL", "https://file-forge.onrender.com").rstrip("/")
+BASE_URL = os.environ.get("BASE_URL", "https://www.forgefiles.org").rstrip("/")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
 DISABLE_AI = os.environ.get("DISABLE_AI", "0") == "1"
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", "3600"))
@@ -2287,6 +2287,60 @@ async def sitemap_xml():
         f"{items}\n</urlset>"
     )
     return Response(content=xml, media_type="application/xml")
+
+
+# Human-readable category labels for the llms.txt grouping. Keyed by the "tool"
+# field in seo_content.TOOL_PAGES; any category added there without an entry here
+# falls back to a title-cased version of the key, so this can't 500 on new tools.
+_LLMS_CATEGORIES = {
+    "pdf": "PDF tools",
+    "image": "Image tools",
+    "excel": "Spreadsheet tools",
+    "ppt": "Presentation tools",
+    "word": "Document tools",
+}
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse)
+async def llms_txt():
+    """Plain-text site index for LLM crawlers (the llms.txt convention).
+
+    Generated from the same TOOL_PAGES/CONTENT_PAGES data as sitemap.xml, so the
+    two can never drift: adding a tool to seo_content.py lists it here for free.
+    Descriptions reuse each page's existing `meta` string rather than a second
+    hand-written blurb, for the same reason.
+    """
+    lines = [
+        "# File Forge",
+        "",
+        "> Free, open-source online file tools: convert, compress, merge, split and "
+        "edit PDFs, images and spreadsheets in the browser. No signup, no watermarks, "
+        "no file-size paywall. Uploaded files are deleted from the server "
+        "automatically after processing.",
+        "",
+        "File Forge is free software (source: https://github.com/BhurkeSiddhesh/File-Forge) "
+        "and can be self-hosted. Every tool below is a standalone page that works "
+        "without JavaScript for reading purposes; no account is ever required.",
+        "",
+    ]
+
+    by_category: dict = {}
+    for slug, page in TOOL_PAGES.items():
+        by_category.setdefault(page.get("tool") or "other", []).append((slug, page))
+
+    for key in sorted(by_category, key=lambda k: -len(by_category[k])):
+        lines.append(f"## {_LLMS_CATEGORIES.get(key, key.replace('-', ' ').title())}")
+        lines.append("")
+        for slug, page in sorted(by_category[key]):
+            name = page.get("app") or slug
+            lines.append(f"- [{name}]({BASE_URL}/{slug}): {page.get('meta', '')}")
+        lines.append("")
+
+    lines += ["## About", ""]
+    lines += [f"- [{slug.title()}]({BASE_URL}/{slug})" for slug in CONTENT_PAGES]
+    lines.append("")
+
+    return PlainTextResponse("\n".join(lines))
 
 
 @app.get("/ads.txt", response_class=PlainTextResponse)

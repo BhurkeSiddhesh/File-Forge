@@ -164,7 +164,7 @@ The app will be available at [http://127.0.0.1:8001](http://127.0.0.1:8001).
 | Variable | Description | Default |
 |---|---|---|
 | `PORT` | Port the server listens on | `8001` |
-| `BASE_URL` | Public URL used in canonical links, sitemap.xml, and robots.txt | `https://file-forge.onrender.com` |
+| `BASE_URL` | Public URL used in canonical links, sitemap.xml, robots.txt and llms.txt | `https://www.forgefiles.org` |
 | `MAX_UPLOAD_MB` | Maximum upload size in MB | `50` |
 | `RATE_LIMIT_PER_MIN` | Max processing requests per IP per minute | `20` |
 | `FILE_TTL_SECONDS` | Stale uploads/outputs older than this are auto-purged | `3600` |
