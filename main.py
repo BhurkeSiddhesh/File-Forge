@@ -506,7 +506,7 @@ async def api_remove_password(
         )
         return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -550,7 +550,7 @@ async def api_convert_to_word(
         return {"status": "success", "message": message, "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Conversion failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
 
     finally:
         if temp_path.exists():
@@ -613,7 +613,7 @@ async def api_convert_to_word_stream(
                 })
             except Exception as e:
                 logger.exception("Streaming conversion failed for %s", safe_filename)
-                events.put({"event": "error", "detail": str(e)})
+                events.put({"event": "error", "detail": event_log.scrub_paths(str(e))})
             finally:
                 events.put(None)  # sentinel: stream finished
 
@@ -663,10 +663,10 @@ async def api_extract_pages(
         )
         return {"status": "success", "message": "Pages extracted", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Page extraction failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -703,10 +703,10 @@ async def api_compress_pdf(
             "reduction_pct": result['reduction_pct'],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("PDF compression failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -744,10 +744,10 @@ async def api_merge_pdfs(
         )
         return {"status": "success", "message": "PDFs merged", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("PDF merge failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         for p in temp_paths:
             if p.exists():
@@ -781,10 +781,10 @@ async def api_add_watermark(
         )
         return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Watermark failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -816,10 +816,10 @@ async def api_rotate_pdf(
         )
         return {"status": "success", "message": f"PDF rotated by {angle}°", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("PDF rotation failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -856,10 +856,10 @@ async def api_pdf_to_images(
             "page_count": result["page_count"],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("PDF to images failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -901,10 +901,10 @@ async def api_sign_pdf(
         )
         return {"status": "success", "message": "Signature added", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Sign PDF failed for %s", safe_pdf)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         for p in (pdf_path, sig_path):
             if p.exists():
@@ -935,7 +935,7 @@ async def api_heic_to_jpeg(
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("HEIC conversion failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -983,7 +983,7 @@ async def api_resize_image(
         return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Image resize failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1024,7 +1024,7 @@ async def api_crop_image(
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("Image crop failed for %s", safe_filename)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1051,10 +1051,10 @@ async def api_rotate_image(
         )
         return {"status": "success", "message": f"Rotated by {angle}°", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1085,10 +1085,10 @@ async def api_compress_image(
             "reduction_pct": result["reduction_pct"],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1113,10 +1113,10 @@ async def api_convert_image(
         )
         return {"status": "success", "message": f"Converted to {target_format.upper()}", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1143,10 +1143,10 @@ async def api_watermark_image(
         )
         return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1169,10 +1169,10 @@ async def api_excel_to_pdf(
         )
         return {"status": "success", "message": "Excel converted to PDF", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1194,10 +1194,10 @@ async def api_csv_to_xlsx(
         )
         return {"status": "success", "message": "CSV converted to XLSX", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1219,10 +1219,10 @@ async def api_xlsx_to_csv(
         )
         return {"status": "success", "message": "XLSX converted to CSV", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1249,10 +1249,10 @@ async def api_merge_excel(
         )
         return {"status": "success", "message": "Excel files merged", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         for p in temp_paths:
             if p.exists():
@@ -1276,10 +1276,10 @@ async def api_ppt_to_pdf(
         )
         return {"status": "success", "message": "PPT converted to PDF (best-effort layout)", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1306,10 +1306,10 @@ async def api_ppt_to_images(
             "slide_count": result["slide_count"],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try: os.remove(temp_path)
@@ -1336,10 +1336,10 @@ async def api_merge_pptx(
         )
         return {"status": "success", "message": "PPTX files merged", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Endpoint failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         for p in temp_paths:
             if p.exists():
@@ -1383,11 +1383,15 @@ async def execute_workflow(
         current_file = temp_path
 
         def log_step(step_type, ok, started, config, err=None):
+            # config may be a non-dict if the client sent a malformed step; the
+            # operation itself raises on that and we still want to log the
+            # failure cleanly rather than crash the SSE stream.
+            use_ai = bool(config.get('use_ai', False)) if isinstance(config, dict) else False
             event_log.log_event(
                 step_type,
                 success=ok,
                 duration_ms=(time.perf_counter() - started) * 1000,
-                use_ai=bool(config.get('use_ai', False)),
+                use_ai=use_ai,
                 error=err,
                 country=wf_country,
                 session_id=wf_session,
@@ -1618,7 +1622,7 @@ async def execute_workflow(
             if step_started is not None:
                 log_step(step_type, False, step_started, config, err=e)
             logger.exception("Workflow failed for %s", safe_filename)
-            yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
+            yield f"data: {json.dumps({'event': 'error', 'detail': event_log.scrub_paths(str(e))})}\n\n"
         
         finally:
             # Clean up temp file
@@ -1669,9 +1673,9 @@ async def api_protect_pdf(
         )
         return {"status": "success", "message": "PDF protected with password", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1710,9 +1714,9 @@ async def api_images_to_pdf(
         )
         return {"status": "success", "message": f"Created PDF from {len(files)} image(s)", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         for p in temp_paths:
             if p.exists():
@@ -1742,9 +1746,9 @@ async def api_word_to_pdf(
         )
         return {"status": "success", "message": "Word document converted to PDF", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1780,9 +1784,9 @@ async def api_pdf_to_excel(
             "tables_found": result["tables_found"],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1815,9 +1819,9 @@ async def api_pdf_to_pptx(
         )
         return {"status": "success", "message": "PDF converted to PowerPoint", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1856,9 +1860,9 @@ async def api_extract_text(
             "page_count": result["page_count"],
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1899,9 +1903,9 @@ async def api_organize_pdf(
         )
         return {"status": "success", "message": f"PDF organized ({len(order)} pages in output)", "filename": Path(output_path).name}
     except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1940,9 +1944,9 @@ async def api_add_page_numbers(
         )
         return {"status": "success", "message": "Page numbers added", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -1976,9 +1980,9 @@ async def api_repair_pdf(
             "repair_status": result["repair_status"],
         }
     except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -2009,9 +2013,9 @@ async def api_create_pdf_from_text(
         )
         return {"status": "success", "message": "PDF created from text", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
 
 
 @app.post("/api/pdf/create-blank")
@@ -2026,9 +2030,9 @@ async def api_create_blank_pdf(
         )
         return {"status": "success", "message": f"Created blank PDF with {num_pages} page(s)", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2061,9 +2065,9 @@ async def api_annotate_pdf(
         )
         return {"status": "success", "message": f"Added {len(ann_list)} annotation(s)", "filename": Path(output_path).name}
     except (ValueError, _json.JSONDecodeError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -2103,9 +2107,9 @@ async def api_edit_pdf_metadata(
         )
         return {"status": "success", "message": "PDF metadata updated", "filename": Path(output_path).name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:
@@ -2131,7 +2135,7 @@ async def api_read_pdf_metadata(
         )
         return {"status": "success", "metadata": metadata}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
             try:

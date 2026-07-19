@@ -88,12 +88,25 @@ def _connect(path: Path) -> sqlite3.Connection:
                 finally:
                     conn.close()
                 _initialized_paths.add(key)
-    return sqlite3.connect(path, timeout=5)
+    conn = sqlite3.connect(path, timeout=5)
+    # WAL + synchronous=NORMAL is SQLite's recommended durable-enough mode: it
+    # drops the per-commit fsync (the dominant cost of this write, which runs on
+    # the event loop after each operation) at the price of losing at most the
+    # last few analytics rows on an OS crash — fine for droppable event data.
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
 
 
 # Exception messages routinely embed the temp-file path (which contains the
-# original filename), so path-like tokens are stripped before storage.
-_PATH_TOKEN = re.compile(r"(?:[A-Za-z]:)?[\\/][^\s'\"]+")
+# original filename), so path-like tokens are stripped before storage or before
+# an error detail is returned to the client. The lookbehind keeps mid-word
+# slashes ("90/180/270") intact — only tokens that start a path are scrubbed.
+_PATH_TOKEN = re.compile(r"(?:(?<=[\s:'\"=(,\[])|^)(?:[A-Za-z]:)?[\\/][^\s'\"]+")
+
+
+def scrub_paths(text: str) -> str:
+    """Replace path-like tokens (which can embed uploaded filenames) with <path>."""
+    return _PATH_TOKEN.sub("<path>", text)
 
 
 def sanitize_error(error) -> Optional[str]:
@@ -103,7 +116,7 @@ def sanitize_error(error) -> Optional[str]:
         text = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
     else:
         text = str(error)
-    return _PATH_TOKEN.sub("<path>", text)[:500]
+    return scrub_paths(text)[:500]
 
 
 def log_event(

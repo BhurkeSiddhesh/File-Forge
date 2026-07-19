@@ -68,6 +68,15 @@ def test_sanitize_error_strips_paths():
     assert event_log.sanitize_error(None) is None
 
 
+def test_scrub_paths_keeps_non_path_slashes():
+    assert event_log.scrub_paths("angle must be 90/180/270") == "angle must be 90/180/270"
+    assert event_log.scrub_paths("/uploads/abc_x.pdf: invalid password") == "<path> invalid password"
+    assert (
+        event_log.scrub_paths(r"cannot open C:\uploads\abc_x.pdf here")
+        == "cannot open <path> here"
+    )
+
+
 def test_timed_logs_success_and_failure(event_db):
     async def ok():
         return "done"
@@ -141,6 +150,9 @@ def test_failure_logged_without_filename(event_db, mock_dirs, auth_client, locke
             data={"password": "definitely-wrong"},
         )
     assert resp.status_code == 400
+    # The HTTP error detail must not leak the server temp path / filename either.
+    assert "locked.pdf" not in resp.json()["detail"]
+    assert "uploads" not in resp.json()["detail"]
     rows = read_rows(event_db)
     assert len(rows) == 1
     assert rows[0]["operation"] == "pdf_unlock"
@@ -168,6 +180,24 @@ def test_workflow_step_logged(event_db, mock_dirs, auth_client, locked_pdf):
     assert rows[0]["success"] == 1
     # The 1s artificial UI delay must not be counted in the step duration.
     assert rows[0]["duration_ms"] < 1000
+
+
+def test_workflow_malformed_config_yields_clean_error(event_db, mock_dirs, auth_client, sample_pdf):
+    # A non-dict `config` makes the operation raise; the failure must still be
+    # logged and surface as a clean SSE error event, not crash the stream.
+    steps = json.dumps([{"type": "resize_image", "config": "not-a-dict"}])
+    with open(sample_pdf, "rb") as f:
+        resp = auth_client.post(
+            "/api/workflow/execute",
+            files={"file": ("sample.pdf", f, "application/pdf")},
+            data={"steps": steps},
+        )
+    assert resp.status_code == 200
+    assert '"event": "error"' in resp.text
+    rows = read_rows(event_db)
+    assert len(rows) == 1
+    assert rows[0]["operation"] == "resize_image"
+    assert rows[0]["success"] == 0
 
 
 # --- /admin/stats ---
