@@ -1,5 +1,5 @@
 """Tests for the anonymous operation event log (scripts/event_log.py),
-the request-context middleware, handler instrumentation, and /admin/stats."""
+the request-context middleware, and handler instrumentation."""
 
 import asyncio
 import json
@@ -199,67 +199,6 @@ def test_workflow_malformed_config_yields_clean_error(event_db, mock_dirs, auth_
     assert rows[0]["operation"] == "resize_image"
     assert rows[0]["success"] == 0
 
-
-# --- /admin/stats ---
-
-def _seed_events():
-    for duration, ok, country in ((100, True, "IN"), (200, True, "IN"), (300, False, "US")):
-        event_log.log_event(
-            "pdf_unlock", success=ok, duration_ms=duration, country=country, session_id="s"
-        )
-    for duration in (50, 60):
-        event_log.log_event("resize", success=True, duration_ms=duration, session_id="s")
-
-
-def test_admin_stats_unconfigured_returns_503(event_db, monkeypatch, auth_client):
-    monkeypatch.delenv("ADMIN_STATS_KEY", raising=False)
-    assert auth_client.get("/admin/stats").status_code == 503
-
-
-def test_admin_stats_requires_bearer_token(event_db, monkeypatch, auth_client):
-    monkeypatch.setenv("ADMIN_STATS_KEY", "test-admin-key")
-    assert auth_client.get("/admin/stats").status_code == 401
-    assert (
-        auth_client.get("/admin/stats", headers={"Authorization": "Bearer wrong"}).status_code
-        == 401
-    )
-
-
-def test_admin_stats_aggregates(event_db, monkeypatch, auth_client):
-    monkeypatch.setenv("ADMIN_STATS_KEY", "test-admin-key")
-    _seed_events()
-    resp = auth_client.get(
-        "/admin/stats", headers={"Authorization": "Bearer test-admin-key"}
-    )
-    assert resp.status_code == 200
-    stats = resp.json()
-
-    assert stats["total_events"] == 5
-    unlock = stats["operations"]["pdf_unlock"]
-    assert unlock["runs"] == 3
-    assert unlock["successes"] == 2
-    assert unlock["failures"] == 1
-    assert unlock["success_rate"] == pytest.approx(2 / 3, abs=1e-3)
-    assert unlock["avg_duration_ms"] == pytest.approx(200.0)
-    assert unlock["p95_duration_ms"] == 300
-    assert stats["operations"]["resize"]["runs"] == 2
-
-    countries = {c["country"]: c["events"] for c in stats["top_countries"]}
-    assert countries == {"IN": 2, "US": 1, "unknown": 2}
-
-
-def test_admin_stats_since_filter(event_db, monkeypatch, auth_client):
-    monkeypatch.setenv("ADMIN_STATS_KEY", "test-admin-key")
-    _seed_events()
-    headers = {"Authorization": "Bearer test-admin-key"}
-
-    resp = auth_client.get("/admin/stats?since=2099-01-01", headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["total_events"] == 0
-
-    resp = auth_client.get("/admin/stats?since=2020-01-01T00:00:00Z", headers=headers)
-    assert resp.json()["total_events"] == 5
-
-    assert (
-        auth_client.get("/admin/stats?since=not-a-date", headers=headers).status_code == 400
-    )
+# Note: /admin/stats tests moved to the private repo's tests/test_admin_stats.py
+# alongside the route itself — see scripts/event_log.py's closing comment for why
+# the aggregation/reporting side no longer lives in the public repo.

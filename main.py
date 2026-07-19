@@ -4,7 +4,6 @@ from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 import asyncio
-import hmac
 import shutil
 import os
 import uuid
@@ -2202,44 +2201,10 @@ async def download_file(filename: str, request: Request, background_tasks: Backg
         return FileResponse(file_path, filename=safe_filename)
     raise HTTPException(status_code=404, detail="File not found")
 
-# --- Admin: aggregated operation stats from the anonymous event log ---
-# Lives here (not a router module) because this app keeps every route in
-# main.py; scripts/ holds framework-free helpers, so the SQL/aggregation is in
-# scripts/event_log.py. Auth is a plain bearer token against ADMIN_STATS_KEY —
-# fully self-contained, nothing imported from outside public/.
-
-
-@app.get("/admin/stats")
-async def admin_stats(request: Request, since: Optional[str] = None):
-    """Counts, success rate, avg/p95 duration per operation, top countries.
-
-    Requires `Authorization: Bearer <ADMIN_STATS_KEY>`. 503 until the env var
-    is set, 401 on a missing/wrong token. `?since=` accepts an ISO date or
-    datetime (naive values are treated as UTC).
-    """
-    admin_key = os.environ.get("ADMIN_STATS_KEY", "").strip()
-    if not admin_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Stats are not configured on this server (set ADMIN_STATS_KEY).",
-        )
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not hmac.compare_digest(token.strip(), admin_key):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or missing bearer token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    since_norm = None
-    if since:
-        try:
-            since_norm = event_log.normalize_since(since)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid 'since'; use ISO format like 2026-07-01 or 2026-07-01T12:00:00Z.",
-            )
-    return await run_in_threadpool(event_log.query_stats, since_norm)
+# Note: there is deliberately no /admin/stats route in the public app. Only the
+# write side of the event log (recording operations + funnel steps) lives here;
+# the aggregation/reporting logic and the admin auth gate live in the private
+# deployment's server.py, so the public repo never carries an admin surface.
 
 
 # --- Anonymous funnel beacon (first-party, no third-party analytics) ---

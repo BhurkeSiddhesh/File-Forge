@@ -15,7 +15,6 @@ storage failure is swallowed and reported at WARNING level.
 
 import contextvars
 import logging
-import math
 import os
 import re
 import sqlite3
@@ -118,6 +117,14 @@ def _connect(path: Path) -> sqlite3.Connection:
     # last few analytics rows on an OS crash — fine for droppable event data.
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def get_connection() -> sqlite3.Connection:
+    """Open a connection to the event-log DB, for reporting/aggregation code
+    that lives outside this module (e.g. the private deployment's admin
+    endpoint). Plain plumbing — this module only ever writes; it has no
+    aggregation logic of its own."""
+    return _connect(_db_path())
 
 
 # Exception messages routinely embed the temp-file path (which contains the
@@ -284,125 +291,8 @@ def log_funnel_event(
     return True
 
 
-def query_funnel(since: Optional[str] = None, top: int = 15) -> dict:
-    """Aggregate the navigation funnel for /admin/stats. `since` pre-normalized.
-
-    Returns per-stage unique-session counts (with the drop-off between stages),
-    plus the most-viewed pages and most-opened tool categories.
-    """
-    where = " WHERE timestamp >= ?" if since else ""
-    params = [since] if since else []
-
-    conn = _connect(_db_path())
-    try:
-        conn.row_factory = sqlite3.Row
-
-        # Unique sessions reaching each funnel stage.
-        stages = []
-        prev = None
-        for ev in FUNNEL_EVENTS:
-            row = conn.execute(
-                "SELECT COUNT(DISTINCT session_id) AS n FROM funnel_events"
-                f"{where}{' AND' if where else ' WHERE'} event = ?",
-                params + [ev],
-            ).fetchone()
-            n = row["n"] or 0
-            # Conversion from the previous (broader) stage, e.g. of everyone who
-            # opened a tool, what fraction reached a downloaded result.
-            conv = round(n / prev, 4) if prev else None
-            stages.append({"event": ev, "sessions": n, "from_previous_rate": conv})
-            prev = n
-
-        total_events = conn.execute(
-            f"SELECT COUNT(*) AS n FROM funnel_events{where}", params
-        ).fetchone()["n"] or 0
-
-        def _by_label(event_name):
-            return [
-                {"label": r["label"] or "(none)", "count": r["n"]}
-                for r in conn.execute(
-                    "SELECT label, COUNT(*) AS n FROM funnel_events"
-                    f"{where}{' AND' if where else ' WHERE'} event = ?"
-                    " GROUP BY label ORDER BY n DESC, label LIMIT ?",
-                    params + [event_name, top],
-                )
-            ]
-
-        return {
-            "total_events": total_events,
-            "stages": stages,
-            "top_pages": _by_label("page_view"),
-            "top_tools_opened": _by_label("tool_open"),
-        }
-    finally:
-        conn.close()
-
-
-def normalize_since(since: str) -> str:
-    """Normalize a user-supplied ISO date/datetime to the stored UTC format.
-
-    Stored timestamps all share one fixed-width UTC ISO format, so a plain
-    lexicographic ``>=`` in SQL is a correct chronological comparison.
-    Raises ValueError on unparseable input.
-    """
-    dt = datetime.fromisoformat(since.strip().replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds")
-
-
-def query_stats(since: Optional[str] = None) -> dict:
-    """Aggregate stats for /admin/stats. `since` must be pre-normalized."""
-    where = " WHERE timestamp >= ?" if since else ""
-    params = [since] if since else []
-    op_where = f"{where} AND operation = ?" if where else " WHERE operation = ?"
-
-    conn = _connect(_db_path())
-    try:
-        conn.row_factory = sqlite3.Row
-        operations = {}
-        total = 0
-        for row in conn.execute(
-            "SELECT operation, COUNT(*) AS runs, SUM(success) AS successes,"
-            f" AVG(duration_ms) AS avg_ms FROM operation_events{where}"
-            " GROUP BY operation ORDER BY runs DESC, operation",
-            params,
-        ):
-            runs = row["runs"]
-            successes = row["successes"] or 0
-            # p95 = the duration at the 95th-percentile rank of this op's runs
-            offset = max(0, math.ceil(runs * 0.95) - 1)
-            p95_row = conn.execute(
-                f"SELECT duration_ms FROM operation_events{op_where}"
-                " ORDER BY duration_ms LIMIT 1 OFFSET ?",
-                params + [row["operation"], offset],
-            ).fetchone()
-            operations[row["operation"]] = {
-                "runs": runs,
-                "successes": successes,
-                "failures": runs - successes,
-                "success_rate": round(successes / runs, 4),
-                "avg_duration_ms": round(row["avg_ms"], 1) if row["avg_ms"] is not None else None,
-                "p95_duration_ms": p95_row[0] if p95_row else None,
-            }
-            total += runs
-        top_countries = [
-            {"country": r["country"] or "unknown", "events": r["n"]}
-            for r in conn.execute(
-                f"SELECT country, COUNT(*) AS n FROM operation_events{where}"
-                " GROUP BY country ORDER BY n DESC, country LIMIT 10",
-                params,
-            )
-        ]
-        result = {
-            "since": since,
-            "total_events": total,
-            "operations": operations,
-            "top_countries": top_countries,
-        }
-    finally:
-        conn.close()
-    # Navigation funnel (page views + client funnel steps) alongside the
-    # operation stats, so /admin/stats is a single call for the whole picture.
-    result["funnel"] = query_funnel(since)
-    return result
+# Note: there is deliberately no aggregation/reporting code below this point.
+# query_stats(), query_funnel(), and normalize_since() — the read side that
+# powers /admin/stats — live in the private deployment's admin_stats.py, which
+# calls get_connection() above. This module only ever writes to the DB, so the
+# public repo carries no admin surface at all.
