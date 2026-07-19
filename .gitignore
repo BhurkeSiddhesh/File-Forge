@@ -24,3 +24,5 @@ asset
 asset_outputs
 *.log
 server.log
+# Anonymous operation-event SQLite DB (see scripts/event_log.py)
+data/

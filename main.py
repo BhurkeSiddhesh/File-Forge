@@ -4,6 +4,7 @@ from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 import asyncio
+import hmac
 import shutil
 import os
 import uuid
@@ -69,6 +70,7 @@ from scripts.ppt_utils import (
     merge_pptx,
 )
 from scripts import seo_content
+from scripts import event_log
 
 PROD = os.environ.get("ENV") == "production"
 app = FastAPI(
@@ -401,6 +403,43 @@ async def rate_limit_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
+
+# --- Anonymous operation-event context (server-side analytics, no tracking script) ---
+SESSION_COOKIE_NAME = "ff_sid"
+SESSION_COOKIE_MAX_AGE = 365 * 24 * 3600
+
+
+@app.middleware("http")
+async def event_context_middleware(request: Request, call_next):
+    """Expose CF-IPCountry and an anonymous session id to scripts/event_log.
+
+    Only /api/ requests get the context and cookie: every operation lives under
+    /api/, and page views are deliberately not tracked. The session id is a
+    random UUID in a first-party cookie tied to nothing — no PII, and IP
+    addresses are never stored anywhere.
+    """
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    country = request.headers.get("cf-ipcountry")
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    is_new_session = session_id is None
+    if is_new_session:
+        session_id = str(uuid.uuid4())
+    token = event_log.set_request_context(country, session_id)
+    try:
+        response = await call_next(request)
+    finally:
+        event_log.reset_request_context(token)
+    if is_new_session:
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            session_id,
+            max_age=SESSION_COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+        )
+    return response
+
 # --- Input Validation Helpers (Issue #45) ---
 
 def validate_range(name: str, value, min_value=None, max_value=None):
@@ -462,7 +501,9 @@ async def api_remove_password(
 ):
     temp_path = save_upload(file)
     try:
-        output_path = remove_pdf_password(str(temp_path), password, str(OUTPUT_DIR))
+        output_path = event_log.timed_call(
+            "pdf_unlock", remove_pdf_password, str(temp_path), password, str(OUTPUT_DIR)
+        )
         return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -493,10 +534,16 @@ async def api_convert_to_word(
         if use_ai:
             # @jules: This can be very slow for large PDFs. 
             # We should probably implement a progress bar or background task with polling.
-            output_path = pdf_to_word_ai(str(temp_path), str(OUTPUT_DIR), password)
+            output_path = event_log.timed_call(
+                "pdf_to_word_ai", pdf_to_word_ai, str(temp_path), str(OUTPUT_DIR), password,
+                use_ai=True,
+            )
             message = "Converted to Word with AI Layout Recovery"
         else:
-            output_path = await run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password)
+            output_path = await event_log.timed(
+                "pdf_to_word_standard",
+                run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password),
+            )
             message = "Converted to Word (Standard)"
 
         logger.info("Conversion successful: %s", output_path)
@@ -533,6 +580,11 @@ async def api_convert_to_word_stream(
     with temp_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    # Captured here because the worker runs on a raw thread, where the
+    # middleware's contextvars don't propagate.
+    ctx_country, ctx_session = event_log.get_request_context()
+    op_name = "pdf_to_word_ai" if use_ai else "pdf_to_word_standard"
+
     async def event_stream():
         events = queue_mod.Queue()
 
@@ -542,12 +594,17 @@ async def api_convert_to_word_stream(
         def worker():
             try:
                 if use_ai:
-                    output_path = pdf_to_word_ai(
-                        str(temp_path), str(OUTPUT_DIR), password, progress_callback=progress_cb
+                    output_path = event_log.timed_call(
+                        op_name, pdf_to_word_ai,
+                        str(temp_path), str(OUTPUT_DIR), password, progress_callback=progress_cb,
+                        use_ai=True, country=ctx_country, session_id=ctx_session,
                     )
                     message = "Converted to Word with AI Layout Recovery"
                 else:
-                    output_path = pdf_to_docx(str(temp_path), str(OUTPUT_DIR), password)
+                    output_path = event_log.timed_call(
+                        op_name, pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password,
+                        country=ctx_country, session_id=ctx_session,
+                    )
                     message = "Converted to Word (Standard)"
                 events.put({
                     "event": "complete",
@@ -600,7 +657,10 @@ async def api_extract_pages(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        output_path = await run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password)
+        output_path = await event_log.timed(
+            "page_extract",
+            run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password),
+        )
         return {"status": "success", "message": "Pages extracted", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -630,8 +690,9 @@ async def api_compress_pdf(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        result = await run_in_threadpool(
-            compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None
+        result = await event_log.timed(
+            "pdf_compress",
+            run_in_threadpool(compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None),
         )
         return {
             "status": "success",
@@ -677,8 +738,9 @@ async def api_merge_pdfs(
         if passwords:
             pwd_list = [p if p else None for p in passwords.split(",")]
 
-        output_path = await run_in_threadpool(
-            merge_pdfs, [str(p) for p in temp_paths], str(OUTPUT_DIR), pwd_list
+        output_path = await event_log.timed(
+            "pdf_merge",
+            run_in_threadpool(merge_pdfs, [str(p) for p in temp_paths], str(OUTPUT_DIR), pwd_list),
         )
         return {"status": "success", "message": "PDFs merged", "filename": Path(output_path).name}
     except ValueError as e:
@@ -711,8 +773,11 @@ async def api_add_watermark(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        output_path = await run_in_threadpool(
-            add_watermark, str(temp_path), str(OUTPUT_DIR), text, position, opacity, password or None
+        output_path = await event_log.timed(
+            "pdf_watermark",
+            run_in_threadpool(
+                add_watermark, str(temp_path), str(OUTPUT_DIR), text, position, opacity, password or None
+            ),
         )
         return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
     except ValueError as e:
@@ -743,8 +808,11 @@ async def api_rotate_pdf(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        output_path = await run_in_threadpool(
-            rotate_pdf, str(temp_path), str(OUTPUT_DIR), angle, pages or None, password or None
+        output_path = await event_log.timed(
+            "pdf_rotate",
+            run_in_threadpool(
+                rotate_pdf, str(temp_path), str(OUTPUT_DIR), angle, pages or None, password or None
+            ),
         )
         return {"status": "success", "message": f"PDF rotated by {angle}°", "filename": Path(output_path).name}
     except ValueError as e:
@@ -775,8 +843,11 @@ async def api_pdf_to_images(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        result = await run_in_threadpool(
-            pdf_to_images_zip, str(temp_path), str(OUTPUT_DIR), dpi, fmt, password or None
+        result = await event_log.timed(
+            "pdf_to_images",
+            run_in_threadpool(
+                pdf_to_images_zip, str(temp_path), str(OUTPUT_DIR), dpi, fmt, password or None
+            ),
         )
         return {
             "status": "success",
@@ -822,8 +893,11 @@ async def api_sign_pdf(
         with sig_path.open("wb") as buffer:
             shutil.copyfileobj(signature.file, buffer)
 
-        output_path = await run_in_threadpool(
-            sign_pdf, str(pdf_path), str(sig_path), str(OUTPUT_DIR), page, x, y, width, password or None
+        output_path = await event_log.timed(
+            "pdf_sign",
+            run_in_threadpool(
+                sign_pdf, str(pdf_path), str(sig_path), str(OUTPUT_DIR), page, x, y, width, password or None
+            ),
         )
         return {"status": "success", "message": "Signature added", "filename": Path(output_path).name}
     except ValueError as e:
@@ -855,7 +929,9 @@ async def api_heic_to_jpeg(
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        output_path = heic_to_jpeg(str(temp_path), str(OUTPUT_DIR), quality)
+        output_path = event_log.timed_call(
+            "heic_to_jpeg", heic_to_jpeg, str(temp_path), str(OUTPUT_DIR), quality
+        )
         return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
     except Exception as e:
         logger.exception("HEIC conversion failed for %s", safe_filename)
@@ -893,9 +969,11 @@ async def api_resize_image(
             shutil.copyfileobj(file.file, buffer)
         
         from scripts.image_utils import resize_image
-        output_path = resize_image(
-            str(temp_path), 
-            str(OUTPUT_DIR), 
+        output_path = event_log.timed_call(
+            "resize",
+            resize_image,
+            str(temp_path),
+            str(OUTPUT_DIR),
             mode,
             width=width,
             height=height,
@@ -936,9 +1014,11 @@ async def api_crop_image(
             shutil.copyfileobj(file.file, buffer)
         
         from scripts.image_utils import crop_image
-        output_path = crop_image(
-            str(temp_path), 
-            str(OUTPUT_DIR), 
+        output_path = event_log.timed_call(
+            "crop",
+            crop_image,
+            str(temp_path),
+            str(OUTPUT_DIR),
             x=x, y=y, width=width, height=height
         )
         return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
@@ -965,7 +1045,10 @@ async def api_rotate_image(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(rotate_image, str(temp_path), str(OUTPUT_DIR), angle, quality)
+        output_path = await event_log.timed(
+            "image_rotate",
+            run_in_threadpool(rotate_image, str(temp_path), str(OUTPUT_DIR), angle, quality),
+        )
         return {"status": "success", "message": f"Rotated by {angle}°", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -989,7 +1072,10 @@ async def api_compress_image(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = await run_in_threadpool(compress_image, str(temp_path), str(OUTPUT_DIR), quality)
+        result = await event_log.timed(
+            "image_compress",
+            run_in_threadpool(compress_image, str(temp_path), str(OUTPUT_DIR), quality),
+        )
         return {
             "status": "success",
             "message": "Image compressed",
@@ -1021,8 +1107,9 @@ async def api_convert_image(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(
-            convert_image_format, str(temp_path), str(OUTPUT_DIR), target_format, quality
+        output_path = await event_log.timed(
+            "image_convert",
+            run_in_threadpool(convert_image_format, str(temp_path), str(OUTPUT_DIR), target_format, quality),
         )
         return {"status": "success", "message": f"Converted to {target_format.upper()}", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1050,8 +1137,9 @@ async def api_watermark_image(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(
-            watermark_image, str(temp_path), str(OUTPUT_DIR), text, position, opacity, color
+        output_path = await event_log.timed(
+            "image_watermark",
+            run_in_threadpool(watermark_image, str(temp_path), str(OUTPUT_DIR), text, position, opacity, color),
         )
         return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1076,7 +1164,9 @@ async def api_excel_to_pdf(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(excel_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        output_path = await event_log.timed(
+            "excel_to_pdf", run_in_threadpool(excel_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        )
         return {"status": "success", "message": "Excel converted to PDF", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1099,7 +1189,9 @@ async def api_csv_to_xlsx(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(csv_to_xlsx, str(temp_path), str(OUTPUT_DIR), delimiter)
+        output_path = await event_log.timed(
+            "csv_to_xlsx", run_in_threadpool(csv_to_xlsx, str(temp_path), str(OUTPUT_DIR), delimiter)
+        )
         return {"status": "success", "message": "CSV converted to XLSX", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1122,7 +1214,9 @@ async def api_xlsx_to_csv(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(xlsx_to_csv, str(temp_path), str(OUTPUT_DIR), sheet or None)
+        output_path = await event_log.timed(
+            "xlsx_to_csv", run_in_threadpool(xlsx_to_csv, str(temp_path), str(OUTPUT_DIR), sheet or None)
+        )
         return {"status": "success", "message": "XLSX converted to CSV", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1149,7 +1243,10 @@ async def api_merge_excel(
             with tp.open("wb") as buffer:
                 shutil.copyfileobj(f.file, buffer)
             temp_paths.append(tp)
-        output_path = await run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(OUTPUT_DIR))
+        output_path = await event_log.timed(
+            "excel_merge",
+            run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
+        )
         return {"status": "success", "message": "Excel files merged", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1174,7 +1271,9 @@ async def api_ppt_to_pdf(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(ppt_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        output_path = await event_log.timed(
+            "ppt_to_pdf", run_in_threadpool(ppt_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        )
         return {"status": "success", "message": "PPT converted to PDF (best-effort layout)", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1197,7 +1296,9 @@ async def api_ppt_to_images(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = await run_in_threadpool(ppt_to_images_zip, str(temp_path), str(OUTPUT_DIR), fmt)
+        result = await event_log.timed(
+            "ppt_to_images", run_in_threadpool(ppt_to_images_zip, str(temp_path), str(OUTPUT_DIR), fmt)
+        )
         return {
             "status": "success",
             "message": f"Rendered {result['slide_count']} slide(s)",
@@ -1229,7 +1330,10 @@ async def api_merge_pptx(
             with tp.open("wb") as buffer:
                 shutil.copyfileobj(f.file, buffer)
             temp_paths.append(tp)
-        output_path = await run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(OUTPUT_DIR))
+        output_path = await event_log.timed(
+            "ppt_merge",
+            run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
+        )
         return {"status": "success", "message": "PPTX files merged", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1269,27 +1373,48 @@ async def execute_workflow(
     # Save initial file
     with temp_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
+
+    # Captured here because generate_progress runs while the response streams,
+    # outside the middleware's request context.
+    wf_country, wf_session = event_log.get_request_context()
+
     async def generate_progress():
         """Generator for SSE progress events."""
         current_file = temp_path
-        
+
+        def log_step(step_type, ok, started, config, err=None):
+            event_log.log_event(
+                step_type,
+                success=ok,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                use_ai=bool(config.get('use_ai', False)),
+                error=err,
+                country=wf_country,
+                session_id=wf_session,
+            )
+
+        step_started = None  # non-None only while a step's processing call runs
+
         try:
             # Process each step
             for i, step in enumerate(step_list):
                 step_type = step.get('type')
                 config = step.get('config', {})
                 step_label = step.get('label', step_type)
-                
+
                 # Send "processing" event for this step
                 yield f"data: {json.dumps({'event': 'step_start', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
-                
+
                 logger.debug("Step %d: %s", i+1, step_type)
 
                 # Artificial delay to ensure UI updates are visible
                 import asyncio
                 await asyncio.sleep(1.0)
-                
+
+                # Timing starts after the UI delay so the artificial second
+                # never inflates the logged step duration.
+                step_started = time.perf_counter()
+
                 if step_type == 'remove_password':
                     password = config.get('password', '')
                     if not password:
@@ -1478,15 +1603,20 @@ async def execute_workflow(
                 else:
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
                     return
-                
+
+                log_step(step_type, True, step_started, config)
+                step_started = None
+
                 # Send "completed" event for this step
                 yield f"data: {json.dumps({'event': 'step_complete', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
-            
+
             # Send final success event
             logger.info("Workflow complete: %s", current_file)
             yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
-            
+
         except Exception as e:
+            if step_started is not None:
+                log_step(step_type, False, step_started, config, err=e)
             logger.exception("Workflow failed for %s", safe_filename)
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
         
@@ -1530,9 +1660,12 @@ async def api_protect_pdf(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(
-            protect_pdf, str(temp_path), str(OUTPUT_DIR),
-            user_password, owner_password, allow_print, allow_copy, allow_edit, password or None
+        output_path = await event_log.timed(
+            "pdf_protect",
+            run_in_threadpool(
+                protect_pdf, str(temp_path), str(OUTPUT_DIR),
+                user_password, owner_password, allow_print, allow_copy, allow_edit, password or None
+            ),
         )
         return {"status": "success", "message": "PDF protected with password", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1569,8 +1702,11 @@ async def api_images_to_pdf(
                 shutil.copyfileobj(f.file, buf)
             temp_paths.append(tp)
 
-        output_path = await run_in_threadpool(
-            images_to_pdf, [str(p) for p in temp_paths], str(OUTPUT_DIR), page_size, fit_mode, margin_pt
+        output_path = await event_log.timed(
+            "images_to_pdf",
+            run_in_threadpool(
+                images_to_pdf, [str(p) for p in temp_paths], str(OUTPUT_DIR), page_size, fit_mode, margin_pt
+            ),
         )
         return {"status": "success", "message": f"Created PDF from {len(files)} image(s)", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1601,7 +1737,9 @@ async def api_word_to_pdf(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        output_path = await event_log.timed(
+            "word_to_pdf", run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
+        )
         return {"status": "success", "message": "Word document converted to PDF", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1631,7 +1769,10 @@ async def api_pdf_to_excel(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = await run_in_threadpool(pdf_to_excel, str(temp_path), str(OUTPUT_DIR), password or None)
+        result = await event_log.timed(
+            "pdf_to_excel",
+            run_in_threadpool(pdf_to_excel, str(temp_path), str(OUTPUT_DIR), password or None),
+        )
         return {
             "status": "success",
             "message": f"Extracted {result['tables_found']} table(s) to Excel",
@@ -1668,7 +1809,10 @@ async def api_pdf_to_pptx(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(pdf_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi, password or None)
+        output_path = await event_log.timed(
+            "pdf_to_pptx",
+            run_in_threadpool(pdf_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi, password or None),
+        )
         return {"status": "success", "message": "PDF converted to PowerPoint", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1699,8 +1843,11 @@ async def api_extract_text(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = await run_in_threadpool(
-            extract_text_from_pdf, str(temp_path), str(OUTPUT_DIR), preserve_layout, password or None
+        result = await event_log.timed(
+            "pdf_extract_text",
+            run_in_threadpool(
+                extract_text_from_pdf, str(temp_path), str(OUTPUT_DIR), preserve_layout, password or None
+            ),
         )
         return {
             "status": "success",
@@ -1746,7 +1893,10 @@ async def api_organize_pdf(
         else:
             order = [int(x.strip()) for x in raw.split(",") if x.strip()]
 
-        output_path = await run_in_threadpool(organize_pdf, str(temp_path), str(OUTPUT_DIR), order, password or None)
+        output_path = await event_log.timed(
+            "pdf_organize",
+            run_in_threadpool(organize_pdf, str(temp_path), str(OUTPUT_DIR), order, password or None),
+        )
         return {"status": "success", "message": f"PDF organized ({len(order)} pages in output)", "filename": Path(output_path).name}
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1781,9 +1931,12 @@ async def api_add_page_numbers(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(
-            add_page_numbers, str(temp_path), str(OUTPUT_DIR),
-            position, start_number, font_size, skip_first, fmt, password or None
+        output_path = await event_log.timed(
+            "pdf_add_page_numbers",
+            run_in_threadpool(
+                add_page_numbers, str(temp_path), str(OUTPUT_DIR),
+                position, start_number, font_size, skip_first, fmt, password or None
+            ),
         )
         return {"status": "success", "message": "Page numbers added", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1813,7 +1966,9 @@ async def api_repair_pdf(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        result = await run_in_threadpool(repair_pdf, str(temp_path), str(OUTPUT_DIR))
+        result = await event_log.timed(
+            "pdf_repair", run_in_threadpool(repair_pdf, str(temp_path), str(OUTPUT_DIR))
+        )
         return {
             "status": "success",
             "message": f"PDF repair status: {result['repair_status']}",
@@ -1846,8 +2001,11 @@ async def api_create_pdf_from_text(
 ):
     """Create a new PDF from plain text content."""
     try:
-        output_path = await run_in_threadpool(
-            create_pdf_from_text, str(OUTPUT_DIR), content, title, font_size, page_size, margin_pt
+        output_path = await event_log.timed(
+            "pdf_create_from_text",
+            run_in_threadpool(
+                create_pdf_from_text, str(OUTPUT_DIR), content, title, font_size, page_size, margin_pt
+            ),
         )
         return {"status": "success", "message": "PDF created from text", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1863,7 +2021,9 @@ async def api_create_blank_pdf(
 ):
     """Create a blank PDF with the given number of pages."""
     try:
-        output_path = await run_in_threadpool(create_blank_pdf, str(OUTPUT_DIR), num_pages, page_size)
+        output_path = await event_log.timed(
+            "pdf_create_blank", run_in_threadpool(create_blank_pdf, str(OUTPUT_DIR), num_pages, page_size)
+        )
         return {"status": "success", "message": f"Created blank PDF with {num_pages} page(s)", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1895,8 +2055,9 @@ async def api_annotate_pdf(
         if not isinstance(ann_list, list):
             raise ValueError("annotations must be a JSON array.")
 
-        output_path = await run_in_threadpool(
-            annotate_pdf, str(temp_path), str(OUTPUT_DIR), ann_list, password or None
+        output_path = await event_log.timed(
+            "pdf_annotate",
+            run_in_threadpool(annotate_pdf, str(temp_path), str(OUTPUT_DIR), ann_list, password or None),
         )
         return {"status": "success", "message": f"Added {len(ann_list)} annotation(s)", "filename": Path(output_path).name}
     except (ValueError, _json.JSONDecodeError) as e:
@@ -1933,9 +2094,12 @@ async def api_edit_pdf_metadata(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        output_path = await run_in_threadpool(
-            edit_pdf_metadata, str(temp_path), str(OUTPUT_DIR),
-            title, author, subject, keywords, creator, clear_all, password or None
+        output_path = await event_log.timed(
+            "pdf_edit_metadata",
+            run_in_threadpool(
+                edit_pdf_metadata, str(temp_path), str(OUTPUT_DIR),
+                title, author, subject, keywords, creator, clear_all, password or None
+            ),
         )
         return {"status": "success", "message": "PDF metadata updated", "filename": Path(output_path).name}
     except ValueError as e:
@@ -1962,7 +2126,9 @@ async def api_read_pdf_metadata(
     try:
         with temp_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        metadata = await run_in_threadpool(get_pdf_metadata, str(temp_path), password or None)
+        metadata = await event_log.timed(
+            "pdf_read_metadata", run_in_threadpool(get_pdf_metadata, str(temp_path), password or None)
+        )
         return {"status": "success", "metadata": metadata}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1998,6 +2164,46 @@ async def download_file(filename: str, request: Request, background_tasks: Backg
             background_tasks.add_task(delete_file_after_download, file_path)
         return FileResponse(file_path, filename=safe_filename)
     raise HTTPException(status_code=404, detail="File not found")
+
+# --- Admin: aggregated operation stats from the anonymous event log ---
+# Lives here (not a router module) because this app keeps every route in
+# main.py; scripts/ holds framework-free helpers, so the SQL/aggregation is in
+# scripts/event_log.py. Auth is a plain bearer token against ADMIN_STATS_KEY —
+# fully self-contained, nothing imported from outside public/.
+
+
+@app.get("/admin/stats")
+async def admin_stats(request: Request, since: Optional[str] = None):
+    """Counts, success rate, avg/p95 duration per operation, top countries.
+
+    Requires `Authorization: Bearer <ADMIN_STATS_KEY>`. 503 until the env var
+    is set, 401 on a missing/wrong token. `?since=` accepts an ISO date or
+    datetime (naive values are treated as UTC).
+    """
+    admin_key = os.environ.get("ADMIN_STATS_KEY", "").strip()
+    if not admin_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Stats are not configured on this server (set ADMIN_STATS_KEY).",
+        )
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not hmac.compare_digest(token.strip(), admin_key):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    since_norm = None
+    if since:
+        try:
+            since_norm = event_log.normalize_since(since)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid 'since'; use ISO format like 2026-07-01 or 2026-07-01T12:00:00Z.",
+            )
+    return await run_in_threadpool(event_log.query_stats, since_norm)
+
 
 # --- SEO Routes ---
 # Content pages are static files in static/pages/. Tool pages are server-rendered
