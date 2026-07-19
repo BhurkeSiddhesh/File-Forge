@@ -7,7 +7,11 @@ pytest
 httpx
 rapidocr>=2.0,<3.0
 opencv-python-headless
-docxcompose==1.4.0
+# docxcompose 1.4.0 imports pkg_resources, which modern setuptools (>=81) no
+# longer ships — so it fails to import on Python 3.12 runners. 2.x dropped that
+# import but requires Python >=3.10, so keep the old pin only for 3.9.
+docxcompose==1.4.0; python_version < "3.10"
+docxcompose==2.2.0; python_version >= "3.10"
 setuptools>=69.0
 PyMuPDF>=1.19.0,<1.24.0
 reportlab

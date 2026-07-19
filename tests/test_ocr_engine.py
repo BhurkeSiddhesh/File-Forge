@@ -103,11 +103,15 @@ class TestPaddleOCREngine:
 
 
 class TestGetOcrEngine:
-    def test_rapidocr_backend(self, fake_rapidocr):
+    def test_rapidocr_backend(self, fake_rapidocr, monkeypatch):
+        # DISABLE_AI overrides every backend, so clear it to test selection in
+        # isolation (the CI matrix runs one job with DISABLE_AI=1 in the env).
+        monkeypatch.delenv("DISABLE_AI", raising=False)
         engine = ocr_engine.get_ocr_engine("rapidocr")
         assert isinstance(engine, ocr_engine.RapidOCREngine)
 
     def test_paddle_backend(self, monkeypatch):
+        monkeypatch.delenv("DISABLE_AI", raising=False)
         import scripts.pdf_utils as pdf_utils
         monkeypatch.setattr(pdf_utils, "get_paddle_engine", lambda: MagicMock())
         engine = ocr_engine.get_ocr_engine("paddle")
@@ -116,7 +120,8 @@ class TestGetOcrEngine:
     def test_none_backend_returns_none(self):
         assert ocr_engine.get_ocr_engine("none") is None
 
-    def test_unknown_backend_raises(self):
+    def test_unknown_backend_raises(self, monkeypatch):
+        monkeypatch.delenv("DISABLE_AI", raising=False)
         with pytest.raises(ValueError, match="Unknown OCR_BACKEND"):
             ocr_engine.get_ocr_engine("tesseract")
 
