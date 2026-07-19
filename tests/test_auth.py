@@ -287,3 +287,27 @@ def test_analytics_beacon_substitutes_into_served_page_when_configured(monkeypat
     finally:
         main._render_page.cache_clear()
         main._render_tool_page.cache_clear()
+
+
+def test_root_icon_paths_are_served_not_swallowed_by_slug_catchall():
+    """Regression guard: /favicon.ico and /apple-touch-icon*.png must be
+    registered ahead of the /{slug} catch-all, or they get treated as unknown
+    SEO slugs and 404. Real browsers, bookmark readers and iOS probe these
+    fixed root paths without ever parsing the page's <link rel="icon">.
+    """
+    client = TestClient(app)
+
+    ico = client.get("/favicon.ico")
+    assert ico.status_code == 200
+    assert ico.headers["content-type"] == "image/x-icon"
+    # A real multi-size ICO, not an HTML 404 body that happens to return 200.
+    assert ico.content[:4] == b"\x00\x00\x01\x00"
+
+    for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["content-type"] == "image/png"
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n", path
+
+    # The catch-all itself must still 404 for genuinely unknown slugs.
+    assert client.get("/not-a-real-page").status_code == 404

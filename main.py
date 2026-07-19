@@ -2297,6 +2297,32 @@ async def ads_txt():
     return PlainTextResponse(line + "\n")
 
 
+# Root-path icons. Every page already links /static/favicon.svg, but plenty of
+# clients never parse the HTML and probe these fixed root paths directly —
+# browsers falling back from an unsupported SVG icon, bookmark/feed readers, and
+# iOS when a page is added to the home screen. Serving them here (rather than
+# adding a <link> to all eight templates) covers the home page, all tool pages
+# and all content pages at once. Must stay above the /{slug} catch-all below,
+# which would otherwise swallow these as unknown slugs and 404.
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    return FileResponse(
+        BASE_DIR / "static" / "favicon.ico",
+        media_type="image/x-icon",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+async def apple_touch_icon():
+    return FileResponse(
+        BASE_DIR / "static" / "apple-touch-icon.png",
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 @app.get("/{slug}", response_class=HTMLResponse)
 async def serve_seo_page(slug: str):
     if slug in TOOL_PAGES:
