@@ -1109,7 +1109,12 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
              "--outdir", str(output_dir), str(input_file)],
             capture_output=True, text=True, timeout=120,
         )
-        if result.returncode == 0 and output_file.exists():
+        # LibreOffice writes "<input stem>.pdf" itself; rename to our branded
+        # name rather than checking for a path it never produces.
+        libreoffice_output = Path(output_dir) / f"{input_file.stem}.pdf"
+        if result.returncode == 0 and libreoffice_output.exists():
+            if libreoffice_output != output_file:
+                libreoffice_output.replace(output_file)
             return str(output_file)
     except Exception:
         pass
@@ -1171,6 +1176,40 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
 
     doc.build(elements)
     return str(output_file)
+
+
+def word_to_pptx(input_path: str, output_dir: str, dpi: int = 150) -> str:
+    """Convert a DOCX/DOC file to a PowerPoint presentation.
+
+    Renders the document to PDF first (via word_to_pdf), then rasterizes each
+    resulting page as a slide image (via pdf_to_pptx) — the same non-editable,
+    image-slide approach pdf_to_pptx already uses for PDF input, so a page's
+    layout survives the trip without needing OCR.
+
+    Args:
+        input_path: Path to the DOCX/DOC/ODT/RTF file.
+        output_dir: Directory to save the PPTX file.
+        dpi: Rendering resolution for each slide image.
+
+    Returns:
+        Path to the converted PPTX file.
+    """
+    input_file = Path(input_path)
+    output_dir_path = Path(output_dir)
+    # word_to_pdf names its output "<original>_forgefiles.org.pdf"; renaming it
+    # to a UUID-prefixed temp name before handing it to pdf_to_pptx lets that
+    # function's own branding recover the true original stem, instead of
+    # branding the already-branded name a second time. input_file may itself
+    # still carry an upload UUID prefix, so strip that first or it survives
+    # as part of the "stem" pdf_to_pptx thinks is the original name.
+    temp_pdf_path = output_dir_path / f"{uuid.uuid4()}_{original_stem(input_file)}.pdf"
+    try:
+        rendered_pdf = word_to_pdf(str(input_file), str(output_dir_path))
+        Path(rendered_pdf).replace(temp_pdf_path)
+        return pdf_to_pptx(str(temp_pdf_path), str(output_dir_path), dpi=dpi)
+    finally:
+        if temp_pdf_path.exists():
+            temp_pdf_path.unlink(missing_ok=True)
 
 
 # ──────────────────────────────────────────────

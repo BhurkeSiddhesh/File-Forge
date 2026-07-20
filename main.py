@@ -39,6 +39,7 @@ from scripts.pdf_utils import (
     protect_pdf,
     images_to_pdf,
     word_to_pdf,
+    word_to_pptx,
     pdf_to_excel,
     pdf_to_pptx,
     extract_text_from_pdf,
@@ -405,6 +406,7 @@ RATE_LIMIT_HEAVY_PATHS = {
     "/api/workflow/execute",
     "/api/pdf/to-excel",
     "/api/pdf/to-pptx",
+    "/api/word/to-pptx",
 }
 
 app.state.rate_limiter = SlidingWindowRateLimiter()
@@ -1585,6 +1587,11 @@ async def execute_workflow(
                     output_path = await run_in_threadpool(word_to_pdf, str(current_file), str(OUTPUT_DIR))
                     current_file = Path(output_path)
 
+                elif step_type == 'word_to_pptx':
+                    dpi = int(config.get('dpi', 150))
+                    output_path = await run_in_threadpool(word_to_pptx, str(current_file), str(OUTPUT_DIR), dpi)
+                    current_file = Path(output_path)
+
                 elif step_type == 'pdf_to_excel':
                     password = config.get('password') or None
                     result = await run_in_threadpool(pdf_to_excel, str(current_file), str(OUTPUT_DIR), password)
@@ -1783,6 +1790,35 @@ async def api_word_to_pdf(
             "word_to_pdf", run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
         )
         return {"status": "success", "message": "Word document converted to PDF", "filename": Path(output_path).name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/word/to-pptx")
+async def api_word_to_pptx(
+    file: UploadFile = File(...),
+    dpi: int = Form(150),
+):
+    """Convert a Word document (DOCX/DOC) to a PowerPoint presentation."""
+    validate_range("dpi", dpi, 30, 600)
+    safe_filename = Path(file.filename.replace("\\", "/")).name
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
+    temp_path = UPLOAD_DIR / unique_filename
+    try:
+        with temp_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        output_path = await event_log.timed(
+            "word_to_pptx", run_in_threadpool(word_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi)
+        )
+        return {"status": "success", "message": "Word document converted to PowerPoint", "filename": Path(output_path).name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:

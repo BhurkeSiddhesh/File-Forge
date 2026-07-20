@@ -1248,6 +1248,8 @@ function addStepToWorkflow(type, label, icon) {
         step.config.password = '';
     } else if (type === 'pdf_to_excel') {
         step.config.password = '';
+    } else if (type === 'word_to_pptx') {
+        step.config.dpi = 150;
     } else if (type === 'pdf_to_pptx') {
         step.config.dpi = 150;
         step.config.password = '';
@@ -1331,7 +1333,7 @@ function needsConfig(type) {
         'remove_password', 'resize_image', 'compress_pdf',
         'rotate_image', 'compress_image', 'convert_image', 'watermark_image',
         'csv_to_xlsx', 'xlsx_to_csv', 'ppt_to_images',
-        'crop_image', 'rotate_pdf', 'protect_pdf', 'pdf_to_excel', 'pdf_to_pptx',
+        'crop_image', 'rotate_pdf', 'protect_pdf', 'pdf_to_excel', 'pdf_to_pptx', 'word_to_pptx',
         'extract_text', 'organize_pdf', 'add_page_numbers', 'annotate_pdf', 'edit_metadata',
     ].includes(type);
 }
@@ -1481,6 +1483,15 @@ function openConfigModal(index) {
         body.innerHTML = `
             <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
             <input type="password" id="config-pdf-to-excel-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'word_to_pptx') {
+        const dpi = step.config.dpi ?? 150;
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Rendering DPI</span>
+            <select id="config-word-to-pptx-dpi">
+                <option value="96" ${dpi == 96 ? 'selected' : ''}>96 DPI (fast)</option>
+                <option value="150" ${dpi == 150 ? 'selected' : ''}>150 DPI (balanced)</option>
+                <option value="300" ${dpi == 300 ? 'selected' : ''}>300 DPI (high quality)</option>
+            </select></label>`;
     } else if (step.type === 'pdf_to_pptx') {
         const dpi = step.config.dpi ?? 150;
         body.innerHTML = `
@@ -1612,6 +1623,8 @@ function saveStepConfig() {
         step.config.password = document.getElementById('config-protect-password').value;
     } else if (step.type === 'pdf_to_excel') {
         step.config.password = document.getElementById('config-pdf-to-excel-password').value;
+    } else if (step.type === 'word_to_pptx') {
+        step.config.dpi = parseInt(document.getElementById('config-word-to-pptx-dpi').value) || 150;
     } else if (step.type === 'pdf_to_pptx') {
         step.config.dpi = parseInt(document.getElementById('config-pdf-to-pptx-dpi').value) || 150;
         step.config.password = document.getElementById('config-pdf-to-pptx-password').value;
@@ -2539,6 +2552,7 @@ async function processWordAction(url, statusText, formData) {
 
 document.getElementById('word-to-pdf-btn')?.addEventListener('click', () => {
     if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    document.getElementById('word-to-pptx-area')?.classList.add('hidden');
     document.getElementById('word-to-pdf-area').classList.remove('hidden');
 });
 document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', () => {
@@ -2546,6 +2560,21 @@ document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', ()
     const fd = new FormData();
     fd.append('file', selectedWordFile);
     processWordAction('/api/word/to-pdf', 'Converting Word to PDF...', fd);
+});
+
+// --- Word to PowerPoint ---
+document.getElementById('word-to-pptx-btn')?.addEventListener('click', () => {
+    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    document.getElementById('word-to-pdf-area')?.classList.add('hidden');
+    document.getElementById('word-to-pptx-area').classList.remove('hidden');
+});
+document.getElementById('process-word-to-pptx-btn')?.addEventListener('click', () => {
+    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    const dpi = document.getElementById('word-to-pptx-dpi').value;
+    const fd = new FormData();
+    fd.append('file', selectedWordFile);
+    fd.append('dpi', dpi);
+    processWordAction('/api/word/to-pptx', 'Converting Word to PowerPoint...', fd);
 });
 
 // --- Image to PDF ---

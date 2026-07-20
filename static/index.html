@@ -1068,11 +1068,28 @@
                                 <p>Convert DOCX to a PDF document</p>
                             </div>
                         </div>
+                        <div class="action-card" id="word-to-pptx-btn" role="button" tabindex="0">
+                            <i class="fas fa-file-powerpoint"></i>
+                            <div class="action-text">
+                                <h4>Word → PowerPoint</h4>
+                                <p>Convert pages to a presentation</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="word-to-pdf-area" class="password-area hidden">
                         <p class="helper-text">Convert your Word document to PDF:</p>
                         <button id="process-word-to-pdf-btn" class="primary-btn">Convert to PDF</button>
+                    </div>
+
+                    <div id="word-to-pptx-area" class="password-area hidden">
+                        <p class="helper-text">Convert each page to a presentation slide:</p>
+                        <select id="word-to-pptx-dpi" aria-label="Quality">
+                            <option value="96">96 DPI (fast)</option>
+                            <option value="150" selected>150 DPI (balanced)</option>
+                            <option value="200">200 DPI (high quality)</option>
+                        </select>
+                        <button id="process-word-to-pptx-btn" class="primary-btn">Convert to PPTX</button>
                     </div>
 
                     <div id="word-status-display" class="status-display hidden">
@@ -1213,6 +1230,11 @@
                                 data-step-label="Word to PDF" data-step-icon="fa-file-pdf" role="button" tabindex="0" aria-label="Add Word to PDF step">
                                 <i class="fas fa-file-pdf"></i>
                                 <span>Word → PDF</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="word_to_pptx"
+                                data-step-label="Word to PowerPoint" data-step-icon="fa-file-powerpoint" role="button" tabindex="0" aria-label="Add Word to PowerPoint step">
+                                <i class="fas fa-file-powerpoint"></i>
+                                <span>Word → PowerPoint</span>
                             </div>
                             <div class="step-item" draggable="true" data-step-type="pdf_to_excel"
                                 data-step-label="PDF to Excel" data-step-icon="fa-file-excel" role="button" tabindex="0" aria-label="Add PDF to Excel step">
