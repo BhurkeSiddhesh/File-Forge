@@ -1047,7 +1047,7 @@ def render_tool_page(slug: str) -> str:
         <p>{_related_html(page['related'])}</p>
 
         <footer class="page-footer">
-            <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>
+            <a href="/">Home</a> · <a href="/blog">Guides</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>
             · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a
                 href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
         </footer>

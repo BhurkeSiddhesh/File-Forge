@@ -70,6 +70,7 @@ from scripts.ppt_utils import (
     merge_pptx,
 )
 from scripts import seo_content
+from scripts import blog_content
 from scripts import event_log
 
 PROD = os.environ.get("ENV") == "production"
@@ -2279,6 +2280,9 @@ async def sitemap_xml():
     # (loc, changefreq, priority)
     entries = [(BASE_URL + "/", "daily", "1.0")]
     entries += [(f"{BASE_URL}/{slug}", "weekly", "0.8") for slug in TOOL_PAGES]
+    entries += [(f"{BASE_URL}/blog", "weekly", "0.6")]
+    entries += [(f"{BASE_URL}/blog/{slug}", "monthly", "0.6")
+                for slug in blog_content.guide_slugs()]
     entries += [(f"{BASE_URL}/{slug}", "monthly", "0.5") for slug in CONTENT_PAGES]
     items = "\n".join(
         f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
@@ -2340,6 +2344,12 @@ async def llms_txt():
             lines.append(f"- [{name}]({BASE_URL}/{slug}): {page.get('meta', '')}")
         lines.append("")
 
+    lines += ["## Guides", ""]
+    for slug in blog_content.guide_slugs():
+        g = blog_content.GUIDES[slug]
+        lines.append(f"- [{g['h1']}]({BASE_URL}/blog/{slug}): {g['meta']}")
+    lines.append("")
+
     lines += ["## About", ""]
     lines += [f"- [{slug.title()}]({BASE_URL}/{slug})" for slug in CONTENT_PAGES]
     lines.append("")
@@ -2379,6 +2389,21 @@ async def apple_touch_icon():
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=604800"},
     )
+
+
+# --- Blog / guides (long-tail SEO content) ---------------------------------
+# Registered ABOVE the /{slug} catch-all so "/blog" isn't swallowed as an unknown
+# tool slug. "/blog/{slug}" is two segments so it never collides with /{slug}.
+@app.get("/blog", response_class=HTMLResponse)
+async def serve_blog_index():
+    return HTMLResponse(_substitute(blog_content.render_blog_index()))
+
+
+@app.get("/blog/{slug}", response_class=HTMLResponse)
+async def serve_blog_guide(slug: str):
+    if slug in blog_content.GUIDES:
+        return HTMLResponse(_substitute(blog_content.render_guide(slug)))
+    raise HTTPException(status_code=404, detail="Guide not found")
 
 
 @app.get("/{slug}", response_class=HTMLResponse)
