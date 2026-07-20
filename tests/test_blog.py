@@ -67,6 +67,15 @@ def test_guides_in_sitemap_and_llms():
 
 
 # --- per-tool extended content (tool_extra) --------------------------------
+def test_every_tool_has_extended_content():
+    """All tool pages carry unique tool_extra content (no page left with only the
+    shared boilerplate)."""
+    from scripts import tool_extra
+
+    missing = [slug for slug in TOOL_PAGES if slug not in tool_extra.EXTRA]
+    assert not missing, f"tools missing extended content: {missing}"
+
+
 def test_tool_extra_slugs_and_links_are_valid():
     """Every tool_extra entry keys a real tool, and its internal links resolve."""
     import re
