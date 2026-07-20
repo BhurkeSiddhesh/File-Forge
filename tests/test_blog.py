@@ -64,3 +64,26 @@ def test_guides_in_sitemap_and_llms():
     for slug in blog_content.guide_slugs():
         assert f"/blog/{slug}</loc>" in sitemap
         assert f"/blog/{slug}" in llms
+
+
+# --- per-tool extended content (tool_extra) --------------------------------
+def test_tool_extra_slugs_and_links_are_valid():
+    """Every tool_extra entry keys a real tool, and its internal links resolve."""
+    import re
+    from scripts import tool_extra, blog_content
+
+    for slug, html in tool_extra.EXTRA.items():
+        assert slug in TOOL_PAGES, slug
+        for href in re.findall(r'href="/([a-z0-9-]+)"', html):
+            assert href in TOOL_PAGES or href == "blog", (slug, href)
+        for href in re.findall(r'href="/blog/([a-z0-9-]+)"', html):
+            assert href in blog_content.GUIDES, (slug, href)
+
+
+def test_enhanced_tool_pages_render_extra_section():
+    from scripts import seo_content, tool_extra
+
+    for slug in tool_extra.EXTRA:
+        body = seo_content.render_tool_page(slug)
+        # the extra block's leading text appears in the rendered page
+        assert tool_extra.EXTRA[slug].strip().split("\n", 1)[0].strip() in body, slug

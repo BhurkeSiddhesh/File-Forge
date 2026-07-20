@@ -19,6 +19,8 @@ import json
 import re
 from typing import Dict, List, Tuple
 
+from scripts.tool_extra import extra_html
+
 # --- constants -------------------------------------------------------------
 
 ASSET_V = "20260623"
@@ -1037,6 +1039,8 @@ def render_tool_page(slug: str) -> str:
         <ul>
 {benefits_html}
         </ul>
+
+{extra_html(slug)}
 
 {_security_section(page)}
 
