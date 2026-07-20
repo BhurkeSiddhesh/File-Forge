@@ -123,11 +123,11 @@ def test_resize_only_height_provided(sample_image, tmp_path):
         assert img.size == (200, 200)
 
 
-def test_resize_output_filename_contains_resized(sample_image, tmp_path):
-    """Output filename contains '_resized' suffix."""
+def test_resize_output_filename_is_branded(sample_image, tmp_path):
+    """Output filename carries the '_forgefiles.org' brand suffix."""
     output_dir = tmp_path / "output_name"
     output_dir.mkdir()
 
     result = resize_image(str(sample_image), str(output_dir), mode='percentage', percentage=50)
 
-    assert "_resized" in Path(result).name
+    assert "_forgefiles.org" in Path(result).name

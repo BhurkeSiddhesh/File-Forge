@@ -18,6 +18,8 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,
 )
 
+from scripts.utils import branded_filename, original_stem
+
 
 def _sanitize_cell(value) -> str:
     if value is None:
@@ -28,7 +30,7 @@ def _sanitize_cell(value) -> str:
 def excel_to_pdf(input_path: str, output_dir: str) -> str:
     """Render every sheet of an .xlsx workbook as a table in a PDF."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     wb = load_workbook(input_file, data_only=True, read_only=True)
     try:
@@ -96,7 +98,7 @@ def excel_to_pdf(input_path: str, output_dir: str) -> str:
 def csv_to_xlsx(input_path: str, output_dir: str, delimiter: str = ",") -> str:
     """Convert a CSV file into a single-sheet .xlsx workbook."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.xlsx"
+    output_file = Path(output_dir) / branded_filename(input_file, "xlsx")
 
     delimiter = delimiter or ","
     # Normalize the literal "\t" escape to a real tab BEFORE validating length,
@@ -109,7 +111,7 @@ def csv_to_xlsx(input_path: str, output_dir: str, delimiter: str = ",") -> str:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = input_file.stem[:31] or "Sheet1"
+    ws.title = original_stem(input_file)[:31] or "Sheet1"
 
     with input_file.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f, delimiter=delimiter)
@@ -137,7 +139,7 @@ def xlsx_to_csv(input_path: str, output_dir: str, sheet: str = None) -> str:
 
         # Sanitize sheet name for filename use.
         safe_label = "".join(c for c in sheet_label if c.isalnum() or c in "-_") or "sheet"
-        output_file = Path(output_dir) / f"{input_file.stem}_{safe_label}.csv"
+        output_file = Path(output_dir) / branded_filename(input_file, "csv")
 
         with output_file.open("w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
@@ -180,7 +182,7 @@ def merge_excel_files(input_paths: List[str], output_dir: str) -> str:
         try:
             for sheet_name in wb.sheetnames:
                 src_ws = wb[sheet_name]
-                target_name = unique_name(f"{src.stem}_{sheet_name}")
+                target_name = unique_name(f"{original_stem(src)}_{sheet_name}")
                 dst_ws = out_wb.create_sheet(target_name)
                 for row in src_ws.iter_rows(values_only=True):
                     dst_ws.append(list(row))

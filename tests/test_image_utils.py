@@ -67,7 +67,7 @@ def test_heic_to_jpeg_output_filename(sample_heic, tmp_path):
     output_dir.mkdir()
     
     result = heic_to_jpeg(str(sample_heic), str(output_dir))
-    
-    # Should have same stem as input but with .jpg extension
-    assert Path(result).stem == sample_heic.stem
+
+    # Should be branded with the original stem plus the forgefiles.org suffix
+    assert Path(result).stem == f"{sample_heic.stem}_forgefiles.org"
     assert Path(result).suffix == '.jpg'

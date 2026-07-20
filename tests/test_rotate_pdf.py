@@ -137,7 +137,7 @@ class TestRotatePDFFunction:
         result = rotate_pdf(str(multi_page_pdf), str(output_dir), 90)
         filename = Path(result).name
 
-        assert "_rotated.pdf" in filename
+        assert "_forgefiles.org.pdf" in filename
 
     def test_rotate_pdf_page_count_preserved(self, multi_page_pdf, tmp_path):
         """Test that page count is preserved after rotation."""
@@ -227,7 +227,7 @@ class TestRotatePDFAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert "rotated" in data["filename"]
+        assert "forgefiles.org" in data["filename"]
         assert data["message"] == "PDF rotated by 90°"
 
     def test_api_rotate_pdf_180_degrees(self, auth_client, multi_page_pdf):

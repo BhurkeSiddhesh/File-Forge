@@ -141,7 +141,7 @@ class TestProtectPDF:
         out.mkdir()
         result = protect_pdf(str(simple_pdf), str(out), user_password=_TEST_PW)
         assert Path(result).exists()
-        assert "_protected.pdf" in result
+        assert "_forgefiles.org.pdf" in result
 
     def test_protected_pdf_requires_password(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
@@ -413,7 +413,7 @@ class TestExtractText:
         out = tmp_path / "out"
         out.mkdir()
         result = extract_text_from_pdf(str(simple_pdf), str(out))
-        assert "_text.txt" in result["output_path"]
+        assert "_forgefiles.org.txt" in result["output_path"]
 
 
 # ──────────────────────────────────────────────
@@ -458,7 +458,7 @@ class TestOrganizePDF:
         out = tmp_path / "out"
         out.mkdir()
         result = organize_pdf(str(multi_page_pdf), str(out), page_order=[1, 2])
-        assert "_organized.pdf" in result
+        assert "_forgefiles.org.pdf" in result
 
     def test_single_page_extract(self, multi_page_pdf, tmp_path):
         out = tmp_path / "out"
@@ -484,7 +484,7 @@ class TestAddPageNumbers:
         out.mkdir()
         result = add_page_numbers(str(multi_page_pdf), str(out))
         assert Path(result).exists()
-        assert "_numbered.pdf" in result
+        assert "_forgefiles.org.pdf" in result
 
     def test_page_count_preserved(self, multi_page_pdf, tmp_path):
         out = tmp_path / "out"
@@ -568,7 +568,7 @@ class TestRepairPDF:
         out = tmp_path / "out"
         out.mkdir()
         result = repair_pdf(str(simple_pdf), str(out))
-        assert "_repaired.pdf" in result["output_path"]
+        assert "_forgefiles.org.pdf" in result["output_path"]
 
     def test_repair_preserves_pages(self, multi_page_pdf, tmp_path):
         out = tmp_path / "out"
@@ -695,7 +695,7 @@ class TestAnnotatePDF:
         anns = [self._make_annot("highlight")]
         result = annotate_pdf(str(simple_pdf), str(out), anns)
         assert Path(result).exists()
-        assert "_annotated.pdf" in result
+        assert "_forgefiles.org.pdf" in result
 
     def test_underline_annotation(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
@@ -841,7 +841,7 @@ class TestPDFMetadata:
         out = tmp_path / "out"
         out.mkdir()
         result = edit_pdf_metadata(str(simple_pdf), str(out), title="Test")
-        assert "_metadata.pdf" in result
+        assert "_forgefiles.org.pdf" in result
 
     def test_get_metadata_page_count(self, multi_page_pdf, tmp_path):
         meta = get_pdf_metadata(str(multi_page_pdf))

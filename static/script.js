@@ -1233,6 +1233,51 @@ function addStepToWorkflow(type, label, icon) {
         step.config.percentage = 50;
     } else if (type === 'compress_pdf') {
         step.config.level = 'medium';
+    } else if (type === 'crop_image') {
+        step.config.x = 0;
+        step.config.y = 0;
+        step.config.width = 100;
+        step.config.height = 100;
+    } else if (type === 'rotate_pdf') {
+        step.config.angle = 90;
+        step.config.pages = '';
+        step.config.password = '';
+    } else if (type === 'protect_pdf') {
+        step.config.user_password = '';
+        step.config.owner_password = '';
+        step.config.password = '';
+    } else if (type === 'pdf_to_excel') {
+        step.config.password = '';
+    } else if (type === 'pdf_to_pptx') {
+        step.config.dpi = 150;
+        step.config.password = '';
+    } else if (type === 'extract_text') {
+        step.config.preserve_layout = false;
+        step.config.password = '';
+    } else if (type === 'organize_pdf') {
+        step.config.page_order = '';
+        step.config.password = '';
+    } else if (type === 'add_page_numbers') {
+        step.config.position = 'bottom-center';
+        step.config.fmt = 'decimal';
+        step.config.start_number = 1;
+        step.config.font_size = 12;
+        step.config.skip_first = 0;
+        step.config.password = '';
+    } else if (type === 'annotate_pdf') {
+        step.config.annot_type = 'highlight';
+        step.config.page = 1;
+        step.config.rect = '50,700,300,730';
+        step.config.content = '';
+        step.config.password = '';
+    } else if (type === 'edit_metadata') {
+        step.config.title = '';
+        step.config.author = '';
+        step.config.subject = '';
+        step.config.keywords = '';
+        step.config.creator = '';
+        step.config.clear_all = false;
+        step.config.password = '';
     }
 
     workflowSteps.push(step);
@@ -1286,6 +1331,8 @@ function needsConfig(type) {
         'remove_password', 'resize_image', 'compress_pdf',
         'rotate_image', 'compress_image', 'convert_image', 'watermark_image',
         'csv_to_xlsx', 'xlsx_to_csv', 'ppt_to_images',
+        'crop_image', 'rotate_pdf', 'protect_pdf', 'pdf_to_excel', 'pdf_to_pptx',
+        'extract_text', 'organize_pdf', 'add_page_numbers', 'annotate_pdf', 'edit_metadata',
     ].includes(type);
 }
 
@@ -1398,6 +1445,120 @@ function openConfigModal(index) {
                 <option value="png" ${f === 'png' ? 'selected' : ''}>PNG</option>
                 <option value="jpg" ${f === 'jpg' ? 'selected' : ''}>JPG</option>
             </select></label>`;
+    } else if (step.type === 'crop_image') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">X</span>
+            <input type="number" id="config-crop-x" min="0" value="${step.config.x ?? 0}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Y</span>
+            <input type="number" id="config-crop-y" min="0" value="${step.config.y ?? 0}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Width</span>
+            <input type="number" id="config-crop-width" min="1" value="${step.config.width ?? 100}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Height</span>
+            <input type="number" id="config-crop-height" min="1" value="${step.config.height ?? 100}"></label>`;
+    } else if (step.type === 'rotate_pdf') {
+        const a = step.config.angle ?? 90;
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Rotation angle</span>
+            <select id="config-rotate-pdf-angle">
+                <option value="90" ${a == 90 ? 'selected' : ''}>90°</option>
+                <option value="180" ${a == 180 ? 'selected' : ''}>180°</option>
+                <option value="270" ${a == 270 ? 'selected' : ''}>270°</option>
+                <option value="-90" ${a == -90 ? 'selected' : ''}>-90°</option>
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Pages (blank = all, e.g. "1,3-5")</span>
+            <input type="text" id="config-rotate-pdf-pages" value="${escapeAttr(step.config.pages)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-rotate-pdf-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'protect_pdf') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">New password (required)</span>
+            <input type="password" id="config-protect-user-password" value="${escapeAttr(step.config.user_password)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Owner password (optional)</span>
+            <input type="password" id="config-protect-owner-password" value="${escapeAttr(step.config.owner_password)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if already protected)</span>
+            <input type="password" id="config-protect-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'pdf_to_excel') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-pdf-to-excel-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'pdf_to_pptx') {
+        const dpi = step.config.dpi ?? 150;
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Rendering DPI</span>
+            <select id="config-pdf-to-pptx-dpi">
+                <option value="96" ${dpi == 96 ? 'selected' : ''}>96 DPI (fast)</option>
+                <option value="150" ${dpi == 150 ? 'selected' : ''}>150 DPI (balanced)</option>
+                <option value="300" ${dpi == 300 ? 'selected' : ''}>300 DPI (high quality)</option>
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-pdf-to-pptx-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'extract_text') {
+        body.innerHTML = `
+            <label><input type="checkbox" id="config-extract-text-preserve" ${step.config.preserve_layout ? 'checked' : ''}>
+            <span>Preserve original layout</span></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-extract-text-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'organize_pdf') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Page order (comma-separated, e.g. "3,1,2"; repeat to duplicate, omit to delete)</span>
+            <input type="text" id="config-organize-page-order" value="${escapeAttr(step.config.page_order)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-organize-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'add_page_numbers') {
+        const pos = step.config.position || 'bottom-center';
+        const fmt = step.config.fmt || 'decimal';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Position</span>
+            <select id="config-pagenum-position">
+                ${['bottom-center','bottom-left','bottom-right','top-center','top-left','top-right']
+                    .map(p => `<option value="${p}" ${p === pos ? 'selected' : ''}>${p}</option>`).join('')}
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Number format</span>
+            <select id="config-pagenum-fmt">
+                <option value="decimal" ${fmt === 'decimal' ? 'selected' : ''}>1, 2, 3 ...</option>
+                <option value="roman" ${fmt === 'roman' ? 'selected' : ''}>I, II, III ...</option>
+                <option value="alpha" ${fmt === 'alpha' ? 'selected' : ''}>A, B, C ...</option>
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Start number</span>
+            <input type="number" id="config-pagenum-start" min="1" value="${step.config.start_number ?? 1}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Font size</span>
+            <input type="number" id="config-pagenum-fontsize" min="6" max="48" value="${step.config.font_size ?? 12}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Skip first N pages</span>
+            <input type="number" id="config-pagenum-skip" min="0" value="${step.config.skip_first ?? 0}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-pagenum-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'annotate_pdf') {
+        const t = step.config.annot_type || 'highlight';
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Annotation type</span>
+            <select id="config-annotate-type">
+                ${['highlight','underline','strikeout','note','text','redact']
+                    .map(v => `<option value="${v}" ${v === t ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Page number</span>
+            <input type="number" id="config-annotate-page" min="1" value="${step.config.page ?? 1}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Rect (x0,y0,x1,y1 in PDF points)</span>
+            <input type="text" id="config-annotate-rect" value="${escapeAttr(step.config.rect)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Note/text content (for Note/Text types)</span>
+            <input type="text" id="config-annotate-content" value="${escapeAttr(step.config.content)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-annotate-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'edit_metadata') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Title</span>
+            <input type="text" id="config-metadata-title" value="${escapeAttr(step.config.title)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Author</span>
+            <input type="text" id="config-metadata-author" value="${escapeAttr(step.config.author)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Subject</span>
+            <input type="text" id="config-metadata-subject" value="${escapeAttr(step.config.subject)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Keywords</span>
+            <input type="text" id="config-metadata-keywords" value="${escapeAttr(step.config.keywords)}"></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Creator</span>
+            <input type="text" id="config-metadata-creator" value="${escapeAttr(step.config.creator)}"></label>
+            <label><input type="checkbox" id="config-metadata-clear-all" ${step.config.clear_all ? 'checked' : ''}>
+            <span>Clear all metadata</span></label>
+            <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-metadata-password" value="${escapeAttr(step.config.password)}"></label>`;
     }
 
     modal.classList.remove('hidden');
@@ -1436,10 +1597,94 @@ function saveStepConfig() {
         step.config.sheet = document.getElementById('config-sheet').value;
     } else if (step.type === 'ppt_to_images') {
         step.config.fmt = document.getElementById('config-fmt').value;
+    } else if (step.type === 'crop_image') {
+        step.config.x = parseInt(document.getElementById('config-crop-x').value) || 0;
+        step.config.y = parseInt(document.getElementById('config-crop-y').value) || 0;
+        step.config.width = parseInt(document.getElementById('config-crop-width').value) || 100;
+        step.config.height = parseInt(document.getElementById('config-crop-height').value) || 100;
+    } else if (step.type === 'rotate_pdf') {
+        step.config.angle = parseInt(document.getElementById('config-rotate-pdf-angle').value) || 90;
+        step.config.pages = document.getElementById('config-rotate-pdf-pages').value;
+        step.config.password = document.getElementById('config-rotate-pdf-password').value;
+    } else if (step.type === 'protect_pdf') {
+        step.config.user_password = document.getElementById('config-protect-user-password').value;
+        step.config.owner_password = document.getElementById('config-protect-owner-password').value;
+        step.config.password = document.getElementById('config-protect-password').value;
+    } else if (step.type === 'pdf_to_excel') {
+        step.config.password = document.getElementById('config-pdf-to-excel-password').value;
+    } else if (step.type === 'pdf_to_pptx') {
+        step.config.dpi = parseInt(document.getElementById('config-pdf-to-pptx-dpi').value) || 150;
+        step.config.password = document.getElementById('config-pdf-to-pptx-password').value;
+    } else if (step.type === 'extract_text') {
+        step.config.preserve_layout = document.getElementById('config-extract-text-preserve').checked;
+        step.config.password = document.getElementById('config-extract-text-password').value;
+    } else if (step.type === 'organize_pdf') {
+        step.config.page_order = document.getElementById('config-organize-page-order').value;
+        step.config.password = document.getElementById('config-organize-password').value;
+    } else if (step.type === 'add_page_numbers') {
+        step.config.position = document.getElementById('config-pagenum-position').value;
+        step.config.fmt = document.getElementById('config-pagenum-fmt').value;
+        step.config.start_number = parseInt(document.getElementById('config-pagenum-start').value) || 1;
+        step.config.font_size = parseInt(document.getElementById('config-pagenum-fontsize').value) || 12;
+        step.config.skip_first = parseInt(document.getElementById('config-pagenum-skip').value) || 0;
+        step.config.password = document.getElementById('config-pagenum-password').value;
+    } else if (step.type === 'annotate_pdf') {
+        step.config.annot_type = document.getElementById('config-annotate-type').value;
+        step.config.page = parseInt(document.getElementById('config-annotate-page').value) || 1;
+        step.config.rect = document.getElementById('config-annotate-rect').value;
+        step.config.content = document.getElementById('config-annotate-content').value;
+        step.config.password = document.getElementById('config-annotate-password').value;
+    } else if (step.type === 'edit_metadata') {
+        step.config.title = document.getElementById('config-metadata-title').value;
+        step.config.author = document.getElementById('config-metadata-author').value;
+        step.config.subject = document.getElementById('config-metadata-subject').value;
+        step.config.keywords = document.getElementById('config-metadata-keywords').value;
+        step.config.creator = document.getElementById('config-metadata-creator').value;
+        step.config.clear_all = document.getElementById('config-metadata-clear-all').checked;
+        step.config.password = document.getElementById('config-metadata-password').value;
     }
 
     closeConfigModal();
     renderWorkflowSteps();
+}
+
+// Translates the form-friendly shape a step's config is edited in (e.g. a
+// comma-separated "page_order" string, flat annotation fields) into the
+// shape the /api/workflow/execute dispatcher expects.
+function buildStepConfigPayload(step) {
+    if (step.type === 'organize_pdf') {
+        const pageOrder = (step.config.page_order || '')
+            .split(',')
+            .map(v => parseInt(v.trim(), 10))
+            .filter(v => !isNaN(v));
+        return { page_order: pageOrder, password: step.config.password || null };
+    }
+    if (step.type === 'annotate_pdf') {
+        const rectParts = (step.config.rect || '')
+            .split(',')
+            .map(v => parseFloat(v.trim()))
+            .filter(v => !isNaN(v));
+        const annotation = {
+            type: step.config.annot_type || 'highlight',
+            page: step.config.page || 1,
+            rect: rectParts.length === 4 ? rectParts : [50, 700, 300, 730],
+        };
+        if (step.config.content) annotation.content = step.config.content;
+        return { annotations: [annotation], password: step.config.password || null };
+    }
+    if (step.type === 'edit_metadata') {
+        const blankToNull = v => (v === '' || v == null) ? null : v;
+        return {
+            title: blankToNull(step.config.title),
+            author: blankToNull(step.config.author),
+            subject: blankToNull(step.config.subject),
+            keywords: blankToNull(step.config.keywords),
+            creator: blankToNull(step.config.creator),
+            clear_all: !!step.config.clear_all,
+            password: step.config.password || null,
+        };
+    }
+    return step.config;
 }
 
 async function runWorkflow() {
@@ -1457,6 +1702,14 @@ async function runWorkflow() {
     for (const step of workflowSteps) {
         if (step.type === 'remove_password' && !step.config.password) {
             alert(`Please configure the password for "${step.label}" step.`);
+            return;
+        }
+        if (step.type === 'protect_pdf' && !step.config.user_password) {
+            alert(`Please set a new password for "${step.label}" step.`);
+            return;
+        }
+        if (step.type === 'organize_pdf' && !(step.config.page_order || '').trim()) {
+            alert(`Please set a page order for "${step.label}" step.`);
             return;
         }
     }
@@ -1477,7 +1730,7 @@ async function runWorkflow() {
     formData.append('steps', JSON.stringify(workflowSteps.map(s => ({
         type: s.type,
         label: s.label,
-        config: s.config
+        config: buildStepConfigPayload(s)
     }))));
 
     try {

@@ -13,7 +13,7 @@ def test_remove_pdf_password(locked_pdf, tmp_path):
     output_path = Path(output_path_str)
 
     assert output_path.exists()
-    assert output_path.name == "locked_unlocked.pdf"
+    assert output_path.name == "locked_forgefiles.org.pdf"
 
     # Verify the file can be opened without password
     with pikepdf.open(output_path) as pdf:
@@ -26,7 +26,7 @@ def test_pdf_to_docx(sample_pdf, tmp_path):
 
     assert output_path.exists()
     assert output_path.suffix == ".docx"
-    assert output_path.stem == sample_pdf.stem
+    assert output_path.stem == f"{sample_pdf.stem}_forgefiles.org"
 
 def test_extract_pdf_pages(multi_page_pdf, tmp_path):
     """Test extracting selected pages from a PDF."""
@@ -34,7 +34,7 @@ def test_extract_pdf_pages(multi_page_pdf, tmp_path):
     output_path = Path(output_path_str)
 
     assert output_path.exists()
-    assert output_path.name == "multi_sample_extracted.pdf"
+    assert output_path.name == "multi_sample_forgefiles.org.pdf"
 
     with pikepdf.open(output_path) as pdf:
         assert len(pdf.pages) == 3
@@ -46,7 +46,7 @@ def test_extract_pdf_text_creates_txt_file(sample_pdf, tmp_path):
     output_path = Path(output_path_str)
 
     assert output_path.exists()
-    assert output_path.name == "sample_text.txt"
+    assert output_path.name == "sample_forgefiles.org.txt"
     assert "Hello, this is a test PDF." in output_path.read_text(encoding="utf-8")
 
 

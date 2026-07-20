@@ -6,6 +6,8 @@ from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw, ImageFont
 import pillow_heif
 
+from scripts.utils import branded_filename, original_stem
+
 # Register HEIF opener with Pillow
 pillow_heif.register_heif_opener()
 
@@ -43,7 +45,7 @@ def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
         Path to the converted JPEG file.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.jpg"
+    output_file = Path(output_dir) / branded_filename(input_file, "jpg")
     
     with Image.open(input_file) as img:
         img = _prepare_image(img)
@@ -73,7 +75,7 @@ def resize_image(input_path: str, output_dir: str, mode: str,
         Path to the resized image.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_resized.jpg"
+    output_file = Path(output_dir) / branded_filename(input_file, "jpg")
     
     with Image.open(input_file) as img:
         img = _prepare_image(img)
@@ -191,7 +193,7 @@ def crop_image(input_path: str, output_dir: str,
         Path to the cropped image.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_cropped.jpg"
+    output_file = Path(output_dir) / branded_filename(input_file, "jpg")
     
     with Image.open(input_file) as img:
         img = _prepare_image(img)
@@ -237,7 +239,7 @@ def rotate_image(input_path: str, output_dir: str, angle: float, quality: int = 
     fmt = (input_file.suffix.lower().lstrip(".") or "jpg")
     if fmt not in _FORMAT_EXT:
         fmt = "jpg"
-    output_file = Path(output_dir) / f"{input_file.stem}_rotated.{_FORMAT_EXT[fmt]}"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
 
     with Image.open(input_file) as img:
         img = ImageOps.exif_transpose(img)
@@ -261,7 +263,7 @@ def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
     fmt = input_file.suffix.lower().lstrip(".")
     if fmt not in _FORMAT_EXT:
         fmt = "jpg"
-    output_file = Path(output_dir) / f"{input_file.stem}_compressed.{_FORMAT_EXT[fmt]}"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
 
     original_size = input_file.stat().st_size
     with Image.open(input_file) as img:
@@ -285,7 +287,7 @@ def convert_image_format(input_path: str, output_dir: str, target_format: str, q
         raise ValueError("target_format must be one of: jpg, png, webp.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.{_FORMAT_EXT[target_format]}"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[target_format])
 
     with Image.open(input_file) as img:
         img = ImageOps.exif_transpose(img)
@@ -328,7 +330,7 @@ def watermark_image(
     fmt = input_file.suffix.lower().lstrip(".")
     if fmt not in _FORMAT_EXT:
         fmt = "jpg"
-    output_file = Path(output_dir) / f"{input_file.stem}_watermarked.{_FORMAT_EXT[fmt]}"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
 
     with Image.open(input_file) as img:
         img = ImageOps.exif_transpose(img).convert("RGBA")

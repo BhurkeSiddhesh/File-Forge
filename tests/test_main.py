@@ -132,7 +132,7 @@ def test_api_resize_image(sample_image_file, mock_dirs, auth_client):
     assert response.status_code == 200
     resp_data = response.json()
     assert resp_data["status"] == "success"
-    assert "resized" in resp_data["filename"]
+    assert "forgefiles.org" in resp_data["filename"]
     assert (mock_dirs["output"] / resp_data["filename"]).exists()
 
 
@@ -146,7 +146,7 @@ def test_api_crop_image(sample_image_file, mock_dirs, auth_client):
     assert response.status_code == 200
     resp_data = response.json()
     assert resp_data["status"] == "success"
-    assert "cropped" in resp_data["filename"]
+    assert "forgefiles.org" in resp_data["filename"]
     assert (mock_dirs["output"] / resp_data["filename"]).exists()
 
 def test_download_file_deletes_after_download(sample_pdf, mock_dirs, auth_client) -> None:
@@ -258,7 +258,7 @@ def test_api_extract_text(sample_pdf, mock_dirs, auth_client):
     assert response.status_code == 200
     resp_data = response.json()
     assert resp_data["status"] == "success"
-    assert resp_data["filename"].endswith("_text.txt")
+    assert resp_data["filename"].endswith("_forgefiles.org.txt")
     output_path = mock_dirs["output"] / resp_data["filename"]
     assert output_path.exists()
     assert "Hello, this is a test PDF." in output_path.read_text(encoding="utf-8")
@@ -369,7 +369,7 @@ def test_api_workflow_extract_text_step(sample_pdf, mock_dirs, auth_client):
 
     assert response.status_code == 200
     assert "complete" in response.text
-    assert "_text.txt" in response.text
+    assert "_forgefiles.org.txt" in response.text
 
 
 def test_api_workflow_resize_image_step(sample_image_file, mock_dirs, auth_client):

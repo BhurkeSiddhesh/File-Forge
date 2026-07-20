@@ -75,14 +75,14 @@ def test_crop_negative_y_clamped(sample_crop_image, tmp_path):
         assert img.size == (50, 50)
 
 
-def test_crop_output_filename_contains_cropped(sample_crop_image, tmp_path):
-    """Output filename contains '_cropped' suffix."""
+def test_crop_output_filename_is_branded(sample_crop_image, tmp_path):
+    """Output filename carries the '_forgefiles.org' brand suffix."""
     output_dir = tmp_path / "output_crop_name"
     output_dir.mkdir()
 
     result = crop_image(str(sample_crop_image), str(output_dir), x=0, y=0, width=50, height=50)
 
-    assert "_cropped" in Path(result).name
+    assert "_forgefiles.org" in Path(result).name
 
 
 def test_crop_full_image(sample_crop_image, tmp_path):

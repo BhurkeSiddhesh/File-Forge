@@ -175,7 +175,7 @@ class TestRotatePDFFunction:
         result = rotate_pdf(str(multi_page_pdf), str(output_dir), 90)
         filename = Path(result).name
 
-        assert "_rotated.pdf" in filename
+        assert "_forgefiles.org.pdf" in filename
 
     def test_rotate_pdf_page_count_preserved(self, multi_page_pdf, tmp_path):
         """Test that page count is preserved after rotation."""

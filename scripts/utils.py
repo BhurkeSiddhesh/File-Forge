@@ -4,12 +4,29 @@ Reduces code duplication across the application.
 """
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Callable, Any
 from fastapi import UploadFile, HTTPException
 
 logger = logging.getLogger(__name__)
+
+# Upload temp files are saved as "<uuid4>_<original_filename>" (see main.py); this
+# strips that prefix back off so output filenames reflect what the user uploaded.
+_UPLOAD_UUID_PREFIX_RE = re.compile(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_'
+)
+
+
+def original_stem(input_path) -> str:
+    """Return the uploaded file's original stem, with the temp-file UUID prefix stripped."""
+    return _UPLOAD_UUID_PREFIX_RE.sub("", Path(input_path).stem)
+
+
+def branded_filename(input_path, ext: str) -> str:
+    """Build the public download filename: '<original name>_forgefiles.org.<ext>'."""
+    return f"{original_stem(input_path)}_forgefiles.org.{ext.lstrip('.')}"
 
 
 async def process_uploaded_file(

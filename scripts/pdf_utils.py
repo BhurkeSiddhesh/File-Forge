@@ -6,6 +6,8 @@ from pathlib import Path
 import os
 from typing import List
 
+from scripts.utils import branded_filename, original_stem
+
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,7 @@ def get_paddle_engine():
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
     """Removes password from PDF and saves to output_dir."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_unlocked.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
     
     with pikepdf.open(input_file, password=password) as pdf:
         pdf.save(output_file)
@@ -182,7 +184,7 @@ def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Pat
         if temp_dir is None:
             temp_dir = input_file.parent
         
-        temp_file = temp_dir / f"{input_file.stem}_temp_decrypted.pdf"
+        temp_file = temp_dir / f"{original_stem(input_file)}_temp_decrypted.pdf"
         
         with pikepdf.open(input_file, password=password) as pdf:
             pdf.save(temp_file)
@@ -192,7 +194,7 @@ def _get_decrypted_pdf_path(input_path: str, password: str = None, temp_dir: Pat
 def extract_pdf_pages(input_path: str, output_dir: str, pages: str, password: str = None) -> str:
     """Extract selected pages from PDF and save to output_dir."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_extracted.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -262,7 +264,7 @@ def extract_pdf_text(
 ) -> str:
     """Extract text from a PDF and save it as a .txt file."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_text.txt"
+    output_file = Path(output_dir) / branded_filename(input_file, "txt")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
     doc = None
@@ -304,7 +306,7 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
     from PIL import Image as PILImage
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_compressed.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     # Per-level image targets: smaller max dimension + lower JPEG quality => smaller
     # file. Every level (including 'low') does real image recompression so the
@@ -423,7 +425,7 @@ def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
     from pdf2docx import Converter
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.docx"
+    output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -498,7 +500,7 @@ def add_watermark(
         raise ValueError("Position must be one of: diagonal, top, center, bottom.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_watermarked.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -577,7 +579,7 @@ def pdf_to_images_zip(
     file_ext = "jpg" if fmt in ("jpg", "jpeg") else "png"
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_pages.zip"
+    output_file = Path(output_dir) / branded_filename(input_file, "zip")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -592,7 +594,7 @@ def pdf_to_images_zip(
                         img_bytes = pix.tobytes("jpeg")
                     else:
                         img_bytes = pix.tobytes("png")
-                    arcname = Path(f"{input_file.stem}_page_{i:03d}.{file_ext}").name
+                    arcname = Path(f"{original_stem(input_file)}_page_{i:03d}.{file_ext}").name
                     zf.writestr(arcname, img_bytes)
                     pix = None
         finally:
@@ -638,7 +640,7 @@ def sign_pdf(
         raise ValueError("Signature image not found.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_signed.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -711,7 +713,7 @@ def rotate_pdf(input_path: str, output_dir: str, angle: int, pages: str = None, 
         raise ValueError("Angle must be 90, 180, 270, -90, -180, or -270 degrees.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_rotated.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -906,10 +908,10 @@ def pdf_to_word_ai(input_path: str, output_dir: str, password: str = None,
 
     logger.info("Starting AI conversion for: %s (backend=%s)", input_path, engine.name)
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_recovered.docx"
+    output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
     # Create a temp directory for intermediate files (incl. decrypted copies)
-    temp_dir = Path(output_dir) / f"temp_{input_file.stem}"
+    temp_dir = Path(output_dir) / f"temp_{original_stem(input_file)}"
     temp_dir.mkdir(exist_ok=True)
 
     # Handle encrypted PDFs
@@ -972,7 +974,7 @@ def protect_pdf(
     owner_pw = owner_password or user_password
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_protected.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1098,7 +1100,7 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
     if suffix not in (".docx", ".doc", ".odt", ".rtf"):
         raise ValueError("Input must be a .docx, .doc, .odt, or .rtf file.")
 
-    output_file = Path(output_dir) / f"{input_file.stem}.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     # ── Try LibreOffice first ──────────────────────────────────
     try:
@@ -1191,7 +1193,7 @@ def pdf_to_excel(input_path: str, output_dir: str, password: str = None) -> dict
     import openpyxl
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_tables.xlsx"
+    output_file = Path(output_dir) / branded_filename(input_file, "xlsx")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1261,7 +1263,7 @@ def pdf_to_pptx(
     import io
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.pptx"
+    output_file = Path(output_dir) / branded_filename(input_file, "pptx")
 
     try:
         dpi = int(dpi)
@@ -1330,7 +1332,7 @@ def extract_text_from_pdf(
         dict with output_path and page_count.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_text.txt"
+    output_file = Path(output_dir) / branded_filename(input_file, "txt")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1387,7 +1389,7 @@ def organize_pdf(
         raise ValueError("page_order cannot be empty.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_organized.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1467,7 +1469,7 @@ def add_page_numbers(
         return result
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_numbered.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1534,7 +1536,7 @@ def repair_pdf(input_path: str, output_dir: str) -> dict:
         dict with output_path and repair_status message.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_repaired.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     repair_status = "unknown"
     try:
@@ -1703,7 +1705,7 @@ def annotate_pdf(
         raise ValueError("annotations must be a list.")
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_annotated.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
@@ -1781,7 +1783,7 @@ def edit_pdf_metadata(
         Path to the updated PDF.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_metadata.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 

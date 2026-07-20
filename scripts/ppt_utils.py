@@ -21,6 +21,8 @@ from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.utils import ImageReader
 
+from scripts.utils import branded_filename, original_stem
+
 
 # Render slides at 96 DPI (1 EMU = 1/914400 inch -> 1 EMU = 96/914400 px = 1/9525 px).
 _EMU_PER_PX = 9525
@@ -109,7 +111,7 @@ def ppt_to_images_zip(input_path: str, output_dir: str, fmt: str = "png") -> dic
     file_ext = "png" if fmt == "png" else "jpg"
 
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}_slides.zip"
+    output_file = Path(output_dir) / branded_filename(input_file, "zip")
 
     prs = Presentation(str(input_file))
     slide_count = len(prs.slides)
@@ -122,7 +124,7 @@ def ppt_to_images_zip(input_path: str, output_dir: str, fmt: str = "png") -> dic
                 img.save(buf, pil_fmt, quality=88, optimize=True)
             else:
                 img.save(buf, pil_fmt, optimize=True)
-            arcname = Path(f"{input_file.stem}_slide_{i:03d}.{file_ext}").name
+            arcname = Path(f"{original_stem(input_file)}_slide_{i:03d}.{file_ext}").name
             zf.writestr(arcname, buf.getvalue())
 
     return {"output_path": str(output_file), "slide_count": slide_count}
@@ -131,7 +133,7 @@ def ppt_to_images_zip(input_path: str, output_dir: str, fmt: str = "png") -> dic
 def ppt_to_pdf(input_path: str, output_dir: str) -> str:
     """Render every slide as an image and assemble into a PDF."""
     input_file = Path(input_path)
-    output_file = Path(output_dir) / f"{input_file.stem}.pdf"
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
     prs = Presentation(str(input_file))
     if not list(prs.slides):
