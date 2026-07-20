@@ -207,14 +207,19 @@ class TestRotatePDFFunction:
 
     def test_rotate_pdf_cumulative_rotation(self, multi_page_pdf, tmp_path):
         """Test that multiple rotations accumulate correctly."""
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
+        # Each call gets its own directory — rotate_pdf derives its output name
+        # from the same original stem every time, so re-rotating in place would
+        # have it write over the very file it just read as input.
+        output_dir1 = tmp_path / "output1"
+        output_dir1.mkdir()
+        output_dir2 = tmp_path / "output2"
+        output_dir2.mkdir()
 
         # First rotation: 90 degrees
-        result1 = rotate_pdf(str(multi_page_pdf), str(output_dir), 90)
+        result1 = rotate_pdf(str(multi_page_pdf), str(output_dir1), 90)
 
         # Second rotation: 90 degrees (should be 180 total)
-        result2 = rotate_pdf(result1, str(output_dir), 90)
+        result2 = rotate_pdf(result1, str(output_dir2), 90)
 
         with pikepdf.open(result2) as pdf:
             for page in pdf.pages:
@@ -223,14 +228,16 @@ class TestRotatePDFFunction:
 
     def test_rotate_pdf_full_rotation_back_to_zero(self, multi_page_pdf, tmp_path):
         """Test that 360 degree rotation equals 0 (no rotation)."""
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
+        dirs = [tmp_path / f"output{i}" for i in range(4)]
+        for d in dirs:
+            d.mkdir()
 
-        # Rotate 360 degrees (should equal 0)
-        result = rotate_pdf(str(multi_page_pdf), str(output_dir), 90)
-        result = rotate_pdf(result, str(output_dir), 90)
-        result = rotate_pdf(result, str(output_dir), 90)
-        result = rotate_pdf(result, str(output_dir), 90)
+        # Rotate 360 degrees (should equal 0); a fresh dir per call avoids each
+        # rotation re-deriving the same branded name it just read as input.
+        result = rotate_pdf(str(multi_page_pdf), str(dirs[0]), 90)
+        result = rotate_pdf(result, str(dirs[1]), 90)
+        result = rotate_pdf(result, str(dirs[2]), 90)
+        result = rotate_pdf(result, str(dirs[3]), 90)
 
         with pikepdf.open(result) as pdf:
             for page in pdf.pages:

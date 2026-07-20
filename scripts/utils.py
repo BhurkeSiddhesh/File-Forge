@@ -18,10 +18,18 @@ _UPLOAD_UUID_PREFIX_RE = re.compile(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_'
 )
 
+# A workflow step's output (already carrying this suffix) commonly becomes the
+# next step's input, so stripping only the UUID prefix isn't enough — without
+# also stripping a pre-existing brand suffix, re-branding stacks it every step
+# ("sample_forgefiles.org_forgefiles.org...").
+_BRAND_SUFFIX_RE = re.compile(r'_forgefiles\.org$', re.IGNORECASE)
+
 
 def original_stem(input_path) -> str:
-    """Return the uploaded file's original stem, with the temp-file UUID prefix stripped."""
-    return _UPLOAD_UUID_PREFIX_RE.sub("", Path(input_path).stem)
+    """Return the uploaded file's original stem, with any temp-file UUID prefix
+    and/or pre-existing brand suffix stripped (idempotent across chained steps)."""
+    stem = _UPLOAD_UUID_PREFIX_RE.sub("", Path(input_path).stem)
+    return _BRAND_SUFFIX_RE.sub("", stem)
 
 
 def branded_filename(input_path, ext: str) -> str:

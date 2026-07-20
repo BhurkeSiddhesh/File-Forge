@@ -814,10 +814,13 @@ class TestPDFMetadata:
     def test_clear_all_metadata(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
+        out2 = tmp_path / "out2"
+        out2.mkdir()
         # First set some metadata
         edited = edit_pdf_metadata(str(simple_pdf), str(out), title="ToRemove", author="ToRemove")
-        # Then clear all
-        cleared = edit_pdf_metadata(edited, str(out), clear_all=True)
+        # Then clear all (separate dir — same original stem would otherwise
+        # re-derive the same branded name `edited` was just written to)
+        cleared = edit_pdf_metadata(edited, str(out2), clear_all=True)
         assert Path(cleared).exists()
 
     def test_none_fields_keep_existing(self, simple_pdf, tmp_path):

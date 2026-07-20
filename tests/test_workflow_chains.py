@@ -88,20 +88,28 @@ def test_chain_blank_add_numbers_extract_text(tmp_path):
 # ──────────────────────────────────────────────────────────────
 
 def test_chain_text_compress_protect(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
+    # Each step gets its own directory: a same-extension step's branded output
+    # name is derived from the same original stem every time, so reusing one
+    # directory across chained pdf->pdf steps would have it write over the
+    # very file it just read as input.
+    out1 = tmp_path / "out1"
+    out1.mkdir()
+    out2 = tmp_path / "out2"
+    out2.mkdir()
+    out3 = tmp_path / "out3"
+    out3.mkdir()
 
     # Step 1: create PDF from text
-    text_pdf = create_pdf_from_text(str(out), content="Hello compress and protect chain test.")
+    text_pdf = create_pdf_from_text(str(out1), content="Hello compress and protect chain test.")
     assert Path(text_pdf).exists()
 
     # Step 2: compress
-    compress_result = compress_pdf(text_pdf, str(out))
+    compress_result = compress_pdf(text_pdf, str(out2))
     compressed_path = compress_result["output_path"]
     assert Path(compressed_path).exists()
 
     # Step 3: protect
-    protected_path = protect_pdf(compressed_path, str(out), user_password=_TEST_PW)
+    protected_path = protect_pdf(compressed_path, str(out3), user_password=_TEST_PW)
     assert Path(protected_path).exists()
 
     # Verify it's password protected: opening without password should fail
@@ -157,8 +165,11 @@ def test_chain_multipage_organize_number(tmp_path):
     reordered_path = organize_pdf(str(pdf_file), str(out), page_order=[5, 4, 3, 2, 1])
     assert _page_count(reordered_path) == 5
 
-    # Step 2: add page numbers
-    numbered_path = add_page_numbers(reordered_path, str(out))
+    # Step 2: add page numbers (separate dir — same original stem would
+    # otherwise re-derive the same branded name organize_pdf just wrote to)
+    out2 = tmp_path / "out2"
+    out2.mkdir()
+    numbered_path = add_page_numbers(reordered_path, str(out2))
     assert Path(numbered_path).exists()
     assert _page_count(numbered_path) == 5
 
@@ -168,20 +179,24 @@ def test_chain_multipage_organize_number(tmp_path):
 # ──────────────────────────────────────────────────────────────
 
 def test_chain_create_annotate_metadata(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
+    out1 = tmp_path / "out1"
+    out1.mkdir()
+    out2 = tmp_path / "out2"
+    out2.mkdir()
+    out3 = tmp_path / "out3"
+    out3.mkdir()
 
     # Step 1: create PDF from text
-    pdf_path = create_pdf_from_text(str(out), content="Chain 5: annotation and metadata test.")
+    pdf_path = create_pdf_from_text(str(out1), content="Chain 5: annotation and metadata test.")
     assert Path(pdf_path).exists()
 
     # Step 2: annotate
     annotations = [{"type": "highlight", "page": 1, "rect": [50, 700, 300, 730]}]
-    annotated_path = annotate_pdf(pdf_path, str(out), annotations)
+    annotated_path = annotate_pdf(pdf_path, str(out2), annotations)
     assert Path(annotated_path).exists()
 
     # Step 3: edit metadata
-    meta_path = edit_pdf_metadata(annotated_path, str(out), title="Chain 5 PDF", author="Tester")
+    meta_path = edit_pdf_metadata(annotated_path, str(out3), title="Chain 5 PDF", author="Tester")
     assert Path(meta_path).exists()
 
     # Verify metadata was written
@@ -195,21 +210,25 @@ def test_chain_create_annotate_metadata(tmp_path):
 # ──────────────────────────────────────────────────────────────
 
 def test_chain_word_rotate_protect(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
+    out1 = tmp_path / "out1"
+    out1.mkdir()
+    out2 = tmp_path / "out2"
+    out2.mkdir()
+    out3 = tmp_path / "out3"
+    out3.mkdir()
 
     # Step 1: create a DOCX and convert to PDF
     docx_path = _make_docx(tmp_path)
-    pdf_path = word_to_pdf(str(docx_path), str(out))
+    pdf_path = word_to_pdf(str(docx_path), str(out1))
     assert Path(pdf_path).exists()
     assert _page_count(pdf_path) >= 1
 
     # Step 2: rotate 90 degrees
-    rotated_path = rotate_pdf(pdf_path, str(out), angle=90)
+    rotated_path = rotate_pdf(pdf_path, str(out2), angle=90)
     assert Path(rotated_path).exists()
 
     # Step 3: protect
-    protected_path = protect_pdf(rotated_path, str(out), user_password=_TEST_PW)
+    protected_path = protect_pdf(rotated_path, str(out3), user_password=_TEST_PW)
     assert Path(protected_path).exists()
 
     # Verify password protection

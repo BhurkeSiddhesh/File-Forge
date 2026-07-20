@@ -1656,6 +1656,16 @@ async def execute_workflow(
                 log_step(step_type, True, step_started, config)
                 step_started = None
 
+                # Rename this step's output off its "clean" branded name before the
+                # next step runs. The next step's function derives its own output
+                # name from the same original stem, so — for a same-extension step
+                # (e.g. rotate_pdf after word_to_pdf) — it would otherwise compute
+                # the exact path it's about to read from and fail (or, for tools
+                # without pikepdf's overwrite guard, silently corrupt it).
+                if i < len(step_list) - 1:
+                    intermediate_path = OUTPUT_DIR / f"{uuid.uuid4()}_{current_file.name}"
+                    current_file = current_file.replace(intermediate_path)
+
                 # Send "completed" event for this step
                 yield f"data: {json.dumps({'event': 'step_complete', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
 
