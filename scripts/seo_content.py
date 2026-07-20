@@ -918,43 +918,28 @@ def _related_html(related: List[str]) -> str:
 
 
 def _security_section(page: dict) -> str:
-    """A ~300-word, server-rendered description of File Forge's privacy/security
-    architecture, woven around the specific tool (``page['app']``).
+    """A short, server-rendered privacy note woven around the specific tool
+    (``page['app']``).
 
-    This satisfies the on-page requirement for substantial, human-readable copy
-    underneath the tool canvas — it gives crawlers strong topical + trust signals
-    and is rendered into the *raw* HTML, so JS-less AI crawlers read it too. The
-    tool name is interpolated so the block is not byte-identical across pages.
+    Kept deliberately concise (~90 words). The old version was ~300 words of
+    near-identical prose repeated across all 32 tool pages, which diluted each
+    page's unique content and raised a duplicate-content signal on a young
+    domain. The full privacy architecture now lives on the dedicated /privacy
+    page (linked below); each tool page instead spends its word budget on
+    tool-specific steps/benefits/FAQs. Rendered into raw HTML so JS-less AI
+    crawlers still read it.
     """
     app = page["app"]
-    return f"""        <h2>How {SITE} keeps your {app} files private</h2>
-        <p>When you use the {app} tool, your file is uploaded over an encrypted
-            HTTPS connection and processed on the server, then handed straight back to
-            you. {SITE} is built privacy-first, and — because the entire codebase is
-            open source — every claim on this page is something you can verify line by
-            line or run yourself, rather than a marketing promise you have to take on
-            trust.</p>
-        <h3>Your file is deleted the moment you are done</h3>
-        <p>The file you upload is removed from our server as soon as the {app}
-            operation finishes, and the processed result is deleted the instant you
-            download it. As a safety net, a background sweeper runs continuously and
-            purges anything older than one hour, so nothing of yours lingers on disk.
-            We never build a library of your documents, never resell them, and never
-            train anything on them. There is no hidden retention and no analytics tied
-            to your file contents.</p>
-        <h3>Open source you can audit — or self-host</h3>
-        <p>Most “free” online file tools ask you to trust a closed black box. {SITE}
-            is different: the <a href="{GITHUB}" target="_blank" rel="noopener">complete
-            source code is public on GitHub</a>, so a developer can read exactly how the
-            {app} tool handles uploads, confirm the deletion logic, and even run a
-            private copy on their own machine or server. Verifiable privacy beats a
-            privacy policy you simply have to believe.</p>
-        <h3>No account, no watermark, no upsell</h3>
-        <p>There is no signup, no email wall, and no credit card. {SITE} never stamps
-            a watermark on your output and never caps you at “one free file” before
-            demanding payment. The {app} tool is genuinely free to use as often as you
-            need, on any device with a web browser — no software to install and no
-            extensions to add.</p>"""
+    return f"""        <h2>Is the {app} tool private?</h2>
+        <p>Yes. Your file is uploaded over encrypted HTTPS, processed, handed
+            back, and then <strong>deleted</strong> &mdash; the upload goes the moment the
+            {app} operation finishes and the result the instant you download it, with
+            an hourly sweeper as a backstop. Unlike closed tools that just <em>claim</em>
+            they don't keep your files, {SITE}'s
+            <a href="{GITHUB}" target="_blank" rel="noopener">code is fully open source</a>,
+            so you can verify exactly how the {app} tool handles your data &mdash; or self-host it.
+            No account, no watermark, no upsell. See our
+            <a href="/privacy">privacy details</a> for the full picture.</p>"""
 
 
 # Renders into render_tool_page below, between the benefits and FAQ sections.

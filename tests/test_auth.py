@@ -84,16 +84,22 @@ def test_tool_pages_render_with_full_schema():
 
 
 def test_tool_pages_have_substantial_security_copy():
-    """Each tool page carries the server-rendered security/privacy section (~300+
-    words of human-readable copy under the tool canvas) — strong on-page signal
-    that JS-less AI crawlers can read directly from the raw HTML."""
+    """Each tool page carries a concise server-rendered privacy note (linking to
+    the dedicated /privacy page) plus substantial tool-specific copy. The privacy
+    block is kept short on purpose — it used to be ~300 words of near-identical
+    prose repeated across all 32 pages, which diluted each page's unique content;
+    the word budget now goes to per-tool steps/benefits/FAQs. We still require a
+    healthy total body so JS-less AI crawlers read real content from raw HTML."""
     import re
     from scripts import seo_content
 
     for slug in TOOL_PAGES:
         body = seo_content.render_tool_page(slug)
-        assert "keeps your" in body, f"/{slug} missing security-architecture section"
-        # Word-count the visible copy only (strip tags) and require a healthy body.
+        # Concise privacy section present and pointing at the full /privacy page.
+        assert "tool private?" in body, f"/{slug} missing privacy section"
+        assert 'href="/privacy"' in body, f"/{slug} privacy section missing /privacy link"
+        # Word-count the visible copy only (strip tags) and require a healthy body,
+        # now carried by tool-specific content rather than duplicated boilerplate.
         text = re.sub(r"<[^>]+>", " ", body)
         assert len(text.split()) >= 300, f"/{slug} has too little on-page copy"
 

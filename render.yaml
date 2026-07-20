@@ -11,9 +11,11 @@ services:
         value: "10000"
       - key: DISABLE_AI
         value: "1" # Free tier has 512 MB RAM — remove this (and use plan: starter) to enable AI Layout Recovery
-      # Set your custom domain here so canonicals/sitemap/robots all point to it:
+      # Set your custom domain here so canonicals/sitemap/robots all point to it.
+      # MUST match the live canonical host exactly (www), or canonicals/sitemap
+      # will contradict the served pages. Apex (forgefiles.org) is 301'd to www.
       # - key: BASE_URL
-      #   value: https://forgefiles.org
+      #   value: https://www.forgefiles.org
       # After AdSense approval, serve /ads.txt by setting your publisher line:
       # - key: ADSENSE_ADS_TXT
       #   value: google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

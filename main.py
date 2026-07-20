@@ -108,6 +108,11 @@ app.add_middleware(
 
 # --- Configuration ---
 BASE_URL = os.environ.get("BASE_URL", "https://www.forgefiles.org").rstrip("/")
+# Stable sitemap <lastmod>. Tool/content pages are static, so reporting today's
+# date on every request is inaccurate and teaches crawlers to distrust the field
+# (wasting crawl budget). Bump CONTENT_LAST_MODIFIED (or set the env var on a
+# real content change) so the sitemap reflects the true last edit, not "now".
+CONTENT_LAST_MODIFIED = os.environ.get("CONTENT_LAST_MODIFIED", "2026-07-20").strip()
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
 DISABLE_AI = os.environ.get("DISABLE_AI", "0") == "1"
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", "3600"))
@@ -2270,14 +2275,13 @@ async def robots_txt():
 
 @app.get("/sitemap.xml")
 async def sitemap_xml():
-    from datetime import date
-    today = date.today().isoformat()
+    lastmod = CONTENT_LAST_MODIFIED
     # (loc, changefreq, priority)
     entries = [(BASE_URL + "/", "daily", "1.0")]
     entries += [(f"{BASE_URL}/{slug}", "weekly", "0.8") for slug in TOOL_PAGES]
     entries += [(f"{BASE_URL}/{slug}", "monthly", "0.5") for slug in CONTENT_PAGES]
     items = "\n".join(
-        f"  <url><loc>{loc}</loc><lastmod>{today}</lastmod>"
+        f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
         f"<changefreq>{cf}</changefreq><priority>{pr}</priority></url>"
         for loc, cf, pr in entries
     )
