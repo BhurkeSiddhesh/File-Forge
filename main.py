@@ -2266,7 +2266,7 @@ AI_CRAWLERS = [
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots_txt():
-    lines = ["# File Forge — free, open-source file tools. All pages are public.", ""]
+    lines = ["# File Forge: free, open-source file tools. All pages are public.", ""]
     for bot in AI_CRAWLERS:
         lines += [f"User-agent: {bot}", "Allow: /", "Disallow: /api/", ""]
     lines += ["User-agent: *", "Allow: /", "Disallow: /api/", ""]

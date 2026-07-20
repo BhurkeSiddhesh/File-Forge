@@ -1334,9 +1334,9 @@ function openConfigModal(index) {
             <label>
                 <span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Compression Level</span>
                 <select id="config-compress-level">
-                    <option value="low" ${lvl === 'low' ? 'selected' : ''}>Low — Best Quality</option>
-                    <option value="medium" ${lvl === 'medium' ? 'selected' : ''}>Medium — Balanced</option>
-                    <option value="high" ${lvl === 'high' ? 'selected' : ''}>High — Smallest Size</option>
+                    <option value="low" ${lvl === 'low' ? 'selected' : ''}>Low: Best Quality</option>
+                    <option value="medium" ${lvl === 'medium' ? 'selected' : ''}>Medium: Balanced</option>
+                    <option value="high" ${lvl === 'high' ? 'selected' : ''}>High: Smallest Size</option>
                 </select>
             </label>
         `;

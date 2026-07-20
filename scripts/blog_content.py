@@ -37,10 +37,10 @@ GUIDES: Dict[str, dict] = {
         "title": "How to Compress a PDF Without Losing Quality (Free) | " + SITE,
         "meta": ("Compress a PDF to a smaller file size without making it blurry. "
                  "A free, step-by-step guide plus the trade-offs that actually "
-                 "affect quality — no signup, no watermark."),
+                 "affect quality. No signup, no watermark."),
         "h1": "How to compress a PDF without losing quality",
         "dek": ("Big PDF won't attach to an email or upload to a portal? Here's how "
-                "to shrink it while keeping text sharp and images readable — and what "
+                "to shrink it while keeping text sharp and images readable, and what "
                 "“quality” really means when you compress."),
         "primary_tool": "compress-pdf",
         "related": ["merge-pdf", "split-pdf", "pdf-to-word"],
@@ -60,7 +60,7 @@ GUIDES: Dict[str, dict] = {
                 "<ol>"
                 "<li>Open <a href=\"/compress-pdf\">Compress PDF</a>.</li>"
                 "<li>Drag in your file (it's processed on our server over HTTPS and "
-                "deleted right after — nothing is kept).</li>"
+                "deleted right after; nothing is kept).</li>"
                 "<li>Download the smaller PDF. Compare it to the original before you "
                 "send it.</li>"
                 "</ol>")),
@@ -69,7 +69,7 @@ GUIDES: Dict[str, dict] = {
                 "actually lives:</p>"
                 "<ul>"
                 "<li><strong>Text stays perfect.</strong> Vector text is re-saved "
-                "losslessly — it never gets blurry no matter how much you "
+                "losslessly. It never gets blurry no matter how much you "
                 "compress.</li>"
                 "<li><strong>Images degrade gracefully.</strong> Photos are "
                 "re-encoded; moderate compression is invisible on screen, and you "
@@ -99,7 +99,7 @@ GUIDES: Dict[str, dict] = {
              "50–90%. A text-only PDF is already small, so there's less to save."),
             ("Is it safe to compress a confidential PDF here?",
              "Yes. The file is sent over encrypted HTTPS, processed, returned, and "
-             "then deleted — with an hourly sweeper as a backstop. File Forge is "
+             "then deleted, with an hourly sweeper as a backstop. File Forge is "
              "open source, so you can verify exactly how it's handled."),
         ],
     },
@@ -111,32 +111,32 @@ GUIDES: Dict[str, dict] = {
         "h1": "How to convert a PDF to an editable Word document",
         "dek": ("Need to edit a PDF but only have the finished file? Convert it to a "
                 "Word .docx you can open in Microsoft Word, Google Docs, or "
-                "LibreOffice — here's how, and how to keep the formatting."),
+                "LibreOffice. Here's how, and how to keep the formatting."),
         "primary_tool": "pdf-to-word",
         "related": ["compress-pdf", "merge-pdf", "unlock-pdf"],
         "date": "2026-07-20",
         "body": [
             ("Convert your PDF to Word in three steps", (
-                "<p>Use the free <a href=\"/pdf-to-word\">PDF to Word</a> tool — "
-                "no account and no software install:</p>"
+                "<p>Use the free <a href=\"/pdf-to-word\">PDF to Word</a> tool "
+                "(no account, no software install):</p>"
                 "<ol>"
                 "<li>Open <a href=\"/pdf-to-word\">PDF to Word</a> and drop in your "
                 "PDF.</li>"
                 "<li>It reconstructs paragraphs, headings, and tables into a real "
                 ".docx (not just an image pasted into a page).</li>"
-                "<li>Download the Word file and edit it anywhere — Word, Google "
+                "<li>Download the Word file and edit it anywhere: Word, Google "
                 "Docs, or LibreOffice.</li>"
                 "</ol>")),
             ("How to keep the layout intact", (
                 "<p>Conversion quality depends on how the PDF was made:</p>"
                 "<ul>"
                 "<li><strong>Digital PDFs</strong> (exported from Word, a browser, or "
-                "a design tool) convert cleanly — text, headings, and simple "
+                "a design tool) convert cleanly: text, headings, and simple "
                 "tables usually survive.</li>"
                 "<li><strong>Complex multi-column layouts</strong> may need light "
                 "clean-up after conversion; expect to fix the odd spacing or column "
                 "break.</li>"
-                "<li><strong>Locked PDFs</strong> must be unlocked first — run "
+                "<li><strong>Locked PDFs</strong> must be unlocked first. Run "
                 "them through <a href=\"/unlock-pdf\">Unlock PDF</a> if you have the "
                 "password.</li>"
                 "</ul>")),
@@ -156,7 +156,7 @@ GUIDES: Dict[str, dict] = {
             ("Will my tables and formatting survive?",
              "Digital PDFs keep paragraphs, headings, and simple tables well. Very "
              "complex or multi-column layouts may need minor clean-up after "
-             "converting — that's normal for any PDF-to-Word conversion."),
+             "converting. That's normal for any PDF-to-Word conversion."),
             ("Is it really free with no watermark?",
              "Yes. No signup, no watermark, no “one free file” limit. File "
              "Forge is open source and your upload is deleted right after "
@@ -166,12 +166,12 @@ GUIDES: Dict[str, dict] = {
     "how-to-convert-heic-to-jpg": {
         "title": "How to Convert HEIC to JPG for Free (iPhone Photos) | " + SITE,
         "meta": ("iPhone photos won't open on Windows or in your app? Convert HEIC to "
-                 "JPG for free. Why HEIC exists, and a step-by-step fix — no "
+                 "JPG for free. Why HEIC exists, and a step-by-step fix: no "
                  "signup, no watermark, photos deleted after."),
         "h1": "How to convert HEIC (iPhone photos) to JPG",
         "dek": ("Shared an iPhone photo and the other person can't open it? That's "
                 "HEIC. Here's how to convert it to a universally supported JPG in "
-                "seconds — and why your phone saves this format in the first "
+                "seconds, and why your phone saves this format in the first "
                 "place."),
         "primary_tool": "heic-to-jpeg",
         "related": ["image-to-pdf"],
@@ -180,7 +180,7 @@ GUIDES: Dict[str, dict] = {
             ("What is HEIC, and why won't it open?", (
                 "<p>HEIC (High Efficiency Image Container) is the format modern "
                 "iPhones use by default. It stores the same photo at roughly half the "
-                "file size of JPG, which is great for your phone's storage — but "
+                "file size of JPG, which is great for your phone's storage, but "
                 "many Windows apps, older devices, web forms, and messaging tools "
                 "still don't recognise it, so the photo appears broken or won't "
                 "upload.</p>")),
@@ -191,19 +191,19 @@ GUIDES: Dict[str, dict] = {
                 "<li>Open <a href=\"/heic-to-jpeg\">HEIC to JPG</a>.</li>"
                 "<li>Drop in your <code>.heic</code> file (straight from an iPhone or "
                 "AirDrop).</li>"
-                "<li>Download a standard <code>.jpg</code> that opens everywhere — "
+                "<li>Download a standard <code>.jpg</code> that opens everywhere: "
                 "Windows, Android, email, and every website upload box.</li>"
                 "</ol>")),
             ("Stop your iPhone saving HEIC (optional)", (
                 "<p>If you'd rather your phone just shoot JPG going forward: open "
                 "<strong>Settings → Camera → Formats</strong> and choose "
                 "<strong>Most Compatible</strong>. New photos will save as JPG. Your "
-                "existing HEIC library still needs converting — that's what the "
+                "existing HEIC library still needs converting. That's what the "
                 "tool above is for.</p>")),
             ("Turning photos into a PDF instead", (
                 "<p>Sometimes the real goal is a single document, not loose images. "
                 "Once your photos are JPGs you can combine them into one file with "
-                "<a href=\"/image-to-pdf\">Image to PDF</a> — handy for receipts, "
+                "<a href=\"/image-to-pdf\">Image to PDF</a>, handy for receipts, "
                 "IDs, or a set of scanned pages.</p>")),
         ],
         "faqs": [
@@ -384,9 +384,9 @@ def render_guide(slug: str) -> str:
 
 def render_blog_index() -> str:
     canonical = BLOG_BASE
-    title = "Guides — How to Work With PDFs, Images & Documents | " + SITE
+    title = "Guides: How to Work With PDFs, Images & Documents | " + SITE
     meta = ("Free step-by-step guides for compressing PDFs, converting PDF to "
-            "Word, turning iPhone HEIC photos into JPG, and more — from the "
+            "Word, turning iPhone HEIC photos into JPG, and more, from the "
             "open-source File Forge toolbox.")
     schema_blocks = _jsonld({
         "@context": "https://schema.org",
@@ -414,11 +414,11 @@ def render_blog_index() -> str:
         <div class="blob blob-2"></div>
     </div>
     <main class="page-wrap">
-        <nav class="page-nav"><a href="/">&larr; {SITE} — all tools</a></nav>
+        <nav class="page-nav"><a href="/">&larr; {SITE}: all tools</a></nav>
 
         <h1>File Forge Guides</h1>
-        <p class="lede">Practical, no-nonsense guides for getting file jobs done —
-            each one links straight to the free tool that does it. No signup, no watermark,
+        <p class="lede">Practical, no-nonsense guides for getting file jobs done.
+            Each one links straight to the free tool that does it. No signup, no watermark,
             files deleted after processing.</p>
 
         {ADS_SLOT}

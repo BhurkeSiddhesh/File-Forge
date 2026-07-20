@@ -22,7 +22,7 @@ EXTRA: Dict[str, str] = {
     # ---- PDF: high-traffic ------------------------------------------------
     "merge-pdf": """
         <h2>What you can merge</h2>
-        <p>Combine any number of PDF files into a single document — reports and
+        <p>Combine any number of PDF files into a single document: reports and
             their appendices, scanned pages, invoices, or chapters exported
             separately. There is no two-file free cap and no page limit beyond your
             upload size. Drag the files into the order you want before merging, so
@@ -46,7 +46,7 @@ EXTRA: Dict[str, str] = {
         <p>Compress PDF re-samples oversized embedded images and strips redundant
             data while keeping text as sharp vector glyphs, so words never blur. Most
             savings come from images and scans; a text-only PDF is already small.
-            Pick a level to trade size against image fidelity — screen-resolution
+            Pick a level to trade size against image fidelity: screen-resolution
             output is ideal for email and web uploads, while you should keep the
             original for high-DPI commercial printing.</p>
         <h2>When you need it</h2>
@@ -62,7 +62,7 @@ EXTRA: Dict[str, str] = {
     "pdf-to-word": """
         <h2>What converts well</h2>
         <p>PDF to Word rebuilds paragraphs, headings, and simple tables into a real
-            editable <code>.docx</code> — not an image pasted into a page — so you can
+            editable <code>.docx</code>, not an image pasted into a page, so you can
             open and edit it in Microsoft Word, Google Docs, or LibreOffice. Digital
             PDFs (exported from Word, a browser, or design software) convert cleanly;
             very complex multi-column layouts may need light clean-up afterwards, which
@@ -73,7 +73,7 @@ EXTRA: Dict[str, str] = {
             server, so the recognised words come back editable rather than locked in a
             picture.</p>
         <h2>Locked PDFs</h2>
-        <p>Password-protected PDFs must be opened first —
+        <p>Password-protected PDFs must be opened first:
             <a href="/unlock-pdf">remove the password</a> (on a file you own), then
             convert. Both tools are free. Full walkthrough:
             <a href="/blog/how-to-convert-pdf-to-word-for-free">how to convert a PDF to
@@ -83,7 +83,7 @@ EXTRA: Dict[str, str] = {
         <h2>What "unlock" means</h2>
         <p>Unlock PDF removes the open/permissions password from a PDF <strong>you
             own</strong> so you can view, copy, print, or convert it freely. Use it on
-            your own bank statements, payslips, or documents whose password you know —
+            your own bank statements, payslips, or documents whose password you know,
             not on files you aren't authorised to open.</p>
         <h2>After unlocking</h2>
         <ul>
@@ -96,7 +96,7 @@ EXTRA: Dict[str, str] = {
                 <a href="/protect-pdf">Protect PDF</a>.</li>
         </ul>
         <h2>Is it private?</h2>
-        <p>Your file and its password never leave the processing step — the upload is
+        <p>Your file and its password never leave the processing step: the upload is
             deleted right after download, and because the code is open source you can
             verify exactly how the password is handled.</p>""",
 
@@ -109,16 +109,16 @@ EXTRA: Dict[str, str] = {
             one page out of a long document.</p>
         <h2>Split, extract, or organize?</h2>
         <ul>
-            <li><a href="/split-pdf">Split PDF</a> — carve out pages/ranges into a new file.</li>
-            <li><a href="/extract-pdf-pages">Extract PDF pages</a> — pick specific pages to keep.</li>
-            <li><a href="/organize-pdf">Organize PDF</a> — reorder, rotate, and delete pages visually.</li>
+            <li><a href="/split-pdf">Split PDF</a>: carve out pages/ranges into a new file.</li>
+            <li><a href="/extract-pdf-pages">Extract PDF pages</a>: pick specific pages to keep.</li>
+            <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
         </ul>
         <p>Need the opposite? <a href="/merge-pdf">Merge PDF</a> joins files back
             together.</p>""",
 
     "pdf-to-jpg": """
         <h2>PDF pages to images</h2>
-        <p>PDF to JPG renders each page as a standalone JPEG image — handy when you need
+        <p>PDF to JPG renders each page as a standalone JPEG image, handy when you need
             a preview thumbnail, want to drop a page into a slide or social post, or
             need to share a page with someone who can't open PDFs. Every page becomes
             its own image so you can use just the ones you want.</p>
@@ -134,7 +134,7 @@ EXTRA: Dict[str, str] = {
     "heic-to-jpeg": """
         <h2>Why iPhone photos need converting</h2>
         <p>Modern iPhones save photos as HEIC, which stores the same quality at about
-            half the size of JPG — great for your phone, but many Windows apps, older
+            half the size of JPG, great for your phone, but many Windows apps, older
             devices, web upload forms, and messaging tools still don't support it, so
             the photo looks broken or won't upload. Converting to JPG produces a file
             that opens everywhere.</p>
@@ -152,12 +152,12 @@ EXTRA: Dict[str, str] = {
     "image-to-pdf": """
         <h2>Turn photos and scans into one PDF</h2>
         <p>Image to PDF combines JPG, PNG, and other images into a single PDF in the
-            order you choose — ideal for receipts, ID documents, handwritten notes, or a
+            order you choose, ideal for receipts, ID documents, handwritten notes, or a
             set of scanned pages that should travel as one file. Reorder the images
             before converting so the pages come out in the right sequence.</p>
         <h2>Good to know</h2>
         <ul>
-            <li>iPhone photos are HEIC — convert them first with
+            <li>iPhone photos are HEIC; convert them first with
                 <a href="/heic-to-jpeg">HEIC to JPG</a>, then build your PDF.</li>
             <li>Big photos make big PDFs; run the result through
                 <a href="/compress-pdf">Compress PDF</a> if you need a smaller file.</li>
@@ -167,15 +167,15 @@ EXTRA: Dict[str, str] = {
     # ---- PDF: remaining ---------------------------------------------------
     "extract-pdf-pages": """
         <h2>Pull out exactly the pages you need</h2>
-        <p>Type the pages you want — a single page, a range like <code>5-10</code>, or a
-            mix such as <code>1,3,5-10</code> — and download them as a new PDF. Your
+        <p>Type the pages you want: a single page, a range like <code>5-10</code>, or a
+            mix such as <code>1,3,5-10</code>, and download them as a new PDF. Your
             original file is left untouched, so it's a safe way to keep only the pages
             that matter: one chapter, a signed page, or the exhibit from a long report.</p>
         <h2>Extract, split, or organize?</h2>
         <ul>
-            <li><a href="/extract-pdf-pages">Extract PDF pages</a> — keep specific pages by number.</li>
-            <li><a href="/split-pdf">Split PDF</a> — carve pages/ranges into a separate file.</li>
-            <li><a href="/organize-pdf">Organize PDF</a> — reorder, rotate, and delete pages visually.</li>
+            <li><a href="/extract-pdf-pages">Extract PDF pages</a>: keep specific pages by number.</li>
+            <li><a href="/split-pdf">Split PDF</a>: carve pages/ranges into a separate file.</li>
+            <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
         </ul>
         <p>Want the pieces back together afterwards? <a href="/merge-pdf">Merge PDF</a>
             joins files into one.</p>""",
@@ -183,12 +183,12 @@ EXTRA: Dict[str, str] = {
     "pdf-to-text": """
         <h2>Get clean, plain text out of a PDF</h2>
         <p>PDF to Text extracts the words from a PDF into a simple <code>.txt</code>
-            file — no formatting, no images, just the text ready to search, paste, or feed
+            file: no formatting, no images, just the text ready to search, paste, or feed
             into another tool. It's ideal for quoting a document, copying content that a
             PDF viewer won't let you select, or preparing text for analysis.</p>
         <h2>Scanned documents</h2>
         <p>If the PDF is a scan or photo, the words are really an image. An OCR (optical
-            character recognition) fallback — running fully offline on our server — reads
+            character recognition) fallback, running fully offline on our server, reads
             the pixels and recovers the text. Need to keep layout and edit it instead of
             plain text? Use <a href="/pdf-to-word">PDF to Word</a>.</p>""",
 
@@ -196,7 +196,7 @@ EXTRA: Dict[str, str] = {
         <h2>Fix sideways and upside-down pages for good</h2>
         <p>Scanned a document in the wrong orientation, or got a PDF where some pages are
             rotated 90°? Rotate PDF turns pages 90, 180, or 270 degrees and saves the new
-            orientation into the file permanently — unlike just rotating the view in a
+            orientation into the file permanently, unlike just rotating the view in a
             reader, which resets next time someone opens it. Rotate every page at once or
             only the ones that are wrong.</p>
         <h2>Related page fixes</h2>
@@ -220,8 +220,8 @@ EXTRA: Dict[str, str] = {
 
     "watermark-pdf": """
         <h2>Stamp text across every page</h2>
-        <p>Add a text watermark — <code>DRAFT</code>, <code>CONFIDENTIAL</code>, a company
-            name, or a copyright line — across every page of a PDF, with control over
+        <p>Add a text watermark (<code>DRAFT</code>, <code>CONFIDENTIAL</code>, a company
+            name, or a copyright line) across every page of a PDF, with control over
             position and opacity so it's visible without hiding the content. It marks a
             document's status or ownership at a glance and discourages casual reuse.</p>
         <h2>Good pairings</h2>
@@ -235,7 +235,7 @@ EXTRA: Dict[str, str] = {
         <h2>Add clear page numbering</h2>
         <p>Add page numbers to a PDF with control over position, number format
             (<code>1, 2, 3</code>, roman <code>i, ii, iii</code>, or letters
-            <code>A, B, C</code>), the starting number, and which pages to skip — handy
+            <code>A, B, C</code>), the starting number, and which pages to skip, handy
             when a cover page or table of contents shouldn't be counted. It makes long
             reports, manuals, and bundles easy to reference and print in order.</p>
         <h2>Building a polished document</h2>
@@ -246,7 +246,7 @@ EXTRA: Dict[str, str] = {
     "pdf-to-excel": """
         <h2>Turn PDF tables into a real spreadsheet</h2>
         <p>PDF to Excel detects tables in your PDF and rebuilds them as editable cells in
-            an <code>.xlsx</code> workbook — so you can sort, total, and chart data that
+            an <code>.xlsx</code> workbook, so you can sort, total, and chart data that
             was previously locked inside a document. It's built for financial statements,
             reports, and exported data tables. Cleanly ruled tables convert best; very
             irregular layouts may need a little tidying after.</p>
@@ -272,7 +272,7 @@ EXTRA: Dict[str, str] = {
     "sign-pdf": """
         <h2>Add your signature to a document</h2>
         <p>Sign PDF lets you place a signature image onto any page and position it exactly
-            where it belongs — on agreements, forms, and letters — without printing,
+            where it belongs (on agreements, forms, and letters) without printing,
             signing by hand, and re-scanning. Upload a transparent PNG of your signature
             for the cleanest result.</p>
         <h2>Before and after signing</h2>
@@ -285,15 +285,15 @@ EXTRA: Dict[str, str] = {
     "organize-pdf": """
         <h2>Rearrange a PDF, page by page</h2>
         <p>Organize PDF gives you visual control over a document's pages: set a new order,
-            delete pages you don't need, and duplicate pages — all in one step. It's the
+            delete pages you don't need, and duplicate pages, all in one step. It's the
             tool for fixing a document whose pages are out of sequence or that contains
             pages that shouldn't be there.</p>
         <h2>How it compares</h2>
         <ul>
-            <li><a href="/organize-pdf">Organize PDF</a> — reorder, delete, duplicate visually.</li>
-            <li><a href="/split-pdf">Split PDF</a> / <a href="/extract-pdf-pages">Extract pages</a> — pull pages into a new file.</li>
-            <li><a href="/merge-pdf">Merge PDF</a> — join separate files together.</li>
-            <li><a href="/rotate-pdf">Rotate PDF</a> — fix page orientation.</li>
+            <li><a href="/organize-pdf">Organize PDF</a>: reorder, delete, duplicate visually.</li>
+            <li><a href="/split-pdf">Split PDF</a> / <a href="/extract-pdf-pages">Extract pages</a>: pull pages into a new file.</li>
+            <li><a href="/merge-pdf">Merge PDF</a>: join separate files together.</li>
+            <li><a href="/rotate-pdf">Rotate PDF</a>: fix page orientation.</li>
         </ul>""",
 
     # ---- Image: remaining -------------------------------------------------
@@ -306,9 +306,9 @@ EXTRA: Dict[str, str] = {
             You can also crop visually in the same tool.</p>
         <h2>Resize vs. compress vs. crop</h2>
         <ul>
-            <li><a href="/resize-image">Resize</a> — change dimensions (or hit a KB target).</li>
-            <li><a href="/compress-image">Compress</a> — keep dimensions, shrink file size.</li>
-            <li><a href="/crop-image">Crop</a> — trim to a region of the photo.</li>
+            <li><a href="/resize-image">Resize</a>: change dimensions (or hit a KB target).</li>
+            <li><a href="/compress-image">Compress</a>: keep dimensions, shrink file size.</li>
+            <li><a href="/crop-image">Crop</a>: trim to a region of the photo.</li>
         </ul>""",
 
     "compress-image": """
@@ -339,7 +339,7 @@ EXTRA: Dict[str, str] = {
     "crop-image": """
         <h2>Trim a photo to exactly what you want</h2>
         <p>Crop Image gives you a visual drag-and-drop editor to cut away everything
-            outside the part you care about — straighten a document scan, remove a
+            outside the part you care about: straighten a document scan, remove a
             distracting background, or frame a profile picture. It works on JPG, PNG, WebP,
             and HEIC files straight from a phone.</p>
         <h2>After cropping</h2>
@@ -363,8 +363,8 @@ EXTRA: Dict[str, str] = {
 
     "watermark-image": """
         <h2>Mark your images as yours</h2>
-        <p>Add a text watermark to an image — your name, brand, or a
-            <code>© copyright</code> line — with control over position, colour, and
+        <p>Add a text watermark to an image (your name, brand, or a
+            <code>© copyright</code> line) with control over position, colour, and
             opacity. It's the simple way to protect photos and graphics you post publicly,
             or to label a proof before sending it to a client.</p>
         <h2>Related</h2>
@@ -377,7 +377,7 @@ EXTRA: Dict[str, str] = {
     "excel-to-pdf": """
         <h2>Share spreadsheets that look right everywhere</h2>
         <p>Excel to PDF renders every sheet of your XLSX or XLS workbook as a styled table
-            in a PDF, so recipients see a fixed, tidy layout regardless of their software —
+            in a PDF, so recipients see a fixed, tidy layout regardless of their software:
             no broken columns, no "which version of Excel" surprises. It's the reliable way
             to send a report, invoice, or price list for viewing and printing.</p>
         <h2>Related</h2>
@@ -390,7 +390,7 @@ EXTRA: Dict[str, str] = {
         <h2>Turn a raw CSV into a proper workbook</h2>
         <p>CSV to Excel imports a plain CSV into a real <code>.xlsx</code> workbook so you
             get typed cells, formatting, and formula support instead of a text file. Pick
-            the delimiter your file actually uses — comma, semicolon, tab, or pipe — which
+            the delimiter your file actually uses: comma, semicolon, tab, or pipe, which
             matters for exports from non-English locales where semicolons are common.</p>
         <h2>Related</h2>
         <ul>
@@ -400,7 +400,7 @@ EXTRA: Dict[str, str] = {
 
     "xlsx-to-csv": """
         <h2>Export a sheet to universal CSV</h2>
-        <p>Excel to CSV exports a chosen sheet to a plain comma-separated file — the format
+        <p>Excel to CSV exports a chosen sheet to a plain comma-separated file, the format
             almost every database, analytics tool, and import wizard accepts. Pick which
             sheet to export when your workbook has several. CSV keeps only values (no
             formulas, styling, or multiple sheets), which is exactly what most imports
@@ -413,7 +413,7 @@ EXTRA: Dict[str, str] = {
 
     "merge-excel": """
         <h2>Combine multiple workbooks into one</h2>
-        <p>Merge Excel joins several <code>.xlsx</code> files into a single workbook — the
+        <p>Merge Excel joins several <code>.xlsx</code> files into a single workbook, the
             fast way to consolidate monthly sheets, per-region exports, or contributions
             from different people into one file to analyse together. No copy-pasting
             between windows.</p>
@@ -439,7 +439,7 @@ EXTRA: Dict[str, str] = {
 
     "ppt-to-images": """
         <h2>Every slide as a standalone image</h2>
-        <p>PPT to Images exports each slide as a PNG or JPG and bundles them into a zip —
+        <p>PPT to Images exports each slide as a PNG or JPG and bundles them into a zip,
             perfect for embedding slides in a document, posting them to social media, or
             dropping a single slide into an email where a whole deck would be overkill.
             Choose PNG for crisp text and diagrams, JPG for smaller photo-heavy slides.</p>
@@ -452,7 +452,7 @@ EXTRA: Dict[str, str] = {
     "merge-ppt": """
         <h2>Combine presentations into one deck</h2>
         <p>Merge PowerPoint joins multiple <code>.pptx</code> files into a single
-            presentation — ideal for assembling a team deck from separate contributions or
+            presentation, ideal for assembling a team deck from separate contributions or
             stitching modular sections into one talk. Order the files before merging so the
             slides flow correctly.</p>
         <h2>Related</h2>
@@ -464,7 +464,7 @@ EXTRA: Dict[str, str] = {
     "word-to-pdf": """
         <h2>Convert Word to a fixed, shareable PDF</h2>
         <p>Word to PDF converts a <code>.docx</code> document into a PDF that keeps your
-            layout, fonts, and spacing exactly as designed — so it looks identical on every
+            layout, fonts, and spacing exactly as designed, so it looks identical on every
             device and can't be accidentally edited. It's the expected format for
             submitting CVs, contracts, assignments, and official letters.</p>
         <h2>Related</h2>
