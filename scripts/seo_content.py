@@ -871,6 +871,12 @@ def _faq_schema(faqs: List[Tuple[str, str]]) -> dict:
 
 
 def _software_schema(slug: str, page: dict) -> dict:
+    # NOTE: intentionally no aggregateRating/review — fabricating ratings without
+    # a real, on-page, user-generated review mechanism violates Google's
+    # structured-data policy and risks a manual action. Add them only once
+    # genuine reviews exist. The publisher/sameAs/inLanguage fields below are
+    # legitimate entity signals that help Google associate the tool with the
+    # File Forge brand and its GitHub presence.
     return {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
@@ -879,8 +885,15 @@ def _software_schema(slug: str, page: dict) -> dict:
         "operatingSystem": "Any (web browser)",
         "url": BASE + "/" + slug,
         "description": page["meta"],
+        "inLanguage": "en",
         "isAccessibleForFree": True,
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        "publisher": {
+            "@type": "Organization",
+            "name": SITE,
+            "url": BASE + "/",
+            "sameAs": [GITHUB],
+        },
     }
 
 
