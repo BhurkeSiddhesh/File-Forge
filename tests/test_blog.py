@@ -19,7 +19,7 @@ _JSONLD = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S
 def test_blog_index_renders():
     r = TestClient(app).get("/blog")
     assert r.status_code == 200
-    assert "File Forge Guides" in r.text
+    assert "Forge Files Guides" in r.text
     assert "{{" not in r.text  # all template tokens substituted
     # index links to every guide
     for slug in blog_content.guide_slugs():

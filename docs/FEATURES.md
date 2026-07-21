@@ -1,4 +1,4 @@
-# File Forge — Feature Reference
+# Forge Files — Feature Reference
 
 Complete reference for all 36 features. New features added in this release are marked **[NEW]**.
 
@@ -571,7 +571,7 @@ Files are automatically deleted after download to save disk space.
 
 ---
 
-## File Forge Feature Matrix
+## Forge Files Feature Matrix
 
 | Feature | Input | Output | Endpoint |
 |---|---|---|---|

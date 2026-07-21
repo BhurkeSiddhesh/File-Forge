@@ -1,7 +1,7 @@
 """Tool-specific extended content for landing pages.
 
 WHY: every tool page shares the same short privacy note and the same
-"Why use File Forge?" benefits. To rank, each page also needs *unique*,
+"Why use Forge Files?" benefits. To rank, each page also needs *unique*,
 substantial, on-topic copy — supported formats, real limits, concrete
 use-cases, and honest comparisons. That lives here, keyed by tool slug, and is
 rendered by seo_content.render_tool_page between the benefits list and the

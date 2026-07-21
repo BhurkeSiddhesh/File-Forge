@@ -1,6 +1,6 @@
-# Contributing to File Forge
+# Contributing to Forge Files
 
-Thank you for your interest in contributing to File Forge! This document outlines our development process.
+Thank you for your interest in contributing to Forge Files! This document outlines our development process.
 
 ## Branch Flow
 

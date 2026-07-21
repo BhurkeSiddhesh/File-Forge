@@ -1,5 +1,5 @@
 """
-Image conversion utilities for File Forge.
+Image conversion utilities for Forge Files.
 """
 import io
 from pathlib import Path

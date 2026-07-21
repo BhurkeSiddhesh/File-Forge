@@ -1,6 +1,6 @@
 # Cloudflare edge configuration (forgefiles.org)
 
-File Forge runs as a FastAPI app (on Render or any Docker/ASGI host) — it is **not**
+Forge Files runs as a FastAPI app (on Render or any Docker/ASGI host) — it is **not**
 a Cloudflare Pages / Next.js static export. If you put Cloudflare in front of the
 origin (the normal setup for `forgefiles.org`: Cloudflare proxies the orange-cloud
 DNS record to your Render origin as a CDN + WAF), the app's own `robots.txt`
@@ -10,7 +10,7 @@ requests **before** they ever reach the app. Configure the edge to match.
 ## 1. Stop the WAF / Bot Fight Mode from 403-ing AI crawlers
 
 Cloudflare's Bot Fight Mode and Managed WAF rules treat non-browser user-agents as
-threats and return `403 Forbidden`. That makes File Forge invisible to the AI
+threats and return `403 Forbidden`. That makes Forge Files invisible to the AI
 retrieval crawlers we explicitly welcome in `robots.txt`, so they can never cite
 the tools in an answer.
 

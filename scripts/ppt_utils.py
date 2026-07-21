@@ -1,5 +1,5 @@
 """
-PowerPoint utilities for File Forge.
+PowerPoint utilities for Forge Files.
 
 Pure-Python implementations using python-pptx + Pillow + reportlab.
 

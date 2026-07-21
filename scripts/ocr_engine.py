@@ -1,4 +1,4 @@
-"""OCR backend abstraction for File-Forge.
+"""OCR backend abstraction for Forge Files.
 
 Supports multiple OCR engines behind a common interface so the app can
 run on ARM64 (via RapidOCR/ONNX Runtime) without requiring PaddlePaddle,

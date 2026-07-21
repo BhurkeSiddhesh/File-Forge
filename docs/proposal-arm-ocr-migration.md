@@ -1,8 +1,8 @@
-# File-Forge: ARM-Compatible OCR Migration Proposal
+# Forge Files: ARM-Compatible OCR Migration Proposal
 
 ## 1. Executive Summary
 
-**Goal:** Make File-Forge deployable on ARM64 hosts (e.g., Oracle Cloud A1 Flex / Ampere) by replacing the hard dependency on PaddlePaddle/PaddleOCR with an ARM-native OCR backend, while preserving the existing x86 AI Layout Recovery path as an optional high-quality backend.
+**Goal:** Make Forge Files deployable on ARM64 hosts (e.g., Oracle Cloud A1 Flex / Ampere) by replacing the hard dependency on PaddlePaddle/PaddleOCR with an ARM-native OCR backend, while preserving the existing x86 AI Layout Recovery path as an optional high-quality backend.
 
 **Why:** PaddlePaddle does not officially support `arm64`. The current repo requires `paddlepaddle==2.6.2` and `paddleocr>=2.6,<3.0`, which makes ARM deployment impossible without compiling Paddle from source. The rest of the stack (FastAPI, PyMuPDF, pikepdf, Pillow, etc.) already runs on ARM64.
 
@@ -363,4 +363,4 @@ Environment: DISABLE_AI=1        →  no AI/OCR features, lightweight image
 
 You can hand the following to the agent:
 
-> Implement the ARM64 OCR migration for File-Forge. Create `scripts/ocr_engine.py` with `RapidOCREngine` and `PaddleOCREngine` behind an `OCREngine` abstraction. Refactor `scripts/pdf_utils.py` so `_extract_text_with_paddle_ocr()` becomes `_extract_text_with_ocr()` and `pdf_to_word_paddle()` becomes `pdf_to_word_ai()`. Remove Paddle from `requirements.txt` and add `rapidocr`. Create `requirements-ai-paddle.txt` for the optional x86 backend. Update the `Dockerfile` to accept `OCR_BACKEND={none|rapidocr|paddle}` and `WARMUP_AI`. Update `main.py` startup warmup to use the abstraction. Add `tests/test_ocr_engine.py`. Update CI to test `OCR_BACKEND=rapidocr` and `DISABLE_AI=1`. Update `AGENTS.md` and `README.md`. Do not change hosting, DNS, or Render config. Ensure all existing tests pass.
+> Implement the ARM64 OCR migration for Forge Files. Create `scripts/ocr_engine.py` with `RapidOCREngine` and `PaddleOCREngine` behind an `OCREngine` abstraction. Refactor `scripts/pdf_utils.py` so `_extract_text_with_paddle_ocr()` becomes `_extract_text_with_ocr()` and `pdf_to_word_paddle()` becomes `pdf_to_word_ai()`. Remove Paddle from `requirements.txt` and add `rapidocr`. Create `requirements-ai-paddle.txt` for the optional x86 backend. Update the `Dockerfile` to accept `OCR_BACKEND={none|rapidocr|paddle}` and `WARMUP_AI`. Update `main.py` startup warmup to use the abstraction. Add `tests/test_ocr_engine.py`. Update CI to test `OCR_BACKEND=rapidocr` and `DISABLE_AI=1`. Update `AGENTS.md` and `README.md`. Do not change hosting, DNS, or Render config. Ensure all existing tests pass.

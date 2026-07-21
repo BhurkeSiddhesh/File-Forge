@@ -1,5 +1,5 @@
 """
-Excel/CSV utilities for File Forge.
+Excel/CSV utilities for Forge Files.
 
 Pure-Python implementations using openpyxl + pandas + reportlab.
 Excel→PDF renders sheets as styled tables, NOT as a Microsoft-Office-grade rendering;

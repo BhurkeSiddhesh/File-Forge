@@ -1,5 +1,5 @@
 """
-Common utility functions for File Forge.
+Common utility functions for Forge Files.
 Reduces code duplication across the application.
 """
 import logging

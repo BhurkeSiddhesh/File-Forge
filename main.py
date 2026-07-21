@@ -76,7 +76,7 @@ from scripts import event_log
 
 PROD = os.environ.get("ENV") == "production"
 app = FastAPI(
-    title="File Forge API",
+    title="Forge Files API",
     docs_url=None if PROD else "/docs",
     redoc_url=None if PROD else "/redoc",
     openapi_url=None if PROD else "/openapi.json",
@@ -192,7 +192,7 @@ def _build_consent_banner() -> str:
         'gap:12px;align-items:center;justify-content:center;padding:14px 18px;'
         'background:#181b22;color:#e8eaed;border-top:1px solid #262b35;'
         'font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">'
-        '<span style="max-width:640px">We use cookies to serve ads that keep File Forge free. '
+        '<span style="max-width:640px">We use cookies to serve ads that keep Forge Files free. '
         'See our <a href="/privacy" style="color:#4f8cff">Privacy Policy</a>.</span>'
         '<span style="display:flex;gap:8px">'
         '<button id="ff-consent-decline" type="button" style="cursor:pointer;border:1px solid #262b35;'
@@ -2299,7 +2299,7 @@ TOOL_PAGES = seo_content.TOOL_PAGES
 # Back-compat: every indexable slug (tests and tooling expect this iterable).
 SEO_PAGES = list(TOOL_PAGES.keys()) + CONTENT_PAGES
 
-# AI retrieval/citation crawlers we explicitly welcome, so File Forge tools are
+# AI retrieval/citation crawlers we explicitly welcome, so Forge Files tools are
 # eligible to be cited in AI answers (ChatGPT, Perplexity, Gemini, Claude, ...).
 AI_CRAWLERS = [
     "GPTBot", "OAI-SearchBot", "ChatGPT-User",
@@ -2312,7 +2312,7 @@ AI_CRAWLERS = [
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots_txt():
-    lines = ["# File Forge: free, open-source file tools. All pages are public.", ""]
+    lines = ["# Forge Files: free, open-source file tools. All pages are public.", ""]
     for bot in AI_CRAWLERS:
         lines += [f"User-agent: {bot}", "Allow: /", "Disallow: /api/", ""]
     lines += ["User-agent: *", "Allow: /", "Disallow: /api/", ""]
@@ -2365,14 +2365,14 @@ async def llms_txt():
     hand-written blurb, for the same reason.
     """
     lines = [
-        "# File Forge",
+        "# Forge Files",
         "",
         "> Free, open-source online file tools: convert, compress, merge, split and "
         "edit PDFs, images and spreadsheets in the browser. No signup, no watermarks, "
         "no file-size paywall. Uploaded files are deleted from the server "
         "automatically after processing.",
         "",
-        "File Forge is free software (source: https://github.com/BhurkeSiddhesh/File-Forge) "
+        "Forge Files is free software (source: https://github.com/BhurkeSiddhesh/File-Forge) "
         "and can be self-hosted. Every tool below is a standalone page that works "
         "without JavaScript for reading purposes; no account is ever required.",
         "",

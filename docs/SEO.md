@@ -1,6 +1,6 @@
 # SEO architecture
 
-How File Forge gets found — by Google **and** by JS-less AI crawlers (GPTBot,
+How Forge Files gets found — by Google **and** by JS-less AI crawlers (GPTBot,
 ClaudeBot, PerplexityBot, Google-Extended). Everything here is implemented in the
 app itself; no external service or build step is required.
 
@@ -28,7 +28,7 @@ into it via `/?tool=<category>`.
 
    ```python
    "rotate-pdf": {
-       "title": "Rotate PDF — … | File Forge",   # keep ≤ 60 chars
+       "title": "Rotate PDF — … | Forge Files",   # keep ≤ 60 chars
        "meta":  "…",                              # keep ≤ 160 chars, action verbs + privacy hook
        "h1": "…", "lede": "…",
        "tool": "pdf",            # deep-link category: pdf|image|excel|ppt|word
@@ -55,7 +55,7 @@ do not claim client-side / "files never leave your browser".
 ## AI crawlers & 404s
 
 - **`robots.txt`** explicitly names AI retrieval bots (`AI_CRAWLERS` in `main.py`)
-  with `Allow: /` so File Forge can be cited in AI answers, plus an absolute
+  with `Allow: /` so Forge Files can be cited in AI answers, plus an absolute
   `Sitemap:` URL.
 - **404s are hard** (HTTP 404) with a branded HTML body and links to popular
   tools — never a soft-404. API routes (`/api/*`) keep JSON errors.

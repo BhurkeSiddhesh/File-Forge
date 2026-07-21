@@ -1,6 +1,6 @@
-# File Forge
+# Forge Files
 
-**File Forge** is a free, open-source, all-in-one web file toolbox. Upload a file, process it in seconds, and download the result — no signup, no watermarks, no software installation.
+**Forge Files** is a free, open-source, all-in-one web file toolbox. Upload a file, process it in seconds, and download the result — no signup, no watermarks, no software installation.
 
 **Live App:** [https://forgefiles.org](https://forgefiles.org)
 
@@ -130,7 +130,7 @@ File-Forge/
 
 ## API Reference
 
-File Forge uses FastAPI, which automatically generates an interactive OpenAPI documentation.
+Forge Files uses FastAPI, which automatically generates an interactive OpenAPI documentation.
 
 Once the server is running, visit **http://127.0.0.1:8001/docs** to explore all endpoints, test them interactively, and view detailed request/response schemas.
 

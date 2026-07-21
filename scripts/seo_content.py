@@ -1,4 +1,4 @@
-"""Server-rendered SEO landing pages for File Forge tools.
+"""Server-rendered SEO landing pages for Forge Files tools.
 
 Every tool gets a dedicated, fully-rendered HTML page (title, meta, H1, body and
 FAQ are all present in the *raw* response — no JavaScript required), which is what
@@ -24,7 +24,7 @@ from scripts.tool_extra import extra_html
 # --- constants -------------------------------------------------------------
 
 ASSET_V = "20260623"
-SITE = "File Forge"
+SITE = "Forge Files"
 GITHUB = "https://github.com/BhurkeSiddhesh/File-Forge"
 
 # Literal tokens substituted by main.py. Defined as plain strings (NOT inside an
@@ -80,7 +80,7 @@ def _attr(s: str) -> str:
 TOOL_PAGES: Dict[str, dict] = {
     # ===================== PDF =====================
     "unlock-pdf": {
-        "title": "Unlock PDF: Remove PDF Password Online Free | File Forge",
+        "title": "Unlock PDF: Remove PDF Password Online Free | Forge Files",
         "meta": "Remove the password from a PDF you own, free and online. No signup, no watermarks, open source. Your file is deleted automatically after download.",
         "h1": "Unlock PDF: Remove a PDF Password Online",
         "lede": "Got a PDF that asks for a password every single time you open it: a bank statement, salary slip, or insurance document? Enter the password once, and download an unlocked copy that opens instantly, forever.",
@@ -97,14 +97,14 @@ TOOL_PAGES: Dict[str, dict] = {
             "<strong>No signup:</strong> no account, no email, no tracking of your documents.",
         ],
         "faqs": [
-            ("Is it legal to remove a password from a PDF?", "Yes, if you own the document or have permission to access it. You must know the current password. File Forge does not crack or guess passwords; it re-saves the file without encryption after you provide the correct password."),
+            ("Is it legal to remove a password from a PDF?", "Yes, if you own the document or have permission to access it. You must know the current password. Forge Files does not crack or guess passwords; it re-saves the file without encryption after you provide the correct password."),
             ("Is my PDF stored on your server?", "No. Files are deleted immediately after download, and anything left over is purged automatically within an hour. Because the project is open source, this isn't a promise you have to take on faith: you can read the code."),
             ("Do I need an account?", "No. No signup, no email, no watermark. Just upload, unlock, download."),
         ],
         "related": ["pdf-to-word", "compress-pdf", "extract-pdf-pages", "merge-pdf", "protect-pdf"],
     },
     "pdf-to-word": {
-        "title": "PDF to Word Converter: Free Online, No Signup | File Forge",
+        "title": "PDF to Word Converter: Free Online, No Signup | Forge Files",
         "meta": "Convert PDF to an editable Word (DOCX), free online. Keeps text, images and layout. No signup, no watermarks, open source. Files deleted automatically.",
         "h1": "PDF to Word Converter: Free &amp; Online",
         "lede": "Turn any PDF into an editable Word (DOCX) document in seconds. Fix a typo in a contract, reuse a report, or edit a form, all without retyping a single line.",
@@ -116,7 +116,7 @@ TOOL_PAGES: Dict[str, dict] = {
             "Download your editable DOCX. Both files are deleted from our server automatically.",
         ],
         "benefits": [
-            "<strong>No paywall games:</strong> many converters give you one free file and then ask for a credit card. File Forge is free, every time.",
+            "<strong>No paywall games:</strong> many converters give you one free file and then ask for a credit card. Forge Files is free, every time.",
             "<strong>Verifiably private:</strong> files are deleted after download, and the <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">full source code is on GitHub</a>: you don't have to trust a marketing claim.",
             "<strong>Handles locked PDFs:</strong> <a href=\"/unlock-pdf\">remove the password</a> first, then convert; both tools are free.",
         ],
@@ -128,7 +128,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["unlock-pdf", "compress-pdf", "extract-pdf-pages", "pdf-to-text", "word-to-pdf"],
     },
     "compress-pdf": {
-        "title": "Compress PDF Online Free: Reduce PDF File Size | File Forge",
+        "title": "Compress PDF Online Free: Reduce PDF File Size | Forge Files",
         "meta": "Shrink PDF file size online, free. Three compression levels, no Acrobat needed, no signup, no watermarks. Open source. Files auto-deleted after download.",
         "h1": "Compress PDF: Reduce PDF File Size Online",
         "lede": "PDF too big to email, or over a portal's upload limit? Compress it in seconds: pick Low, Medium, or High compression and see exactly how much space you saved.",
@@ -152,7 +152,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["merge-pdf", "pdf-to-word", "extract-pdf-pages", "unlock-pdf", "compress-image"],
     },
     "extract-pdf-pages": {
-        "title": "Extract Pages from PDF: Split PDF Online Free | File Forge",
+        "title": "Extract Pages from PDF: Split PDF Online Free | Forge Files",
         "meta": "Pull specific pages or page ranges out of a PDF into a new file, free. Type 1,3,5-10 and download. No signup, open source, files deleted automatically.",
         "h1": "Extract Pages from a PDF: Split PDFs Online",
         "lede": "Need just the invoice from a 40-page statement, or one chapter from a long report? Extract exactly the pages you want into a clean new PDF. No software, no signup.",
@@ -176,7 +176,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["split-pdf", "merge-pdf", "organize-pdf", "compress-pdf", "pdf-to-word"],
     },
     "pdf-to-text": {
-        "title": "PDF to Text: Extract Text from PDF Free | File Forge",
+        "title": "PDF to Text: Extract Text from PDF Free | Forge Files",
         "meta": "Extract all text from a PDF into a clean TXT file, free and online. OCR fallback for scanned documents. No signup, open source, files deleted automatically.",
         "h1": "PDF to Text: Extract Text from Any PDF",
         "lede": "Copy-pasting from a PDF gives you broken lines and garbage characters. Get the whole document as a clean, plain text file instead, with OCR fallback for scanned pages.",
@@ -200,7 +200,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["pdf-to-word", "pdf-to-excel", "extract-pdf-pages", "compress-pdf", "unlock-pdf"],
     },
     "merge-pdf": {
-        "title": "Merge PDF: Combine PDF Files Online Free | File Forge",
+        "title": "Merge PDF: Combine PDF Files Online Free | Forge Files",
         "meta": "Combine multiple PDFs into one file, free online. Reorder before merging, no signup, no watermarks. Open source. Files auto-deleted after download.",
         "h1": "Merge PDF: Combine Multiple PDFs Into One",
         "lede": "Joining a cover letter, résumé, and certificates into a single application? Combine any number of PDFs into one clean document, in the order you choose. Free, with no software to install.",
@@ -224,7 +224,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["compress-pdf", "extract-pdf-pages", "organize-pdf", "split-pdf", "pdf-to-word"],
     },
     "split-pdf": {
-        "title": "Split PDF: Separate PDF Pages Online Free | File Forge",
+        "title": "Split PDF: Separate PDF Pages Online Free | Forge Files",
         "meta": "Split a PDF into the pages you need, free and online. Pull out single pages or ranges like 1,3,5-10 into a new file. No signup, open source, files auto-deleted.",
         "h1": "Split PDF: Separate the Pages You Need",
         "lede": "One giant PDF when you only need a few pages? Split out exactly the pages or ranges you want into a fresh document: a receipt, a single chapter, one signed page. Free and private.",
@@ -248,7 +248,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["extract-pdf-pages", "merge-pdf", "organize-pdf", "compress-pdf", "pdf-to-jpg"],
     },
     "rotate-pdf": {
-        "title": "Rotate PDF: Turn PDF Pages Online Free | File Forge",
+        "title": "Rotate PDF: Turn PDF Pages Online Free | Forge Files",
         "meta": "Rotate PDF pages 90, 180 or 270 degrees online, free. Fix sideways scans permanently. Rotate all pages or just some. No signup, open source, files auto-deleted.",
         "h1": "Rotate PDF: Fix Sideways or Upside-Down Pages",
         "lede": "Scanned a document and it came out sideways? Permanently rotate every page, or just the ones that are wrong, so your PDF always opens the right way up.",
@@ -272,7 +272,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["organize-pdf", "extract-pdf-pages", "compress-pdf", "merge-pdf", "rotate-image"],
     },
     "protect-pdf": {
-        "title": "Protect PDF: Add a Password Online Free | File Forge",
+        "title": "Protect PDF: Add a Password Online Free | Forge Files",
         "meta": "Add a password to a PDF online, free. Encrypt with a user password and set print/copy permissions. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "Protect PDF: Add a Password to Your PDF",
         "lede": "Sending something confidential: a contract, payslip, or ID? Lock the PDF with a password so only people who know it can open it, and decide whether printing or copying is allowed.",
@@ -296,7 +296,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["unlock-pdf", "watermark-pdf", "compress-pdf", "sign-pdf", "merge-pdf"],
     },
     "watermark-pdf": {
-        "title": "Watermark PDF: Add a Watermark Online Free | File Forge",
+        "title": "Watermark PDF: Add a Watermark Online Free | Forge Files",
         "meta": "Stamp a text watermark across every page of a PDF, free. Choose position and opacity (e.g. DRAFT, CONFIDENTIAL). No signup, open source, files auto-deleted.",
         "h1": "Add a Watermark to a PDF",
         "lede": "Mark a document as DRAFT, CONFIDENTIAL, or with your name across every page. Add a text watermark with the position and transparency you choose. It's free, and no software is needed.",
@@ -320,7 +320,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["protect-pdf", "sign-pdf", "pdf-page-numbers", "compress-pdf", "watermark-image"],
     },
     "pdf-to-jpg": {
-        "title": "PDF to JPG: Convert PDF Pages to Images Free | File Forge",
+        "title": "PDF to JPG: Convert PDF Pages to Images Free | Forge Files",
         "meta": "Convert each page of a PDF into a JPG or PNG image, free. Choose the resolution; download a zip. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "PDF to JPG: Turn PDF Pages Into Images",
         "lede": "Need your PDF pages as images for a slide, a website, or a quick preview? Render every page to a crisp JPG or PNG at the quality you choose, and download them all in one zip.",
@@ -344,7 +344,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["image-to-pdf", "pdf-to-powerpoint", "compress-pdf", "extract-pdf-pages", "pdf-to-excel"],
     },
     "pdf-page-numbers": {
-        "title": "Add Page Numbers to PDF: Free Online | File Forge",
+        "title": "Add Page Numbers to PDF: Free Online | Forge Files",
         "meta": "Add page numbers to a PDF, free. Choose position, format (1/i/A), start number and pages to skip. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "Add Page Numbers to a PDF",
         "lede": "Submitting a report, thesis, or legal bundle that needs numbered pages? Add clean page numbers in the position and style you want, and skip the cover page if you need to.",
@@ -368,7 +368,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["watermark-pdf", "organize-pdf", "merge-pdf", "compress-pdf", "sign-pdf"],
     },
     "pdf-to-excel": {
-        "title": "PDF to Excel: Extract Tables to XLSX Free | File Forge",
+        "title": "PDF to Excel: Extract Tables to XLSX Free | Forge Files",
         "meta": "Convert PDF tables to an editable Excel (.xlsx) spreadsheet, free. No signup, no watermarks, open source. Your file is deleted automatically after download.",
         "h1": "PDF to Excel: Extract Tables to a Spreadsheet",
         "lede": "Stop retyping tables out of PDFs. Pull the tabular data from a PDF into an editable Excel workbook so you can sort, total, and chart it in minutes.",
@@ -392,7 +392,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["pdf-to-text", "pdf-to-word", "excel-to-pdf", "pdf-to-powerpoint", "compress-pdf"],
     },
     "pdf-to-powerpoint": {
-        "title": "PDF to PowerPoint: Convert PDF to PPTX Free | File Forge",
+        "title": "PDF to PowerPoint: Convert PDF to PPTX Free | Forge Files",
         "meta": "Convert a PDF into a PowerPoint (.pptx) presentation online, free. Each page becomes a slide. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "PDF to PowerPoint: Convert PDF to Slides",
         "lede": "Turn a PDF into a presentation in one step: each page becomes a slide you can drop straight into PowerPoint, Keynote, or Google Slides.",
@@ -416,7 +416,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["pdf-to-jpg", "powerpoint-to-pdf", "pdf-to-word", "pdf-to-excel", "compress-pdf"],
     },
     "sign-pdf": {
-        "title": "Sign PDF: Add a Signature to a PDF Free | File Forge",
+        "title": "Sign PDF: Add a Signature to a PDF Free | Forge Files",
         "meta": "Add a signature image to a PDF online, free. Place your signature on any page and position. No signup, no watermarks, open source, files deleted automatically.",
         "h1": "Sign PDF: Stamp Your Signature on a Document",
         "lede": "Sign a contract or form without printing it. Upload a picture of your signature, drop it on the right page and corner, and download a signed PDF. Free and private.",
@@ -440,7 +440,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["protect-pdf", "watermark-pdf", "pdf-page-numbers", "merge-pdf", "unlock-pdf"],
     },
     "organize-pdf": {
-        "title": "Organize PDF: Reorder & Delete Pages Free | File Forge",
+        "title": "Organize PDF: Reorder & Delete Pages Free | Forge Files",
         "meta": "Reorder, delete, or duplicate PDF pages online, free. Set a new page order in one step. No signup, no watermarks, open source, files deleted automatically.",
         "h1": "Organize PDF: Reorder, Delete &amp; Duplicate Pages",
         "lede": "Pages in the wrong order, or a few you want gone? Set a new page order in one go: rearrange, drop unwanted pages, or duplicate the ones you need twice.",
@@ -465,7 +465,7 @@ TOOL_PAGES: Dict[str, dict] = {
     },
     # ===================== Image =====================
     "heic-to-jpeg": {
-        "title": "HEIC to JPG Converter: Free Online, No Signup | File Forge",
+        "title": "HEIC to JPG Converter: Free Online, No Signup | Forge Files",
         "meta": "Convert iPhone HEIC/HEIF photos to JPG, free. Adjustable quality, no signup, no watermarks. Open source. Photos are deleted automatically after download.",
         "h1": "HEIC to JPG: Convert iPhone Photos Online",
         "lede": "iPhone photos saved as .HEIC won't open on your Windows PC, can't be uploaded to that web form, and confuse older software. Convert them to universally compatible JPG in seconds.",
@@ -489,7 +489,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["resize-image", "compress-image", "convert-image", "image-to-pdf", "crop-image"],
     },
     "resize-image": {
-        "title": "Resize Image: Pixels, Percent or Target KB | File Forge",
+        "title": "Resize Image: Pixels, Percent or Target KB | Forge Files",
         "meta": "Resize images online for free: exact width/height, percentage scale, or a target file size in KB. Crop visually too. No signup, open source, files auto-deleted.",
         "h1": "Resize Image Online: Pixels, Percent, or Target KB",
         "lede": "“Photo must be under 200 KB.” “Image must be exactly 800×600.” Whatever the requirement, resize any image to exact dimensions, a percentage, or a target file size, and crop it visually if needed.",
@@ -513,7 +513,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["crop-image", "compress-image", "convert-image", "heic-to-jpeg", "image-to-pdf"],
     },
     "image-to-pdf": {
-        "title": "Image to PDF: Convert JPG/PNG to PDF Free | File Forge",
+        "title": "Image to PDF: Convert JPG/PNG to PDF Free | Forge Files",
         "meta": "Convert images (JPG, PNG, WebP, HEIC) to a PDF online, free. Choose page size and fit. No signup, no watermarks, open source, files deleted automatically.",
         "h1": "Image to PDF: Convert Photos to a PDF",
         "lede": "Turn a photo, scan, or screenshot into a tidy PDF: perfect for uploading an ID, receipt, or homework where only PDFs are accepted. Choose the page size and how the image fits.",
@@ -537,7 +537,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["pdf-to-jpg", "heic-to-jpeg", "compress-image", "resize-image", "merge-pdf"],
     },
     "compress-image": {
-        "title": "Compress Image: Reduce JPG/PNG Size Free | File Forge",
+        "title": "Compress Image: Reduce JPG/PNG Size Free | Forge Files",
         "meta": "Compress JPG, PNG and WebP images online, free. Shrink file size with an adjustable quality slider. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "Compress Image: Reduce Photo File Size",
         "lede": "Photos too heavy to email or slowing down your website? Compress them to a fraction of the size with a quality slider you control. Free, with no signup and no watermark.",
@@ -561,7 +561,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["resize-image", "convert-image", "crop-image", "compress-pdf", "image-to-pdf"],
     },
     "convert-image": {
-        "title": "Convert Image: JPG, PNG, WebP Converter Free | File Forge",
+        "title": "Convert Image: JPG, PNG, WebP Converter Free | Forge Files",
         "meta": "Convert images between JPG, PNG and WebP, free. Adjustable quality, no signup, no watermarks. Open source. Files auto-deleted after download.",
         "h1": "Convert Image: JPG ↔ PNG ↔ WebP",
         "lede": "Need a PNG instead of a JPG, or a lightweight WebP for your website? Convert between the common image formats in one click, with the quality you choose.",
@@ -585,7 +585,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["compress-image", "resize-image", "heic-to-jpeg", "crop-image", "image-to-pdf"],
     },
     "crop-image": {
-        "title": "Crop Image Online Free: Visual Crop Tool | File Forge",
+        "title": "Crop Image Online Free: Visual Crop Tool | Forge Files",
         "meta": "Crop images online for free with a visual drag-and-drop editor. Trim JPG, PNG, WebP and HEIC photos. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "Crop Image: Trim Photos Visually",
         "lede": "Cut out the background, fix the framing, or grab just one part of a photo. Drag the handles to crop exactly what you want and download the result. Free and private.",
@@ -609,7 +609,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["resize-image", "compress-image", "convert-image", "rotate-image", "heic-to-jpeg"],
     },
     "rotate-image": {
-        "title": "Rotate Image Online Free: Turn Photos | File Forge",
+        "title": "Rotate Image Online Free: Turn Photos | Forge Files",
         "meta": "Rotate images 90, 180 or 270 degrees online, free. Fix sideways phone photos in one click. No signup, no watermarks, open source, files deleted automatically.",
         "h1": "Rotate Image: Fix Sideways Photos",
         "lede": "Phone photo came out sideways or upside down? Rotate it 90°, 180°, or 270° and download the corrected image. Free, no app to install.",
@@ -633,7 +633,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["crop-image", "resize-image", "compress-image", "rotate-pdf", "convert-image"],
     },
     "watermark-image": {
-        "title": "Watermark Image: Add Text to a Photo Free | File Forge",
+        "title": "Watermark Image: Add Text to a Photo Free | Forge Files",
         "meta": "Add a text watermark to an image online, free. Choose position, color and opacity. No signup, no watermarks of ours, open source, files deleted automatically.",
         "h1": "Add a Watermark to an Image",
         "lede": "Protect a photo or brand it with your name. Stamp text onto any image with the position, color, and opacity you choose. It's free, and we never add a watermark of our own.",
@@ -651,14 +651,14 @@ TOOL_PAGES: Dict[str, dict] = {
         ],
         "faqs": [
             ("Can I choose where the watermark goes?", "Yes, corners, center, or a diagonal stamp across the image, with adjustable color and opacity."),
-            ("Will File Forge add its own watermark?", "Never. Your output carries only the text you choose: nothing else."),
+            ("Will Forge Files add its own watermark?", "Never. Your output carries only the text you choose: nothing else."),
             ("Can I watermark a PDF?", "Yes, use the free <a href=\"/watermark-pdf\">Watermark PDF</a> tool for documents."),
         ],
         "related": ["watermark-pdf", "compress-image", "resize-image", "convert-image", "crop-image"],
     },
     # ===================== Excel =====================
     "excel-to-pdf": {
-        "title": "Excel to PDF: Convert XLSX to PDF Online Free | File Forge",
+        "title": "Excel to PDF: Convert XLSX to PDF Online Free | Forge Files",
         "meta": "Convert Excel spreadsheets (XLSX/XLS) to PDF online, free. Every sheet rendered as a styled table. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "Excel to PDF: Convert Spreadsheets to PDF",
         "lede": "Share a spreadsheet that looks the same on every device. Convert your Excel workbook to a clean PDF, with each sheet rendered as a tidy table. Free and without Office installed.",
@@ -682,7 +682,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["csv-to-xlsx", "xlsx-to-csv", "merge-excel", "pdf-to-excel", "word-to-pdf"],
     },
     "csv-to-xlsx": {
-        "title": "CSV to Excel: Convert CSV to XLSX Online Free | File Forge",
+        "title": "CSV to Excel: Convert CSV to XLSX Online Free | Forge Files",
         "meta": "Convert a CSV file into an Excel workbook (.xlsx) online, free. Pick the delimiter (comma, semicolon, tab, pipe). No signup, open source, files auto-deleted.",
         "h1": "CSV to Excel: Turn a CSV Into a Workbook",
         "lede": "Got a raw CSV export that's awkward to read? Convert it into a proper Excel (.xlsx) workbook, with the right delimiter, so you can format, filter, and chart it.",
@@ -706,7 +706,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["xlsx-to-csv", "excel-to-pdf", "merge-excel", "pdf-to-excel", "word-to-pdf"],
     },
     "xlsx-to-csv": {
-        "title": "Excel to CSV: Convert XLSX to CSV Online Free | File Forge",
+        "title": "Excel to CSV: Convert XLSX to CSV Online Free | Forge Files",
         "meta": "Export an Excel sheet to CSV online, free. Choose which sheet to export. No signup, no watermarks, open source. Your file is auto-deleted after download.",
         "h1": "Excel to CSV: Export a Sheet to CSV",
         "lede": "Need plain CSV for an import, a database, or a script? Export any sheet of your Excel workbook to a clean CSV file. Free, no Office, no signup.",
@@ -730,7 +730,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["csv-to-xlsx", "excel-to-pdf", "merge-excel", "pdf-to-excel", "word-to-pdf"],
     },
     "merge-excel": {
-        "title": "Merge Excel: Combine Workbooks Online Free | File Forge",
+        "title": "Merge Excel: Combine Workbooks Online Free | Forge Files",
         "meta": "Combine multiple Excel (.xlsx) workbooks into one online, free. No signup, no watermarks, open source. Your files are deleted automatically after download.",
         "h1": "Merge Excel: Combine Multiple Workbooks",
         "lede": "Several spreadsheets that belong together? Combine multiple Excel workbooks into a single file. Free, no Office needed, nothing left on our servers.",
@@ -755,7 +755,7 @@ TOOL_PAGES: Dict[str, dict] = {
     },
     # ===================== PowerPoint =====================
     "powerpoint-to-pdf": {
-        "title": "PowerPoint to PDF: Convert PPT to PDF Free | File Forge",
+        "title": "PowerPoint to PDF: Convert PPT to PDF Free | Forge Files",
         "meta": "Convert a PowerPoint (.pptx) presentation to PDF online, free. Slides rendered into a clean PDF. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "PowerPoint to PDF: Convert Slides to PDF",
         "lede": "Share a deck that opens anywhere and can't be accidentally edited. Convert your PowerPoint presentation into a clean PDF. Free, no Office required.",
@@ -779,7 +779,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["ppt-to-images", "merge-ppt", "pdf-to-powerpoint", "word-to-pdf", "excel-to-pdf"],
     },
     "ppt-to-images": {
-        "title": "PPT to Images: PowerPoint to PNG/JPG Free | File Forge",
+        "title": "PPT to Images: PowerPoint to PNG/JPG Free | Forge Files",
         "meta": "Convert each PowerPoint slide to a PNG or JPG image online, free. Download all slides as a zip. No signup, no watermarks, open source, files auto-deleted.",
         "h1": "PPT to Images: Each Slide as a PNG or JPG",
         "lede": "Need your slides as images for a thumbnail, a doc, or social media? Render every PowerPoint slide to a PNG or JPG and download them all in one zip. Free and private.",
@@ -803,7 +803,7 @@ TOOL_PAGES: Dict[str, dict] = {
         "related": ["powerpoint-to-pdf", "merge-ppt", "pdf-to-jpg", "pdf-to-powerpoint", "image-to-pdf"],
     },
     "merge-ppt": {
-        "title": "Merge PowerPoint: Combine PPTX Online Free | File Forge",
+        "title": "Merge PowerPoint: Combine PPTX Online Free | Forge Files",
         "meta": "Combine multiple PowerPoint (.pptx) presentations into one, free. No signup, no watermarks, open source. Your files are auto-deleted after download.",
         "h1": "Merge PowerPoint: Combine Presentations",
         "lede": "Stitch several decks into one seamless presentation. Combine multiple PowerPoint files in the order you choose. Free, no Office, nothing kept on our servers.",
@@ -828,7 +828,7 @@ TOOL_PAGES: Dict[str, dict] = {
     },
     # ===================== Word =====================
     "word-to-pdf": {
-        "title": "Word to PDF: Convert DOCX to PDF Online Free | File Forge",
+        "title": "Word to PDF: Convert DOCX to PDF Online Free | Forge Files",
         "meta": "Convert a Word document (DOCX) to PDF, free. Keeps your layout and fonts. No signup, no watermarks, open source. Files auto-deleted after download.",
         "h1": "Word to PDF: Convert DOCX to PDF",
         "lede": "Send a document that looks identical everywhere and can't be accidentally edited. Convert your Word (.docx) file to a polished PDF. Free, no Microsoft Office required.",
@@ -878,7 +878,7 @@ def _software_schema(slug: str, page: dict) -> dict:
     # structured-data policy and risks a manual action. Add them only once
     # genuine reviews exist. The publisher/sameAs/inLanguage fields below are
     # legitimate entity signals that help Google associate the tool with the
-    # File Forge brand and its GitHub presence.
+    # Forge Files brand and its GitHub presence.
     return {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
@@ -1097,7 +1097,7 @@ def render_404_page() -> str:
         <ul>
 {links}
         </ul>
-        <p><a class="cta" href="/">Go to all File Forge tools</a></p>
+        <p><a class="cta" href="/">Go to all Forge Files tools</a></p>
         <footer class="page-footer">
             <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>
             · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a

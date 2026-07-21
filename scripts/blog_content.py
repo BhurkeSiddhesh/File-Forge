@@ -99,7 +99,7 @@ GUIDES: Dict[str, dict] = {
              "50–90%. A text-only PDF is already small, so there's less to save."),
             ("Is it safe to compress a confidential PDF here?",
              "Yes. The file is sent over encrypted HTTPS, processed, returned, and "
-             "then deleted, with an hourly sweeper as a backstop. File Forge is "
+             "then deleted, with an hourly sweeper as a backstop. Forge Files is "
              "open source, so you can verify exactly how it's handled."),
         ],
     },
@@ -144,7 +144,7 @@ GUIDES: Dict[str, dict] = {
                 "<p>If your PDF is a scan or photo of a document, the “text” "
                 "is really an image, so it can't be edited until it's recognised. "
                 "Optical character recognition (OCR) reads the pixels and turns them "
-                "back into selectable, editable text. File Forge runs OCR fully "
+                "back into selectable, editable text. Forge Files runs OCR fully "
                 "offline on our server, so scanned pages come back as words you can "
                 "actually change.</p>")),
         ],
@@ -387,11 +387,11 @@ def render_blog_index() -> str:
     title = "Guides: How to Work With PDFs, Images & Documents | " + SITE
     meta = ("Free step-by-step guides for compressing PDFs, converting PDF to "
             "Word, turning iPhone HEIC photos into JPG, and more, from the "
-            "open-source File Forge toolbox.")
+            "open-source Forge Files toolbox.")
     schema_blocks = _jsonld({
         "@context": "https://schema.org",
         "@type": "CollectionPage",
-        "name": "File Forge Guides",
+        "name": "Forge Files Guides",
         "description": meta,
         "url": canonical,
         "inLanguage": "en",
@@ -416,7 +416,7 @@ def render_blog_index() -> str:
     <main class="page-wrap">
         <nav class="page-nav"><a href="/">&larr; {SITE}: all tools</a></nav>
 
-        <h1>File Forge Guides</h1>
+        <h1>Forge Files Guides</h1>
         <p class="lede">Practical, no-nonsense guides for getting file jobs done.
             Each one links straight to the free tool that does it. No signup, no watermark,
             files deleted after processing.</p>
