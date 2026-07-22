@@ -32,6 +32,52 @@ def multi_page_pdf(tmp_path_factory):
     return file_path
 
 @pytest.fixture(scope="session")
+def text_rich_pdf(tmp_path_factory):
+    """Creates a PDF with enough real text per page to pass the
+    text-layer-detection heuristic in pdf_to_word_ai. Includes an "AI" token
+    and multi-word phrases so tests can catch spacing/character
+    regressions in whichever conversion path handles it."""
+    d = tmp_path_factory.mktemp("text_rich")
+    file_path = d / "resume.pdf"
+
+    c = canvas.Canvas(str(file_path))
+    lines = [
+        "Jordan Rivera",
+        "Senior Analytics Consultant",
+        "Experienced in leading AI driven transformation programs across finance and retail.",
+        "- Led a cross functional team of ten analysts delivering forecasting models.",
+        "- Partnered with engineering to ship an AI powered recommendation engine.",
+        "- Presented quarterly insights to executive leadership and the board.",
+    ]
+    y = 750
+    for line in lines:
+        c.drawString(72, y, line)
+        y -= 20
+    c.save()
+
+    return file_path
+
+
+@pytest.fixture(scope="session")
+def scanned_like_pdf(tmp_path_factory):
+    """Creates a PDF with an embedded image and no embedded text, simulating
+    a scanned page (should still be routed to OCR)."""
+    from PIL import Image
+
+    d = tmp_path_factory.mktemp("scanned_like")
+    img_path = d / "page.png"
+    Image.new("RGB", (200, 200), color="white").save(img_path)
+
+    file_path = d / "scanned.pdf"
+    c = canvas.Canvas(str(file_path))
+    c.drawImage(str(img_path), 0, 0, width=200, height=200)
+    c.showPage()
+    c.save()
+
+    return file_path
+
+
+@pytest.fixture(scope="session")
 def locked_pdf(tmp_path_factory, sample_pdf):
     """Creates a password-protected PDF file."""
     d = tmp_path_factory.mktemp("locked_data")

@@ -283,6 +283,21 @@ AI_DISABLED_MESSAGE = (
     "free hosting tier provides). Uncheck 'Use AI Layout Recovery' to use the standard converter."
 )
 
+# pdf_to_word_ai reports which conversion path it actually took via
+# method_callback, so the response message reflects what happened instead of
+# always claiming "AI Layout Recovery" even when OCR never ran (or ran
+# without real layout support - see scripts/pdf_utils.py:pdf_to_word_ai).
+_AI_METHOD_MESSAGES = {
+    "text_layer": "Converted to Word (used the PDF's existing text layer — AI OCR wasn't needed)",
+    "paddle_layout": "Converted to Word with AI Layout Recovery",
+    "ocr_hybrid": "Converted to Word with AI Layout Recovery (OCR applied only to scanned pages)",
+    "ocr_fallback": "Converted to Word with AI OCR (layout recovery isn't available on this server)",
+}
+
+
+def _ai_conversion_message(method: Optional[str]) -> str:
+    return _AI_METHOD_MESSAGES.get(method, "Converted to Word with AI Layout Recovery")
+
 @app.on_event("startup")
 async def startup_event():
     """Optionally warm up AI models, and start the stale-file sweeper."""
@@ -554,6 +569,21 @@ async def api_remove_password(
             except PermissionError:
                 pass
 
+@app.get("/api/ai-capabilities")
+async def api_ai_capabilities():
+    """Report what the configured AI/OCR backend can actually deliver, so the
+    frontend's "Use AI Layout Recovery" checkbox can describe reality (e.g.
+    on ARM deployments where RapidOCR has no table/column layout recovery)
+    instead of a single hard-coded label."""
+    if DISABLE_AI:
+        return {"enabled": False, "supports_layout": None}
+    from scripts.ocr_engine import get_ocr_engine
+    engine = await run_in_threadpool(get_ocr_engine)
+    if engine is None:
+        return {"enabled": False, "supports_layout": None}
+    return {"enabled": True, "supports_layout": engine.supports_layout}
+
+
 @app.post("/api/pdf/convert-to-word")
 async def api_convert_to_word(
     file: UploadFile = File(...),
@@ -572,13 +602,15 @@ async def api_convert_to_word(
         logger.debug("File saved to: %s", temp_path)
         
         if use_ai:
-            # @jules: This can be very slow for large PDFs. 
+            # @jules: This can be very slow for large PDFs.
             # We should probably implement a progress bar or background task with polling.
+            ai_method = {}
             output_path = event_log.timed_call(
                 "pdf_to_word_ai", pdf_to_word_ai, str(temp_path), str(OUTPUT_DIR), password,
+                method_callback=lambda m: ai_method.__setitem__("value", m),
                 use_ai=True,
             )
-            message = "Converted to Word with AI Layout Recovery"
+            message = _ai_conversion_message(ai_method.get("value"))
         else:
             output_path = await event_log.timed(
                 "pdf_to_word_standard",
@@ -634,21 +666,26 @@ async def api_convert_to_word_stream(
         def worker():
             try:
                 if use_ai:
+                    ai_method = {}
                     output_path = event_log.timed_call(
                         op_name, pdf_to_word_ai,
                         str(temp_path), str(OUTPUT_DIR), password, progress_callback=progress_cb,
+                        method_callback=lambda m: ai_method.__setitem__("value", m),
                         use_ai=True, country=ctx_country, session_id=ctx_session,
                     )
-                    message = "Converted to Word with AI Layout Recovery"
+                    method = ai_method.get("value")
+                    message = _ai_conversion_message(method)
                 else:
                     output_path = event_log.timed_call(
                         op_name, pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password,
                         country=ctx_country, session_id=ctx_session,
                     )
+                    method = "standard"
                     message = "Converted to Word (Standard)"
                 events.put({
                     "event": "complete",
                     "message": message,
+                    "method": method,
                     "filename": Path(output_path).name,
                 })
             except Exception as e:
