@@ -1,7 +1,15 @@
 from pathlib import Path
 import pytest
 import pikepdf
-from scripts.pdf_utils import remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text, _parse_page_selection
+import fitz
+from docx import Document
+from reportlab.pdfgen import canvas
+from scripts.pdf_utils import (
+    remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text,
+    _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
+)
+import scripts.pdf_utils as pdf_utils_module
+import scripts.ocr_engine as ocr_engine
 
 def test_remove_pdf_password(locked_pdf, tmp_path):
     """Test removing password from a PDF."""
@@ -225,3 +233,127 @@ def test_compress_pdf_encrypted_no_password_raises(locked_pdf, tmp_path):
     """compress_pdf without password for encrypted PDF raises ValueError."""
     with pytest.raises(ValueError, match="password"):
         compress_pdf(str(locked_pdf["path"]), str(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# pdf_to_word_ai: text-layer detection + routing
+#
+# Regression coverage for a real bug: pdf_to_word_ai used to rasterize and
+# OCR every page unconditionally, even PDFs with a perfectly clean embedded
+# text layer, which on ARM deployments (OCR_BACKEND=rapidocr, no layout
+# support) produced mangled output (dropped spaces, "AI"->"Al", reordered
+# bullets) that was strictly worse than the standard converter. It should
+# never touch OCR when a usable text layer already exists.
+# ---------------------------------------------------------------------------
+
+def test_inspect_text_layer_classifies_text_and_scanned_pages(text_rich_pdf, scanned_like_pdf):
+    """A text-native PDF is classified as having a usable text layer; an
+    image-only PDF is not."""
+    doc = fitz.open(str(text_rich_pdf))
+    try:
+        report = _inspect_text_layer(doc)
+    finally:
+        doc.close()
+    assert report["has_usable_text_layer"] is True
+    assert report["fraction_with_text"] == 1.0
+
+    doc = fitz.open(str(scanned_like_pdf))
+    try:
+        report = _inspect_text_layer(doc)
+    finally:
+        doc.close()
+    assert report["has_usable_text_layer"] is False
+    assert report["fraction_with_text"] == 0.0
+
+
+def test_pdf_to_word_ai_skips_ocr_for_text_pdf(text_rich_pdf, tmp_path, monkeypatch):
+    """pdf_to_word_ai must not rasterize+OCR a PDF that already has a usable
+    text layer, regardless of which OCR backend is configured."""
+    def _fail(*args, **kwargs):
+        raise AssertionError("OCR should not run for a text-based PDF")
+
+    monkeypatch.setattr(pdf_utils_module, "_pdf_to_word_ocr_fallback", _fail)
+    monkeypatch.setattr(pdf_utils_module, "_pdf_to_word_paddle_impl", _fail)
+    monkeypatch.setattr(pdf_utils_module, "_pdf_to_word_hybrid_impl", _fail)
+
+    methods = []
+    output_path = pdf_to_word_ai(
+        str(text_rich_pdf), str(tmp_path), method_callback=methods.append,
+    )
+    assert Path(output_path).exists()
+    assert methods == ["text_layer"]
+
+
+def test_pdf_to_word_ai_text_pdf_succeeds_even_with_ai_disabled(text_rich_pdf, tmp_path, monkeypatch):
+    """A text-based PDF converts fine even when AI/OCR is disabled server-wide -
+    it never needed OCR in the first place."""
+    monkeypatch.setenv("DISABLE_AI", "1")
+    ocr_engine.reset_engine()
+
+    output_path = pdf_to_word_ai(str(text_rich_pdf), str(tmp_path))
+    assert Path(output_path).exists()
+
+
+def test_pdf_to_word_ai_scanned_pdf_still_errors_when_ai_disabled(scanned_like_pdf, tmp_path, monkeypatch):
+    """A genuinely scanned/image-only PDF still requires AI/OCR to be enabled."""
+    monkeypatch.setenv("DISABLE_AI", "1")
+    ocr_engine.reset_engine()
+
+    with pytest.raises(ValueError):
+        pdf_to_word_ai(str(scanned_like_pdf), str(tmp_path))
+
+
+def test_pdf_to_word_ai_output_has_correct_spacing_and_no_corrupted_ai(text_rich_pdf, tmp_path):
+    """The routed (standard, text-layer-based) conversion preserves word
+    spacing and doesn't corrupt 'AI' - the exact symptoms of the OCR bug."""
+    output_path = pdf_to_word_ai(str(text_rich_pdf), str(tmp_path))
+    doc = Document(output_path)
+    text = "\n".join(p.text for p in doc.paragraphs)
+
+    assert "Senior Analytics Consultant" in text
+    assert "AI" in text
+    assert "Al " not in text and "Al." not in text
+
+
+def test_pdf_to_word_ai_hybrid_routes_ocr_only_to_scanned_pages(tmp_path, monkeypatch):
+    """A mixed PDF (one text page, one scanned page) should extract the text
+    page natively and OCR only the scanned page."""
+    from PIL import Image
+    from unittest.mock import MagicMock
+
+    d = tmp_path / "mixed_src"
+    d.mkdir()
+    file_path = d / "mixed.pdf"
+
+    c = canvas.Canvas(str(file_path))
+    c.drawString(72, 750, "This page already has plenty of real embedded text content.")
+    c.showPage()
+    img_path = d / "page.png"
+    Image.new("RGB", (200, 200), color="white").save(img_path)
+    c.drawImage(str(img_path), 0, 0, width=200, height=200)
+    c.showPage()
+    c.save()
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.supports_layout = False
+    fake_engine.recognize.return_value = [
+        {"text": "Scanned line", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    methods = []
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    output_path = pdf_to_word_ai(str(file_path), str(output_dir), method_callback=methods.append)
+
+    assert Path(output_path).exists()
+    assert methods == ["ocr_hybrid"]
+    # Only the scanned page (page 2) should have gone through OCR.
+    assert fake_engine.recognize.call_count == 1
+
+    doc = Document(output_path)
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "This page already has plenty of real embedded text content." in text
+    assert "Scanned line" in text

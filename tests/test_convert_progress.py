@@ -65,6 +65,72 @@ class TestConvertToWordStream:
             )
         assert resp.status_code != 403
 
+    def test_ai_checkbox_on_text_pdf_stream_reports_accurate_message(self, auth_client, text_rich_pdf):
+        """Checking "Use AI Layout Recovery" on a text-based PDF must not
+        claim AI Layout Recovery happened when the server actually skipped
+        OCR and used the PDF's own text layer."""
+        with open(text_rich_pdf, "rb") as f:
+            resp = auth_client.post(
+                "/api/pdf/convert-to-word-stream",
+                files={"file": ("resume.pdf", f, "application/pdf")},
+                data={"use_ai": "true"},
+            )
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        complete = next(e for e in events if e["event"] == "complete")
+        assert complete["method"] == "text_layer"
+        assert "AI Layout Recovery" not in complete["message"]
+
+
+class TestAiCapabilities:
+    """/api/ai-capabilities lets the frontend describe what the deployed AI
+    backend can actually do (e.g. RapidOCR on ARM has no layout recovery)
+    instead of a single hard-coded "High Fidelity" claim."""
+
+    def test_reports_disabled_when_ai_off(self, auth_client, monkeypatch):
+        monkeypatch.setattr("main.DISABLE_AI", True)
+        resp = auth_client.get("/api/ai-capabilities")
+        assert resp.status_code == 200
+        assert resp.json() == {"enabled": False, "supports_layout": None}
+
+    def test_reports_supports_layout_from_engine(self, auth_client, monkeypatch):
+        import scripts.ocr_engine as ocr_engine
+
+        monkeypatch.setattr("main.DISABLE_AI", False)
+        fake_engine = MagicMock()
+        fake_engine.supports_layout = True
+        monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+        resp = auth_client.get("/api/ai-capabilities")
+        assert resp.status_code == 200
+        assert resp.json() == {"enabled": True, "supports_layout": True}
+
+    def test_reports_no_layout_support_for_rapidocr(self, auth_client, monkeypatch):
+        import scripts.ocr_engine as ocr_engine
+
+        monkeypatch.setattr("main.DISABLE_AI", False)
+        fake_engine = MagicMock()
+        fake_engine.supports_layout = False
+        monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+        resp = auth_client.get("/api/ai-capabilities")
+        assert resp.status_code == 200
+        assert resp.json() == {"enabled": True, "supports_layout": False}
+
+
+class TestConvertToWord:
+    def test_ai_checkbox_on_text_pdf_reports_accurate_message(self, auth_client, text_rich_pdf):
+        with open(text_rich_pdf, "rb") as f:
+            resp = auth_client.post(
+                "/api/pdf/convert-to-word",
+                files={"file": ("resume.pdf", f, "application/pdf")},
+                data={"use_ai": "true"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "AI Layout Recovery" not in data["message"]
+        assert "text layer" in data["message"].lower()
+
 
 class TestProgressCallback:
     def test_pdf_to_word_ai_accepts_progress_callback(self):

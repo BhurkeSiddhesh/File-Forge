@@ -362,6 +362,29 @@ document.getElementById('process-compress-btn').onclick = async () => {
     }
 };
 
+// The "Use AI Layout Recovery" label should match what the deployed backend
+// can actually deliver (e.g. on ARM, RapidOCR has no table/column layout
+// recovery) rather than a single hard-coded claim. Also: once a PDF already
+// has a usable text layer, the server skips OCR entirely regardless of this
+// checkbox, so the label only needs to stop overpromising, not describe
+// every routing case.
+(async () => {
+    const label = document.getElementById('ai-mode-label');
+    if (!label) return;
+    try {
+        const response = await fetch(apiUrl('/api/ai-capabilities'));
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.enabled) {
+            label.textContent = 'Use AI Layout Recovery (unavailable on this server)';
+        } else if (data.supports_layout) {
+            label.textContent = 'Use AI Layout Recovery (tables & columns, for scanned/image PDFs)';
+        } else {
+            label.textContent = 'Use OCR Text Recovery (for scanned/image PDFs)';
+        }
+    } catch (e) { /* keep the default label if this fails */ }
+})();
+
 document.getElementById('process-convert-btn').onclick = async () => {
     const useAI = document.getElementById('ai-mode-toggle').checked;
 

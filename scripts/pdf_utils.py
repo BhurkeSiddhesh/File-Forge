@@ -4,7 +4,7 @@ import uuid
 import pikepdf
 from pathlib import Path
 import os
-from typing import List
+from typing import List, Optional
 
 from scripts.utils import branded_filename, original_stem
 
@@ -220,6 +220,41 @@ def _normalize_extracted_text(text: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+# Tunable thresholds for "does this page already carry usable text".
+TEXT_LAYER_MIN_CHARS_PER_PAGE = 40
+TEXT_LAYER_MIN_WORDS_PER_PAGE = 6
+TEXT_LAYER_MIN_PAGE_FRACTION = 0.8  # doc-level: fraction of pages that must qualify
+
+
+def _page_has_usable_text(page) -> bool:
+    """True if `page`'s embedded text layer (via PyMuPDF) looks like real
+    body text rather than stray metadata/watermark noise."""
+    words = page.get_text("text").split()
+    non_ws_chars = sum(len(w) for w in words)
+    return (
+        non_ws_chars >= TEXT_LAYER_MIN_CHARS_PER_PAGE
+        and len(words) >= TEXT_LAYER_MIN_WORDS_PER_PAGE
+    )
+
+
+def _inspect_text_layer(doc: "fitz.Document") -> dict:
+    """Classify each page of an already-open fitz.Document as text/no-text.
+
+    Used to decide, per page, whether rasterize+OCR is actually needed —
+    OCR should only run on pages that don't already have a usable
+    embedded text layer.
+    """
+    pages_with_text = [_page_has_usable_text(page) for page in doc]
+    total_pages = len(pages_with_text)
+    fraction = (sum(pages_with_text) / total_pages) if total_pages else 0.0
+    return {
+        "pages_with_text": pages_with_text,
+        "total_pages": total_pages,
+        "fraction_with_text": fraction,
+        "has_usable_text_layer": fraction >= TEXT_LAYER_MIN_PAGE_FRACTION,
+    }
+
+
 def _render_page_bgr(page, dpi: int = 200):
     """Render a PDF page to a BGR numpy image for OCR."""
     pix = page.get_pixmap(dpi=dpi)
@@ -420,28 +455,34 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
             Path(decrypted_path).unlink(missing_ok=True)
 
 
-def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
-    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
+def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
+    """Shared pdf2docx conversion core, used by both the standard converter
+    and pdf_to_word_ai's automatic text-layer routing."""
     from pdf2docx import Converter
 
+    cv = Converter(decrypted_path)
+    try:
+        try:
+            cv.convert(str(output_file), multi_processing=True)
+        except Exception:
+            # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
+            cv.convert(str(output_file))
+    finally:
+        # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
+        # is called. Without this finally block, a failed convert() would leak
+        # the file handle and block cleanup on Windows.
+        cv.close()
+
+
+def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
+    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
     try:
-        cv = Converter(decrypted_path)
-        try:
-            try:
-                cv.convert(str(output_file), multi_processing=True)
-            except Exception:
-                # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
-                cv.convert(str(output_file))
-        finally:
-            # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
-            # is called. Without this finally block, a failed convert() would leak
-            # the file handle and block cleanup on Windows.
-            cv.close()
+        _convert_pdf2docx(decrypted_path, output_file)
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
@@ -807,11 +848,64 @@ def _pdf_to_word_paddle_impl(decrypted_path: str, temp_dir: Path, output_file: P
     doc.close()
 
 
-def _group_ocr_lines(items: List[dict]) -> List[str]:
+def _split_into_columns(entries: List[tuple], page_width: Optional[float],
+                        min_gap_frac: float = 0.06) -> List[List[tuple]]:
+    """Split OCR text fragments into left-to-right column bands using a
+    whitespace-gap projection onto the x-axis.
+
+    Prevents fragments from different columns (common on multi-column
+    resumes) from being merged into the same reading-order line just
+    because their y-centers happen to be close.
+    """
+    if not entries or not page_width:
+        return [entries]
+
+    spans = sorted((e[3], e[4]) for e in entries)  # (x0, x1)
+    merged: List[List[float]] = []
+    for x0, x1 in spans:
+        if merged and x0 <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], x1)
+        else:
+            merged.append([x0, x1])
+
+    min_gap = page_width * min_gap_frac
+    boundaries = [a[1] for a, b in zip(merged, merged[1:]) if b[0] - a[1] >= min_gap]
+    if not boundaries:
+        return [entries]
+
+    columns: List[List[tuple]] = [[] for _ in range(len(boundaries) + 1)]
+    for entry in entries:
+        x_center = (entry[3] + entry[4]) / 2
+        idx = sum(1 for b in boundaries if x_center > b)
+        columns[idx].append(entry)
+    return [c for c in columns if c]
+
+
+def _group_ocr_lines(items: List[dict], page_width: Optional[float] = None) -> List[str]:
     """Group OCR text snippets into reading-order lines using their bboxes.
 
-    Snippets whose vertical centers fall within roughly half a text height of
-    each other are treated as one line and joined left-to-right.
+    Text is first split into left-to-right columns (`_split_into_columns`)
+    so multi-column layouts don't interleave. Within each column, snippets
+    whose vertical centers fall within roughly half a text height of each
+    other are treated as one line and joined left-to-right - but only if
+    they don't horizontally overlap with what's already in that line,
+    since overlapping x-ranges can't belong to the same visual row (this
+    keeps a new bullet's left-margin start from being absorbed into a
+    still-open previous row just because their y-centers are close).
+
+    Known limitation: if a single detection box spans multiple
+    tightly-kerned words (e.g. "SeniorAnalyticsConsultant"), the space
+    between them is lost here too - RapidOCR's recognizer has no explicit
+    space class, and it doesn't expose sub-box geometry this function could
+    use to split it back apart. A dictionary-segmentation package
+    (`wordninja`) was evaluated for this, but its legacy sdist-only build
+    fails under current setuptools (>= ~68, which is what File-Forge's
+    Docker build installs),
+    so this is intentionally left unfixed rather than shipping a fragile
+    dependency or a heuristic that can silently produce wrong text. This
+    only affects pages that still require true OCR (no embedded text layer
+    at all) - see `pdf_to_word_ai`'s text-layer routing, which is what
+    prevents OCR from running on normal, text-based PDFs in the first place.
     """
     entries = []
     for item in items:
@@ -822,25 +916,36 @@ def _group_ocr_lines(items: List[dict]) -> List[str]:
         try:
             xs = [float(pt[0]) for pt in bbox]
             ys = [float(pt[1]) for pt in bbox]
-            x0, y0, y1 = min(xs), min(ys), max(ys)
+            x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
         except (TypeError, ValueError, IndexError):
-            x0, y0, y1 = 0.0, float(len(entries)), float(len(entries))
-        entries.append((y0, (y0 + y1) / 2, y1 - y0, x0, text))
+            x0, x1, y0, y1 = 0.0, 0.0, float(len(entries)), float(len(entries))
+        entries.append((y0, (y0 + y1) / 2, y1 - y0, x0, x1, text))
 
-    entries.sort(key=lambda e: (e[0], e[3]))
+    lines_out: List[str] = []
+    for column_entries in _split_into_columns(entries, page_width):
+        column_entries = sorted(column_entries, key=lambda e: (e[0], e[3]))
 
-    lines: List[List[tuple]] = []
-    for entry in entries:
-        if lines:
-            prev = lines[-1]
-            prev_center = sum(e[1] for e in prev) / len(prev)
-            tolerance = max(entry[2], 1.0) * 0.6
-            if abs(entry[1] - prev_center) <= tolerance:
-                prev.append(entry)
-                continue
-        lines.append([entry])
+        lines: List[List[tuple]] = []
+        for entry in column_entries:
+            if lines:
+                prev = lines[-1]
+                prev_center = sum(e[1] for e in prev) / len(prev)
+                prev_max_x1 = max(e[4] for e in prev)
+                tolerance = max(entry[2], 1.0) * 0.6
+                overlap_tolerance = max(entry[2], 1.0) * 0.15
+                same_row = abs(entry[1] - prev_center) <= tolerance
+                overlaps_existing = entry[3] < prev_max_x1 - overlap_tolerance
+                if same_row and not overlaps_existing:
+                    prev.append(entry)
+                    continue
+            lines.append([entry])
 
-    return [" ".join(e[4] for e in sorted(line, key=lambda e: e[3])) for line in lines]
+        for line in lines:
+            lines_out.append(
+                " ".join(e[-1] for e in sorted(line, key=lambda e: e[3]))
+            )
+
+    return lines_out
 
 
 def _pdf_to_word_ocr_fallback(engine, decrypted_path: str, output_file: Path,
@@ -870,7 +975,7 @@ def _pdf_to_word_ocr_fallback(engine, decrypted_path: str, output_file: Path,
 
         if i > 0:
             word_doc.add_page_break()
-        for line in _group_ocr_lines(items):
+        for line in _group_ocr_lines(items, page_width=page.rect.width):
             word_doc.add_paragraph(line)
             any_text = True
 
@@ -884,29 +989,84 @@ def _pdf_to_word_ocr_fallback(engine, decrypted_path: str, output_file: Path,
     word_doc.save(str(output_file))
 
 
-def pdf_to_word_ai(input_path: str, output_dir: str, password: str = None,
-                   progress_callback=None) -> str:
-    """Converts PDF to DOCX using the configured AI/OCR backend (Slow, AI-based).
+def _pdf_to_word_hybrid_impl(engine, decrypted_path: str, output_file: Path,
+                             report: dict, progress_callback=None) -> None:
+    """Mixed-content PDF: extract native text where a page already has a
+    usable text layer, and only rasterize+OCR the pages that don't."""
+    import fitz
 
-    Backend behavior (see scripts/ocr_engine.py):
-        paddle   → PPStructure layout recovery (tables, columns; x86 only)
-        rapidocr → per-page OCR text reconstruction (ARM64-compatible)
-        none     → raises ValueError (AI disabled)
+    if Document_docx is None:
+        raise ImportError("python-docx is required for OCR-based PDF to Word conversion")
+
+    doc = fitz.open(decrypted_path)
+    total_pages = len(doc)
+    logger.info(
+        "Opened PDF with %d pages (hybrid: native text + OCR via %s for scanned pages)",
+        total_pages, engine.name,
+    )
+
+    word_doc = Document_docx()
+    any_text = False
+
+    _safe_progress(progress_callback, 0, total_pages)
+
+    for i, page in enumerate(doc):
+        if i > 0:
+            word_doc.add_page_break()
+
+        if report["pages_with_text"][i]:
+            for para in page.get_text("text").split("\n"):
+                para = para.strip()
+                if para:
+                    word_doc.add_paragraph(para)
+                    any_text = True
+        else:
+            img = _render_page_bgr(page)
+            items = engine.recognize(img)
+            for line in _group_ocr_lines(items, page_width=page.rect.width):
+                word_doc.add_paragraph(line)
+                any_text = True
+
+        _safe_progress(progress_callback, i + 1, total_pages)
+
+    doc.close()
+
+    if not any_text:
+        raise ValueError("No text could be recognized in this PDF.")
+
+    word_doc.save(str(output_file))
+
+
+def pdf_to_word_ai(input_path: str, output_dir: str, password: str = None,
+                   progress_callback=None, method_callback=None) -> str:
+    """Converts PDF to DOCX, preferring the PDF's own text layer over OCR.
+
+    Rasterize+OCR is expensive and lossy (dropped spacing, character
+    misreads, no font/layout preservation), so it should only ever run on
+    pages that don't already have usable extractable text - not as the
+    default outcome of checking "AI Layout Recovery" on a normal PDF.
+
+    Routing (in order):
+        1. The document already has a usable embedded text layer (>=80% of
+           pages qualify) -> standard pdf2docx conversion. OCR is never
+           invoked, regardless of the caller's AI intent.
+        2. No usable text layer, configured engine supports layout recovery
+           (paddle/PPStructure, x86 only) -> layout-aware OCR conversion.
+        3. No usable text layer, but some pages have text and some don't,
+           and the engine lacks layout support -> hybrid conversion: native
+           text per page where present, OCR only the pages that need it.
+        4. No text anywhere, no layout support -> full-page OCR fallback.
 
     Args:
         progress_callback: Optional callable(page_done, total_pages) invoked
             after each page is processed, for streaming progress to clients.
+        method_callback: Optional callable(str) invoked once with one of
+            "text_layer" | "paddle_layout" | "ocr_hybrid" | "ocr_fallback"
+            as soon as the routing decision is made, so callers can report
+            an accurate result message.
     """
-    from scripts.ocr_engine import get_ocr_engine
+    import fitz
 
-    engine = get_ocr_engine()
-    if engine is None:
-        raise ValueError(
-            "AI Layout Recovery is disabled on this server. "
-            "Uncheck 'Use AI Layout Recovery' to use the standard converter."
-        )
-
-    logger.info("Starting AI conversion for: %s (backend=%s)", input_path, engine.name)
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
@@ -920,9 +1080,52 @@ def pdf_to_word_ai(input_path: str, output_dir: str, password: str = None,
     logger.debug("Using path: %s, needs_cleanup: %s", decrypted_path, needs_cleanup)
 
     try:
+        probe = fitz.open(decrypted_path)
+        try:
+            report = _inspect_text_layer(probe)
+        finally:
+            probe.close()
+
+        if report["has_usable_text_layer"]:
+            logger.info(
+                "pdf_to_word_ai: %s already has a usable embedded text layer "
+                "(%d/%d pages) - using standard text-based conversion instead "
+                "of rasterize+OCR.",
+                input_file.name, sum(report["pages_with_text"]), report["total_pages"],
+            )
+            if method_callback:
+                method_callback("text_layer")
+            _safe_progress(progress_callback, 0, report["total_pages"])
+            _convert_pdf2docx(decrypted_path, output_file)
+            _safe_progress(progress_callback, report["total_pages"], report["total_pages"])
+            return str(output_file)
+
+        # Only reachable when pages genuinely lack usable text (scanned /
+        # image-only) - only now is it worth spinning up the OCR engine.
+        from scripts.ocr_engine import get_ocr_engine
+
+        engine = get_ocr_engine()
+        if engine is None:
+            raise ValueError(
+                "This PDF appears to be scanned/image-based, and AI Layout "
+                "Recovery is disabled on this server, so it can't be "
+                "converted. (A PDF with selectable text would convert fine "
+                "without AI.)"
+            )
+
+        logger.info("Starting AI conversion for: %s (backend=%s)", input_path, engine.name)
+
         if engine.supports_layout:
+            if method_callback:
+                method_callback("paddle_layout")
             _pdf_to_word_paddle_impl(decrypted_path, temp_dir, output_file, progress_callback)
+        elif report["fraction_with_text"] > 0.0:
+            if method_callback:
+                method_callback("ocr_hybrid")
+            _pdf_to_word_hybrid_impl(engine, decrypted_path, output_file, report, progress_callback)
         else:
+            if method_callback:
+                method_callback("ocr_fallback")
             _pdf_to_word_ocr_fallback(engine, decrypted_path, output_file, progress_callback)
     finally:
         # Cleanup
