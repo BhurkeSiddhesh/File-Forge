@@ -15,42 +15,99 @@ pillow_heif.register_heif_opener()
 def _prepare_image(img: Image.Image) -> Image.Image:
     """
     Prepare image for processing: normalize orientation and convert to RGB.
-    
+
     Args:
         img: PIL Image object.
-    
+
     Returns:
         Normalized and RGB-converted image.
     """
     # Normalize orientation (handle EXIF tags)
     img = ImageOps.exif_transpose(img)
-    
+
     # Convert RGBA or palette mode to RGB for JPEG compatibility
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    
+
     return img
+
+
+# EXIF Orientation tag id.
+_EXIF_ORIENTATION = 0x0112
+
+
+def _preserved_save_kwargs(img: Image.Image) -> dict:
+    """
+    Collect the source ICC color profile and EXIF metadata so they survive the
+    conversion to JPEG.
+
+    HEIC photos from modern phones are frequently authored in a wide-gamut color
+    space (e.g. Display P3). If the ICC profile is dropped, viewers fall back to
+    interpreting the pixels as sRGB, which visibly shifts colors. Likewise the
+    EXIF block carries capture date, camera make/model, GPS, etc. that users
+    expect to keep.
+
+    The image is expected to be orientation-normalized already (``exif_transpose``
+    applied), so the EXIF Orientation tag is reset to ``1``: the rotation is baked
+    into the pixels, and leaving a non-identity Orientation tag would make a viewer
+    rotate the already-correct image a second time.
+
+    Returns a dict of ``Image.save`` keyword args (``icc_profile`` / ``exif``),
+    each key present only when there is real data to write.
+    """
+    kwargs: dict = {}
+
+    icc = img.info.get("icc_profile")
+    if icc:
+        kwargs["icc_profile"] = icc
+
+    try:
+        exif = img.getexif()
+    except Exception:
+        exif = None
+    if exif:
+        # Pixels are already physically rotated; neutralize the Orientation tag so
+        # viewers don't double-rotate. Re-serialize from the parsed object so this
+        # holds even on libheif builds that don't normalize orientation on decode.
+        if _EXIF_ORIENTATION in exif:
+            exif[_EXIF_ORIENTATION] = 1
+        try:
+            exif_bytes = exif.tobytes()
+        except Exception:
+            exif_bytes = b""
+        if exif_bytes:
+            kwargs["exif"] = exif_bytes
+
+    return kwargs
 
 
 def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
     """
-    Converts HEIC/HEIF image to JPEG format.
-    
+    Converts HEIC/HEIF image to JPEG format, preserving the ICC color profile and
+    EXIF metadata (orientation is baked into the pixels).
+
     Args:
         input_path: Path to the input HEIC/HEIF file.
         output_dir: Directory to save the converted JPEG file.
         quality: JPEG quality (1-100, default 95).
-    
+
     Returns:
         Path to the converted JPEG file.
     """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "jpg")
-    
+
     with Image.open(input_file) as img:
-        img = _prepare_image(img)
-        img.save(output_file, "JPEG", quality=quality, optimize=True)
-    
+        # Bake orientation into the pixels first.
+        img = ImageOps.exif_transpose(img)
+        # Capture color profile + metadata before the RGB conversion below, which
+        # may not carry ``info`` forward on every Pillow version.
+        save_kwargs = _preserved_save_kwargs(img)
+        # Convert RGBA / palette / LA to RGB for JPEG compatibility.
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        img.save(output_file, "JPEG", quality=quality, optimize=True, **save_kwargs)
+
     return str(output_file)
 
 
