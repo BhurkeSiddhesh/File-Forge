@@ -455,17 +455,70 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
             Path(decrypted_path).unlink(missing_ok=True)
 
 
+# pdf2docx's multi_processing spawns one worker per page batch. Measured on a
+# 60-page text PDF (best of 2 runs each):
+#
+#   4 cores available:  3.7s multiprocessing  vs  9.5s serial  -> pool wins 2.5x
+#   1 core available:  10.5s multiprocessing  vs  9.8s serial  -> serial wins ~7%
+#
+# So the pool is a large win when there are cores to use and a small loss when
+# there aren't, because the workers contend for one CPU and each pays the full
+# interpreter + PyMuPDF import cost. Production runs on an Always-Free Oracle VM
+# (1-2 cores), so it should convert serially.
+#
+# Note this is a modest effect and does NOT by itself explain the 2622s p95
+# /admin/stats recorded — that is far beyond anything reproduced here, and more
+# likely a very large input and/or memory pressure on a small VM. Treat this as
+# removing a known regression on small boxes, not as the whole fix; re-check the
+# p95 on the next snapshot before concluding anything.
+_MULTIPROCESSING_MIN_CORES = 4
+
+
+def _available_cores() -> int:
+    """Cores this process may actually run on.
+
+    Not os.cpu_count(): that reports the host's cores, which on a cgroup-limited
+    VM or container is the wrong number — measured 4 here while the process was
+    pinned to a single CPU. sched_getaffinity is the real budget, and is Linux-
+    only, so fall back to cpu_count where it doesn't exist (Windows, macOS)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count() or 1
+
+
+def _use_multiprocessing() -> bool:
+    """Whether to hand pdf2docx a worker pool. Env var wins so a deployment can
+    override the heuristic without a code change; otherwise decide on cores."""
+    override = os.environ.get("PDF2DOCX_MULTIPROCESSING")
+    if override is not None and override.strip() != "":
+        return override.strip().lower() in ("1", "true", "yes", "on")
+    return _available_cores() >= _MULTIPROCESSING_MIN_CORES
+
+
 def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
     """Shared pdf2docx conversion core, used by both the standard converter
     and pdf_to_word_ai's automatic text-layer routing."""
     from pdf2docx import Converter
 
+    multi = _use_multiprocessing()
     cv = Converter(decrypted_path)
     try:
         try:
-            cv.convert(str(output_file), multi_processing=True)
-        except Exception:
-            # Some environments (e.g. spawn-only Windows workers) can't fork — fall back.
+            cv.convert(str(output_file), multi_processing=multi)
+        except (OSError, RuntimeError, ValueError, AssertionError) as exc:
+            # Some environments (e.g. spawn-only Windows workers) can't fork —
+            # fall back to a serial pass. Deliberately narrow: this retry costs
+            # a second full conversion, so it must not swallow failures that
+            # will simply happen again. In particular an ImportError (missing
+            # libGL.so.1 behind pdf2docx's cv2 import) has to surface on the
+            # first attempt instead of doubling the time before it does.
+            if not multi:
+                raise
+            logger.warning(
+                "pdf2docx multiprocessing pass failed (%s: %s) — retrying serially",
+                type(exc).__name__, exc,
+            )
             cv.convert(str(output_file))
     finally:
         # pdf2docx Converter holds the source PDF open via PyMuPDF until close()

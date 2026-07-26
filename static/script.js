@@ -425,22 +425,42 @@ document.getElementById('process-convert-btn').onclick = async () => {
     formData.append('file', selectedFile);
     formData.append('use_ai', useAI);
 
-    if (useAI) {
-        // AI conversion can take minutes — use the SSE endpoint for live per-page progress
-        convertToWordWithProgress(formData);
-    } else {
-        processAction('/api/pdf/convert-to-word', 'Converting PDF to Word...', formData);
-    }
+    // Both paths use the SSE endpoint. AI conversion reports real per-page
+    // progress; the standard path has no per-page callback, so it reports
+    // elapsed time instead — but it still needs the stream, because a large
+    // PDF can run for minutes and a plain POST spends that time looking frozen
+    // (and risks tripping proxy/browser idle timeouts).
+    convertToWordWithProgress(formData, useAI);
 };
 
-async function convertToWordWithProgress(formData) {
+function formatElapsed(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m ? `${m}m ${s}s` : `${s}s`;
+}
+
+async function convertToWordWithProgress(formData, useAI) {
     const statusDisplay = document.getElementById('status-display');
     const statusText = document.getElementById('status-text');
     const resultDisplay = document.getElementById('result-display');
 
     statusDisplay.classList.remove('hidden');
-    statusText.textContent = 'Starting AI conversion...';
+    statusText.textContent = useAI ? 'Starting AI conversion...' : 'Starting conversion...';
     resultDisplay.classList.add('hidden');
+
+    // The standard path gets no per-page events from the server, so show real
+    // elapsed time rather than a fake percentage. Knowing it's still working
+    // (and roughly how long it's been) is what keeps people from giving up.
+    const startedAt = Date.now();
+    let ticker = null;
+    if (!useAI) {
+        ticker = setInterval(() => {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            statusText.textContent =
+                `Converting to Word... ${formatElapsed(elapsed)} elapsed. `
+                + 'Large or scanned PDFs can take several minutes.';
+        }, 1000);
+    }
 
     try {
         const response = await fetch(apiUrl('/api/pdf/convert-to-word-stream'), {
@@ -474,7 +494,7 @@ async function convertToWordWithProgress(formData) {
                     const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
                     statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
                 } else if (event.event === 'start') {
-                    statusText.textContent = 'Analyzing layout with AI...';
+                    if (useAI) statusText.textContent = 'Analyzing layout with AI...';
                 } else if (event.event === 'complete') {
                     showResult(event.filename, event.message);
                 } else if (event.event === 'error') {
@@ -485,6 +505,7 @@ async function convertToWordWithProgress(formData) {
     } catch (error) {
         alert('Error: ' + error.message);
     } finally {
+        if (ticker) clearInterval(ticker);
         statusDisplay.classList.add('hidden');
     }
 }
