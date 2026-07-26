@@ -202,3 +202,60 @@ def test_workflow_malformed_config_yields_clean_error(event_db, mock_dirs, auth_
 # Note: /admin/stats tests moved to the private repo's tests/test_admin_stats.py
 # alongside the route itself — see scripts/event_log.py's closing comment for why
 # the aggregation/reporting side no longer lives in the public repo.
+
+
+# --- funnel beacon: /api/track bot filtering ---
+
+def _read_funnel(db):
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute("SELECT * FROM funnel_events ORDER BY id")]
+    except sqlite3.OperationalError:
+        # The schema is created lazily on the first write, so "no such table"
+        # is the expected shape of "nothing was ever recorded".
+        return []
+    finally:
+        conn.close()
+
+
+def test_track_records_a_browser_beacon(event_db, auth_client):
+    resp = auth_client.post(
+        "/api/track",
+        json={"event": "page_view", "label": "/pdf-to-word"},
+        headers={"User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36"},
+    )
+    assert resp.status_code == 204
+    rows = _read_funnel(event_db)
+    assert len(rows) == 1
+    assert rows[0]["event"] == "page_view"
+    assert rows[0]["label"] == "/pdf-to-word"
+
+
+@pytest.mark.parametrize("ua", [
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Mozilla/5.0 HeadlessChrome/120.0.0.0",
+    "python-requests/2.31.0",
+    "curl/8.4.0",
+    "Mozilla/5.0 (X11; Linux x86_64) Chrome/120 Safari/537.36 Lighthouse",
+    "UptimeRobot/2.0",
+])
+def test_track_drops_automated_clients(event_db, auth_client, ua):
+    """A handful of fake sessions visibly skews the funnel rates on a site this
+    young, so JS-executing bots must not reach the event log."""
+    resp = auth_client.post(
+        "/api/track",
+        json={"event": "page_view", "label": "/"},
+        headers={"User-Agent": ua},
+    )
+    # Still 204: an automated client shouldn't be able to tell it was filtered,
+    # and a real browser must never see an error from a tracking beacon.
+    assert resp.status_code == 204
+    assert _read_funnel(event_db) == []
+
+
+def test_track_without_a_user_agent_is_still_recorded(event_db, auth_client):
+    """Absent UA is not evidence of a bot — don't silently drop real visitors."""
+    resp = auth_client.post("/api/track", json={"event": "page_view", "label": "/"})
+    assert resp.status_code == 204
+    assert len(_read_funnel(event_db)) == 1

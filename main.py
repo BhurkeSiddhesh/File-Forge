@@ -2296,6 +2296,25 @@ async def download_file(filename: str, request: Request, background_tasks: Backg
 # deployment's server.py, so the public repo never carries an admin surface.
 
 
+# Substrings identifying automated clients, matched case-insensitively against
+# the User-Agent. Secondary by design: the beacon only fires from JavaScript, so
+# a plain crawler never reaches this route at all. This catches the ones that do
+# execute JS (headless checkers, preview renderers, uptime monitors) and keeps
+# them out of the funnel, where a handful of fake sessions visibly skews the
+# rates on a site this young.
+_BOT_UA_MARKERS = (
+    "bot", "crawler", "spider", "slurp", "headlesschrome", "phantomjs",
+    "puppeteer", "playwright", "curl/", "wget/", "python-requests",
+    "http-client", "lighthouse", "pingdom", "uptimerobot", "monitoring",
+)
+
+
+def _is_bot_user_agent(user_agent: str) -> bool:
+    """True when the User-Agent self-identifies as an automated client."""
+    ua = (user_agent or "").lower()
+    return any(marker in ua for marker in _BOT_UA_MARKERS)
+
+
 # --- Anonymous funnel beacon (first-party, no third-party analytics) ---
 @app.post("/api/track")
 async def api_track(request: Request):
@@ -2312,6 +2331,11 @@ async def api_track(request: Request):
     and unknown event names are silently ignored inside log_funnel_event().
     """
     from functools import partial
+
+    # Dropped silently, and still a 204 — an automated client shouldn't be able
+    # to tell it was filtered, and a real browser must never see an error here.
+    if _is_bot_user_agent(request.headers.get("user-agent", "")):
+        return Response(status_code=204)
 
     try:
         body = await request.json()
