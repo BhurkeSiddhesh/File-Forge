@@ -76,6 +76,13 @@ def _attr(s: str) -> str:
 # Each entry: title, meta, h1, lede, tool (deep-link category), app
 # (SoftwareApplication name), cta, how (H2 heading), steps[], benefits[] (raw
 # HTML), faqs[] (question, answer-HTML), related[] (slugs).
+#
+# The CTA deep-links to `/?tool=<tool>&op=<slug>`. `tool` opens the category
+# view; `op` is this dict's key, which static/script.js maps (via DEEP_LINK_OPS)
+# to the specific action card, so someone who searched "pdf to word" lands on
+# the PDF→Word tool rather than on a grid of 19 cards they have to re-scan. An
+# `op` script.js doesn't recognise is ignored and the category still opens, so
+# adding a page here never breaks the CTA — but do add the mapping.
 
 TOOL_PAGES: Dict[str, dict] = {
     # ===================== PDF =====================
@@ -1026,7 +1033,7 @@ def render_tool_page(slug: str) -> str:
         <h1>{page['h1']}</h1>
         <p class="lede">{page['lede']}</p>
 
-        <p><a class="cta" href="/?tool={page['tool']}">{page['cta']}</a></p>
+        <p><a class="cta" href="/?tool={page['tool']}&amp;op={slug}">{page['cta']}</a></p>
 
         {ADS_SLOT}
 

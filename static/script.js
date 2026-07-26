@@ -39,7 +39,7 @@ function updateDownloadLink(element, filename) {
     // A result is ready for download — the successful end of the processing
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
-    ffTrack('file_processed', currentTool || 'unknown');
+    ffTrack('file_processed', ffFunnelLabel());
 
     element.onclick = async (e) => {
         // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
@@ -56,7 +56,7 @@ function updateDownloadLink(element, filename) {
 
             // If OK, let the browser proceed with the native download via element.href.
             // This avoids loading the entire file into memory as a Blob.
-            ffTrack('file_downloaded', currentTool || 'unknown');
+            ffTrack('file_downloaded', ffFunnelLabel());
             return true;
 
         } catch (error) {
@@ -72,9 +72,37 @@ let selectedFiles = [];
 let selectedImageFile = null;
 let currentTool = null;
 
+// The specific tool within the current category ('convert-word', 'excel-to-pdf'),
+// derived from the action card the visitor clicked. `currentTool` alone is the
+// category, which is why /admin/stats' per-tool funnel could only ever say
+// "pdf" — true but useless for deciding what to fix.
+let currentOp = null;
+
+// Label for the processing funnel events: the specific tool when we know it,
+// otherwise the category we opened.
+function ffFunnelLabel() {
+    return currentOp || currentTool || 'unknown';
+}
+
+// One delegated listener covers every action card, including the ones added
+// after this file was written — no per-card wiring to keep in sync.
+document.addEventListener('click', (e) => {
+    const card = e.target.closest && e.target.closest('.action-card');
+    if (!card || !card.id) return;
+    currentOp = card.id.replace(/-btn$/, '');
+    // Funnel step at tool granularity. The category-level tool_open from
+    // showDrillDown() still fires; the global funnel counts distinct sessions
+    // per stage, so the extra row can't inflate it.
+    ffTrack('tool_open', currentOp);
+});
+
 // Navigation
-function showDrillDown(tool) {
+// `instant` skips the 500ms home-page fade — used by the SEO deep link, where
+// the visitor already chose a tool on the landing page and the animation is
+// just dead time between their click and a usable upload box.
+function showDrillDown(tool, instant) {
     currentTool = tool;
+    currentOp = null;  // new category — the previous tool no longer applies
     let pageId;
     if (tool === 'pdf') pageId = 'pdf-page';
     else if (tool === 'image') pageId = 'image-page';
@@ -87,16 +115,19 @@ function showDrillDown(tool) {
     // Funnel step: visitor opened a tool category from the home grid.
     ffTrack('tool_open', tool);
 
-    document.getElementById('home-page').classList.remove('active');
-    setTimeout(() => {
+    const reveal = () => {
         document.getElementById('home-page').style.display = 'none';
         document.getElementById(pageId).style.display = 'flex';
         document.getElementById(pageId).style.flexDirection = 'column';
         window.scrollTo({ top: 0, behavior: 'instant' });
         setTimeout(() => {
             document.getElementById(pageId).classList.add('active');
-        }, 50);
-    }, 500);
+        }, instant ? 0 : 50);
+    };
+
+    document.getElementById('home-page').classList.remove('active');
+    if (instant) reveal();
+    else setTimeout(reveal, 500);
 }
 
 function showHome() {
@@ -262,6 +293,7 @@ function handleFiles(files) {
         : `${pdfs.length} files: ${pdfs.map(f => f.name).join(', ')}`;
     fileInfo.classList.remove('hidden');
     document.getElementById('status-display').classList.add('hidden');
+    ffConsumePendingOp();
 }
 
 function handleFile(file) {
@@ -278,6 +310,7 @@ function handleFile(file) {
     hidePdfActionAreas();
     const extractInput = document.getElementById('extract-pages-input');
     if (extractInput) extractInput.value = '';
+    ffConsumePendingOp();
 }
 
 // Actions
@@ -773,6 +806,7 @@ function handleImageFile(file) {
     document.getElementById('image-status-display').classList.add('hidden');
     document.getElementById('image-result-display').classList.add('hidden');
     hideImageActionAreas();
+    ffConsumePendingOp();
 }
 
 function hideImageActionAreas() {
@@ -2066,6 +2100,7 @@ function handleExcelFiles(files) {
     excelFileInfo.classList.remove('hidden');
     document.getElementById('excel-status-display').classList.add('hidden');
     document.getElementById('excel-result-display').classList.add('hidden');
+    ffConsumePendingOp();
 }
 
 if (excelDropZone) {
@@ -2210,6 +2245,7 @@ function handlePptFiles(files) {
     pptFileInfo.classList.remove('hidden');
     document.getElementById('ppt-status-display').classList.add('hidden');
     document.getElementById('ppt-result-display').classList.add('hidden');
+    ffConsumePendingOp();
 }
 
 if (pptDropZone) {
@@ -2520,29 +2556,26 @@ let selectedWordFile = null;
 const wordDropZone = document.getElementById('word-drop-zone');
 const wordFileInput = document.getElementById('word-file-input');
 
+function handleWordFile(file) {
+    selectedWordFile = file;
+    document.getElementById('word-filename-display').textContent = selectedWordFile.name;
+    document.getElementById('word-file-info').classList.remove('hidden');
+    document.getElementById('word-status-display').classList.add('hidden');
+    document.getElementById('word-result-display').classList.add('hidden');
+    ffConsumePendingOp();
+}
+
 if (wordDropZone) {
     wordDropZone.onclick = () => wordFileInput.click();
     wordFileInput.onchange = e => {
-        if (e.target.files.length) {
-            selectedWordFile = e.target.files[0];
-            document.getElementById('word-filename-display').textContent = selectedWordFile.name;
-            document.getElementById('word-file-info').classList.remove('hidden');
-            document.getElementById('word-status-display').classList.add('hidden');
-            document.getElementById('word-result-display').classList.add('hidden');
-        }
+        if (e.target.files.length) handleWordFile(e.target.files[0]);
     };
     wordDropZone.ondragover = e => { e.preventDefault(); wordDropZone.classList.add('drag-over'); };
     wordDropZone.ondragleave = () => wordDropZone.classList.remove('drag-over');
     wordDropZone.ondrop = e => {
         e.preventDefault();
         wordDropZone.classList.remove('drag-over');
-        if (e.dataTransfer.files.length) {
-            selectedWordFile = e.dataTransfer.files[0];
-            document.getElementById('word-filename-display').textContent = selectedWordFile.name;
-            document.getElementById('word-file-info').classList.remove('hidden');
-            document.getElementById('word-status-display').classList.add('hidden');
-            document.getElementById('word-result-display').classList.add('hidden');
-        }
+        if (e.dataTransfer.files.length) handleWordFile(e.dataTransfer.files[0]);
     };
 }
 
@@ -2623,12 +2656,118 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Deep-link support: /?tool=pdf opens the PDF tools directly (used by SEO landing pages)
+// Deep-link support: /?tool=pdf opens the PDF tools directly, and the optional
+// &op=<seo-slug> preselects the specific tool the visitor actually searched for
+// (used by the CTA on every SEO landing page — see scripts/seo_content.py).
+//
+// Without `op`, someone arriving from /pdf-to-word landed on the PDF category
+// and had to find "PDF to Word" a second time among 19 action cards — the
+// single biggest drop-off in the funnel. Keys here are the seo_content.py
+// TOOL_PAGES slugs; `card` is the action-card id in index.html, and `mode` is
+// the radio that has to be selected first for cards that start hidden.
+const DEEP_LINK_OPS = {
+    // PDF
+    'unlock-pdf': { card: 'remove-password-btn' },
+    'pdf-to-word': { card: 'convert-word-btn' },
+    'compress-pdf': { card: 'compress-pdf-btn' },
+    'extract-pdf-pages': { card: 'extract-pages-btn' },
+    'split-pdf': { card: 'extract-pages-btn' },
+    'pdf-to-text': { card: 'extract-text-btn' },
+    'merge-pdf': { card: 'merge-pdf-btn' },
+    'rotate-pdf': { card: 'rotate-pdf-btn' },
+    'protect-pdf': { card: 'protect-pdf-btn' },
+    'watermark-pdf': { card: 'watermark-pdf-btn' },
+    'pdf-to-jpg': { card: 'to-images-pdf-btn' },
+    'pdf-page-numbers': { card: 'page-numbers-btn' },
+    'pdf-to-excel': { card: 'pdf-to-excel-btn' },
+    'pdf-to-powerpoint': { card: 'pdf-to-pptx-btn' },
+    'sign-pdf': { card: 'sign-pdf-btn' },
+    'organize-pdf': { card: 'organize-pdf-btn' },
+    // Image
+    'heic-to-jpeg': { card: 'convert-jpeg-btn' },
+    'resize-image': { card: 'resize-btn', mode: 'mode-resize' },
+    'crop-image': { card: 'crop-btn', mode: 'mode-crop' },
+    'image-to-pdf': { card: 'image-to-pdf-btn' },
+    'compress-image': { card: 'compress-image-btn' },
+    'convert-image': { card: 'convert-format-btn' },
+    'rotate-image': { card: 'rotate-image-btn' },
+    'watermark-image': { card: 'watermark-image-btn' },
+    // Excel
+    'excel-to-pdf': { card: 'excel-to-pdf-btn' },
+    'csv-to-xlsx': { card: 'csv-to-xlsx-btn' },
+    'xlsx-to-csv': { card: 'xlsx-to-csv-btn' },
+    'merge-excel': { card: 'merge-excel-btn' },
+    // PowerPoint
+    'powerpoint-to-pdf': { card: 'ppt-to-pdf-btn' },
+    'ppt-to-images': { card: 'ppt-to-images-btn' },
+    'merge-ppt': { card: 'merge-ppt-btn' },
+    // Word
+    'word-to-pdf': { card: 'word-to-pdf-btn' },
+};
+
+// Cards that don't need a file selected first (they collect their own files).
+const DEEP_LINK_NO_FILE_CARDS = ['merge-pdf-btn', 'merge-excel-btn', 'merge-ppt-btn'];
+
+// The action card a deep link asked for, held until the visitor picks a file.
+// Most card handlers alert("Please select a file first.") when clicked with no
+// file, so we highlight the card on arrival and open it once a file exists.
+let ffPendingOp = null;
+
+function ffHighlightCard(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.classList.add('deep-link-target');
+    // Nudge it into view behind the drop zone, without stealing the top of the
+    // page from the upload box — that has to stay the first thing they see.
+    try { card.scrollIntoView({ block: 'nearest', behavior: 'instant' }); } catch (e) { }
+}
+
+// Called by every category's file-accepted path. Opens the deep-linked tool as
+// soon as the visitor has a file, so landing → upload → correct tool is one
+// continuous motion with nothing to hunt for.
+function ffConsumePendingOp() {
+    if (!ffPendingOp) return;
+    const cardId = ffPendingOp;
+    ffPendingOp = null;
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.classList.remove('deep-link-target');
+    setTimeout(() => card.click(), 0);
+}
+window.ffConsumePendingOp = ffConsumePendingOp;
+
 (function () {
-    const requestedTool = new URLSearchParams(window.location.search).get('tool');
-    if (requestedTool && ['pdf', 'image', 'workflow', 'excel', 'ppt', 'word'].includes(requestedTool)) {
-        showDrillDown(requestedTool);
+    const params = new URLSearchParams(window.location.search);
+    const requestedTool = params.get('tool');
+    if (!requestedTool || !['pdf', 'image', 'workflow', 'excel', 'ppt', 'word'].includes(requestedTool)) return;
+
+    showDrillDown(requestedTool, true);
+
+    // `op` is only ever resolved through DEEP_LINK_OPS — never used to look up
+    // an element id directly, so an arbitrary ?op= value can't reach the DOM.
+    const op = DEEP_LINK_OPS[params.get('op')];
+    if (!op) return;
+
+    if (op.mode) {
+        const modeInput = document.getElementById(op.mode);
+        if (modeInput) {
+            modeInput.checked = true;
+            if (typeof toggleImageMode === 'function') toggleImageMode();
+        }
     }
+
+    // No tool_open for the specific op here on purpose: it's fired by the
+    // delegated action-card listener when the card is actually opened (below
+    // for merge tools, or after the file lands for everything else). A visitor
+    // who deep-links and then leaves without uploading should count as opening
+    // the category and nothing more.
+    if (DEEP_LINK_NO_FILE_CARDS.includes(op.card)) {
+        const card = document.getElementById(op.card);
+        if (card) setTimeout(() => card.click(), 0);
+        return;
+    }
+    ffPendingOp = op.card;
+    ffHighlightCard(op.card);
 })();
 
 // Theme Toggle Logic

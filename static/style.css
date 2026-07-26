@@ -490,6 +490,17 @@ body {
     transform: translateY(-1px);
 }
 
+/* The action card an SEO deep link (/?tool=pdf&op=pdf-to-word) asked for. Held
+   in this state until the visitor picks a file, at which point script.js opens
+   the card for them. Marks "this is the tool you came for" without looking
+   disabled or clicked. */
+.action-card.deep-link-target {
+    background: var(--canvas-soft);
+    box-shadow: var(--shadow-3);
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+}
+
 .action-card i {
     font-size: 1.4rem;
     width: 40px;
