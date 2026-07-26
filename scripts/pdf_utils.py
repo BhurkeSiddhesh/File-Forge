@@ -1210,6 +1210,53 @@ def protect_pdf(
 # Feature #54: Image to PDF
 # ──────────────────────────────────────────────
 
+# EXIF Orientation tag id (same value used in image_utils).
+_EXIF_ORIENTATION_TAG = 0x0112
+
+
+def _oriented_for_pdf(img_path: str, tmp_dir: str, tmp_files: list) -> tuple:
+    """Return a path whose pixels are correctly oriented, plus its (width, height).
+
+    reportlab's ``drawImage`` reads raw pixels and ignores the EXIF Orientation
+    tag, so a portrait phone photo (stored landscape + ``Orientation=6``) would be
+    embedded **sideways** in the generated PDF. That is a concrete fidelity
+    violation for images→PDF.
+
+    Fast path (the common case): images with no rotation — Orientation absent, ``0``
+    or ``1`` — are returned **unchanged**, so already-upright inputs keep the exact,
+    un-re-encoded embedding the original code produced (byte-identical output).
+
+    Only images that actually carry a non-identity Orientation get their rotation
+    baked into a temporary copy via ``ImageOps.exif_transpose`` (a lossless pixel
+    transpose). JPEG sources are re-saved as high-quality JPEG to keep the PDF
+    small; everything else is saved as lossless PNG (which also preserves alpha).
+    Any temp file created is appended to ``tmp_files`` for the caller to clean up.
+    """
+    from PIL import Image as _PILImage, ImageOps as _ImageOps
+
+    with _PILImage.open(img_path) as img:
+        try:
+            orientation = img.getexif().get(_EXIF_ORIENTATION_TAG, 1)
+        except Exception:
+            orientation = 1
+
+        if orientation in (0, 1):
+            return img_path, img.size[0], img.size[1]
+
+        transposed = _ImageOps.exif_transpose(img)
+        suffix = Path(img_path).suffix.lower()
+        if suffix in (".jpg", ".jpeg"):
+            tmp = Path(tmp_dir) / f"_oriented_{uuid.uuid4().hex[:8]}.jpg"
+            save_img = transposed if transposed.mode in ("RGB", "L") else transposed.convert("RGB")
+            save_img.save(tmp, "JPEG", quality=95, optimize=True)
+        else:
+            tmp = Path(tmp_dir) / f"_oriented_{uuid.uuid4().hex[:8]}.png"
+            transposed.save(tmp, "PNG")
+        tmp_files.append(tmp)
+        w, h = transposed.size
+        return str(tmp), w, h
+
+
 def images_to_pdf(
     input_paths: List[str],
     output_dir: str,
@@ -1245,37 +1292,47 @@ def images_to_pdf(
     # Use a temp canvas path, we'll rebuild after getting page sizes
     c = rl_canvas.Canvas(str(output_file))
 
-    for img_path in input_paths:
-        with PILImage.open(img_path) as img:
-            img_w, img_h = img.size
-        if img_w == 0 or img_h == 0:
-            raise ValueError(f"Image {img_path} has zero-dimension (width={img_w}, height={img_h}).")
+    # Orientation-normalized temp copies (only created for rotated inputs); removed
+    # after the canvas is saved since reportlab reads each image at drawImage time.
+    tmp_files: list = []
+    try:
+        for img_path in input_paths:
+            # reportlab ignores EXIF orientation, so bake it in for rotated inputs.
+            draw_path, img_w, img_h = _oriented_for_pdf(img_path, output_dir, tmp_files)
+            if img_w == 0 or img_h == 0:
+                raise ValueError(f"Image {img_path} has zero-dimension (width={img_w}, height={img_h}).")
 
-        if page_size_key == "auto":
-            pw, ph = float(img_w), float(img_h)
-        else:
-            pw, ph = PAGE_SIZES.get(page_size_key, A4)
+            if page_size_key == "auto":
+                pw, ph = float(img_w), float(img_h)
+            else:
+                pw, ph = PAGE_SIZES.get(page_size_key, A4)
 
-        c.setPageSize((pw, ph))
+            c.setPageSize((pw, ph))
 
-        available_w = pw - 2 * margin_pt
-        available_h = ph - 2 * margin_pt
+            available_w = pw - 2 * margin_pt
+            available_h = ph - 2 * margin_pt
 
-        if fit_mode == "original":
-            draw_w = min(float(img_w), available_w)
-            draw_h = draw_w * (img_h / img_w)
-        else:
-            scale = min(available_w / img_w, available_h / img_h)
-            draw_w = img_w * scale
-            draw_h = img_h * scale
+            if fit_mode == "original":
+                draw_w = min(float(img_w), available_w)
+                draw_h = draw_w * (img_h / img_w)
+            else:
+                scale = min(available_w / img_w, available_h / img_h)
+                draw_w = img_w * scale
+                draw_h = img_h * scale
 
-        x = margin_pt + (available_w - draw_w) / 2
-        y = margin_pt + (available_h - draw_h) / 2
+            x = margin_pt + (available_w - draw_w) / 2
+            y = margin_pt + (available_h - draw_h) / 2
 
-        c.drawImage(img_path, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True)
-        c.showPage()
+            c.drawImage(draw_path, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True)
+            c.showPage()
 
-    c.save()
+        c.save()
+    finally:
+        for tmp in tmp_files:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     return str(output_file)
 
 
