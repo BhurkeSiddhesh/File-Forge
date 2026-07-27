@@ -223,6 +223,102 @@ def test_excel_to_pdf_creates_pdf(xlsx_file, tmp_path):
     assert out.stat().st_size > 0
 
 
+# --- Office→PDF: LibreOffice-first with pure-Python fallback ---
+
+import shutil as _shutil  # noqa: E402
+
+_HAVE_LIBREOFFICE = bool(_shutil.which("libreoffice") or _shutil.which("soffice"))
+
+
+def _pdf_text(path):
+    """Extract all text from a PDF (empty string if PyMuPDF unavailable)."""
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(str(path))
+    try:
+        return "\n".join(page.get_text() for page in doc)
+    finally:
+        doc.close()
+
+
+@pytest.fixture
+def styled_xlsx_file(tmp_path):
+    """A workbook exercising the fidelity the reportlab fallback drops:
+    fill colors, bold fonts, a merged-cell span, and a second sheet."""
+    from openpyxl.styles import Font, PatternFill
+
+    p = tmp_path / "styled.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sales"
+    ws["A1"] = "Region"
+    ws["B1"] = "Revenue"
+    ws["A1"].fill = PatternFill("solid", fgColor="FF0000")
+    ws["A1"].font = Font(bold=True, color="FFFFFF")
+    ws["A2"] = "North"
+    ws["B2"] = 1234
+    ws.merge_cells("A4:B4")
+    ws["A4"] = "MERGED TOTAL"
+    ws2 = wb.create_sheet("Notes")
+    ws2["A1"] = "Second sheet content"
+    wb.save(p)
+    return p
+
+
+def test_excel_to_pdf_fallback_when_libreoffice_absent(xlsx_file, tmp_path, monkeypatch):
+    """When LibreOffice is unavailable the pure-Python reportlab renderer must
+    still produce a valid, non-empty PDF at the branded path — the zero-regression
+    guarantee for environments without LibreOffice."""
+    monkeypatch.setattr("scripts.excel_utils.libreoffice_to_pdf", lambda *a, **k: None)
+    out = Path(excel_to_pdf(str(xlsx_file), str(tmp_path)))
+    assert out.exists()
+    assert out.name == "data_forgefiles.org.pdf"
+    assert out.stat().st_size > 0
+    # Fallback still recovers every cell's text.
+    text = _pdf_text(out)
+    assert "alice" in text and "bob" in text
+
+
+@pytest.mark.skipif(not _HAVE_LIBREOFFICE, reason="LibreOffice not installed")
+def test_excel_to_pdf_libreoffice_preserves_content(styled_xlsx_file, tmp_path):
+    """LibreOffice output keeps every sheet's cell text (incl. merged cells and a
+    second sheet) and stays text-selectable (not rasterized)."""
+    out = Path(excel_to_pdf(str(styled_xlsx_file), str(tmp_path)))
+    assert out.exists() and out.name == "styled_forgefiles.org.pdf"
+    text = _pdf_text(out)
+    for probe in ("Region", "North", "MERGED TOTAL", "Second sheet content"):
+        assert probe in text, f"LibreOffice output dropped {probe!r}"
+
+
+def test_ppt_to_pdf_fallback_when_libreoffice_absent(pptx_file, tmp_path, monkeypatch):
+    """PPT→PDF fallback (raster) must still produce a valid PDF when LibreOffice
+    is unavailable — preserves the prior behavior exactly."""
+    monkeypatch.setattr("scripts.ppt_utils.libreoffice_to_pdf", lambda *a, **k: None)
+    out = Path(ppt_to_pdf(str(pptx_file), str(tmp_path)))
+    assert out.exists()
+    assert out.name == "deck_forgefiles.org.pdf"
+    assert out.stat().st_size > 0
+
+
+@pytest.mark.skipif(not _HAVE_LIBREOFFICE, reason="LibreOffice not installed")
+def test_ppt_to_pdf_libreoffice_preserves_selectable_text(pptx_file, tmp_path):
+    """LibreOffice renders slide text as real, selectable text — unlike the raster
+    fallback, which bakes everything into an image with no extractable text."""
+    out = Path(ppt_to_pdf(str(pptx_file), str(tmp_path)))
+    assert out.exists() and out.name == "deck_forgefiles.org.pdf"
+    text = _pdf_text(out)
+    assert "Slide 1" in text and "Slide 2" in text
+
+
+def test_libreoffice_to_pdf_returns_none_without_binary(xlsx_file, tmp_path, monkeypatch):
+    """The helper degrades gracefully to None (never raises) when no LibreOffice
+    binary is on PATH, so callers can fall back."""
+    from scripts import utils as _utils
+
+    monkeypatch.setattr(_utils.shutil, "which", lambda *_a, **_k: None)
+    assert _utils.libreoffice_to_pdf(str(xlsx_file), str(tmp_path)) is None
+
+
 def test_merge_excel_combines_sheets(two_xlsx_files, tmp_path):
     out = Path(merge_excel_files([str(p) for p in two_xlsx_files], str(tmp_path)))
     assert out.exists()

@@ -452,8 +452,16 @@ curl -X POST http://localhost:8001/api/image/to-pdf \
 ### Excel to PDF
 **Endpoint:** `POST /api/excel/to-pdf`
 
+Convert a spreadsheet to PDF. Uses LibreOffice (Calc) for Office-grade fidelity — cell
+fill colors, fonts, merged cells, charts and conditional formatting are preserved — and
+falls back to a pure-Python reportlab table renderer when LibreOffice is unavailable.
+
 ### PPT to PDF
 **Endpoint:** `POST /api/ppt/to-pdf`
+
+Convert a presentation to PDF. Uses LibreOffice (Impress) for Office-grade fidelity —
+slide layout, themes, gradients, fonts and shapes preserved, text stays selectable — and
+falls back to a pure-Python raster renderer when LibreOffice is unavailable.
 
 ### Word to PDF **[NEW]**
 **Endpoint:** `POST /api/word/to-pdf`
