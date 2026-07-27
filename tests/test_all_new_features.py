@@ -227,6 +227,66 @@ class TestImagesToPDF:
         result = images_to_pdf([str(sample_image)], str(out), page_size="auto")
         assert Path(result).exists()
 
+    # --- EXIF-orientation regression (reportlab drawImage ignores Orientation) ---
+
+    @staticmethod
+    def _exif_oriented_jpeg(path, orientation):
+        """A landscape 200x100 JPEG stored with a non-identity EXIF Orientation,
+        so a correct renderer must display it rotated (portrait 100x200)."""
+        img = PILImage.new("RGB", (200, 100), color=(240, 240, 240))
+        for y in range(100):
+            for x in range(20):
+                img.putpixel((x, y), (220, 20, 20))  # left stripe -> detectable
+        exif = PILImage.Exif()
+        exif[0x0112] = orientation
+        img.save(path, "JPEG", exif=exif.tobytes(), quality=95)
+        return path
+
+    def test_exif_orientation_6_is_applied(self, tmp_path):
+        """Orientation=6 (rotate 90 CW) must yield a portrait page, not sideways."""
+        import fitz
+
+        src = self._exif_oriented_jpeg(tmp_path / "rot6.jpg", 6)
+        out = tmp_path / "out"
+        out.mkdir()
+        result = images_to_pdf([str(src)], str(out), page_size="auto", fit_mode="original")
+        rect = fitz.open(result)[0].rect
+        # Stored pixels are 200x100 landscape; with orientation applied the page
+        # must be portrait (~100x200). Before the fix reportlab drew it 200x100.
+        assert round(rect.width) == 100 and round(rect.height) == 200
+
+    def test_exif_orientation_8_is_applied(self, tmp_path):
+        """Orientation=8 (rotate 90 CCW) must also be baked in."""
+        import fitz
+
+        src = self._exif_oriented_jpeg(tmp_path / "rot8.jpg", 8)
+        out = tmp_path / "out"
+        out.mkdir()
+        result = images_to_pdf([str(src)], str(out), page_size="auto", fit_mode="original")
+        rect = fitz.open(result)[0].rect
+        assert round(rect.width) == 100 and round(rect.height) == 200
+
+    def test_upright_image_uses_original_untouched(self, tmp_path):
+        """No-orientation inputs take the fast path unchanged: the original file is
+        drawn directly (no re-encode) and no temp copy is created or left behind."""
+        from scripts.pdf_utils import _oriented_for_pdf
+
+        src = tmp_path / "plain.jpg"
+        PILImage.new("RGB", (200, 100), color=(0, 0, 200)).save(src, "JPEG", quality=95)
+        tmp_files = []
+        draw_path, w, h = _oriented_for_pdf(str(src), str(tmp_path), tmp_files)
+        assert draw_path == str(src)
+        assert (w, h) == (200, 100)
+        assert tmp_files == []
+
+    def test_no_oriented_temp_files_left_behind(self, tmp_path):
+        """The orientation temp copy is cleaned up after the PDF is written."""
+        src = self._exif_oriented_jpeg(tmp_path / "rot6.jpg", 6)
+        out = tmp_path / "out"
+        out.mkdir()
+        images_to_pdf([str(src)], str(out))
+        assert not list(out.glob("_oriented_*"))
+
     def test_fit_mode_original(self, sample_image, tmp_path):
         out = tmp_path / "out"
         out.mkdir()
