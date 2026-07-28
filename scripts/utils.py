@@ -1,13 +1,18 @@
 """
-Output-filename helpers for Forge Files.
+Download-filename helpers for Forge Files, plus the shared headless-LibreOffice
+conversion helper used by the Excel and PPT converters.
 
-Deliberately narrow: this module owns the naming convention that turns an
-upload temp path back into the user-facing download name, and nothing else.
-Upload *handling* (size cap, extension allowlist, sandbox check) lives in
-``main.save_upload`` — do not add a second, weaker copy of it here.
+Deliberately scoped to naming and stateless conversion helpers — nothing here
+touches uploads. This module used to also carry a ``process_uploaded_file()``
+"common upload pattern" that wrote the raw, client-supplied ``file.filename``
+into the upload directory — path traversal waiting for its first caller. Upload
+handling belongs to ``save_upload()`` in ``main.py``, which has the extension
+allowlist, the size cap and the sandbox check; build any shared upload helper on
+that, not here.
 """
 import logging
 import re
+import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -35,3 +40,53 @@ def original_stem(input_path) -> str:
 def branded_filename(input_path, ext: str) -> str:
     """Build the public download filename: '<original name>_forgefiles.org.<ext>'."""
     return f"{original_stem(input_path)}_forgefiles.org.{ext.lstrip('.')}"
+
+def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
+    """Convert an office document to PDF using headless LibreOffice.
+
+    LibreOffice is the reference renderer for Office formats, so it preserves
+    the fidelity a pure-Python renderer can't (cell fill colors, fonts, merged
+    cells, charts and conditional formatting for spreadsheets; slide layout,
+    themes, gradients and fonts for presentations). It is an environment
+    invariant on the deploy target (installed by the Dockerfile / self-healed by
+    the deploy workflow), and already powers ``word_to_pdf``.
+
+    Returns the Path LibreOffice produced ("<input stem>.pdf" in ``output_dir``)
+    on success, or ``None`` when LibreOffice is unavailable or the conversion
+    failed — so callers keep a pure-Python fallback and never hard-depend on it.
+
+    A private per-call user-profile directory is passed via
+    ``-env:UserInstallation`` so concurrent conversions don't contend on the
+    shared ``~/.config/libreoffice`` profile lock.
+    """
+    import subprocess
+    import tempfile
+
+    input_file = Path(input_path)
+    binary = shutil.which("libreoffice") or shutil.which("soffice")
+    if binary is None:
+        return None
+
+    profile_dir = tempfile.mkdtemp(prefix="ff_lo_profile_")
+    try:
+        result = subprocess.run(
+            [binary, "--headless",
+             f"-env:UserInstallation=file://{profile_dir}",
+             "--convert-to", "pdf",
+             "--outdir", str(output_dir), str(input_file)],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        # LibreOffice writes "<input stem>.pdf" itself into --outdir.
+        produced = Path(output_dir) / f"{input_file.stem}.pdf"
+        if result.returncode == 0 and produced.exists():
+            return produced
+        logger.warning(
+            "LibreOffice PDF conversion failed for %s (rc=%s): %s",
+            input_file.name, result.returncode, (result.stderr or "").strip()[:200],
+        )
+        return None
+    except Exception as exc:  # timeout, missing shared libs, etc. -> fall back
+        logger.warning("LibreOffice PDF conversion errored for %s: %s", input_file.name, exc)
+        return None
+    finally:
+        shutil.rmtree(profile_dir, ignore_errors=True)

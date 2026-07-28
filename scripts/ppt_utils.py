@@ -3,10 +3,12 @@ PowerPoint utilities for Forge Files.
 
 Pure-Python implementations using python-pptx + Pillow + reportlab.
 
-NOTE: pure-Python PPT rendering is best-effort. Each slide is rendered onto a Pillow
-canvas using only text, basic shape positions, and image content from the .pptx XML.
-Animations, gradients, themes, SmartArt, and complex effects are NOT preserved.
-For pixel-perfect rendering, install LibreOffice and shell out to `soffice`.
+NOTE: ppt_to_pdf prefers LibreOffice (Impress) for pixel-faithful rendering and only
+falls back to the pure-Python raster path when LibreOffice is unavailable. That
+fallback is best-effort: each slide is rendered onto a Pillow canvas using only text,
+basic shape positions, and image content from the .pptx XML; animations, gradients,
+themes, SmartArt, and complex effects are NOT preserved. (ppt_to_images_zip still uses
+the pure-Python raster path.)
 """
 import io
 import uuid
@@ -21,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.utils import ImageReader
 
-from scripts.utils import branded_filename, original_stem
+from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf
 
 
 # Render slides at 96 DPI (1 EMU = 1/914400 inch -> 1 EMU = 96/914400 px = 1/9525 px).
@@ -131,10 +133,26 @@ def ppt_to_images_zip(input_path: str, output_dir: str, fmt: str = "png") -> dic
 
 
 def ppt_to_pdf(input_path: str, output_dir: str) -> str:
-    """Render every slide as an image and assemble into a PDF."""
+    """Convert a presentation to PDF.
+
+    Prefers LibreOffice (Impress) for Microsoft-Office-grade fidelity — slide
+    layout, themes, gradients, fonts, tables and shape styling are preserved,
+    and text stays selectable. Falls back to the pure-Python raster renderer
+    below when LibreOffice is unavailable; that fallback draws only text and
+    embedded images at their layout positions on a white canvas (gradients,
+    themes, SmartArt, tables and complex effects are dropped).
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
+    # ── LibreOffice-first (Office-grade fidelity) ──────────────
+    produced = libreoffice_to_pdf(input_path, output_dir)
+    if produced is not None:
+        if produced != output_file:
+            produced.replace(output_file)
+        return str(output_file)
+
+    # ── Pure-Python fallback (raster each slide) ───────────────
     prs = Presentation(str(input_file))
     if not list(prs.slides):
         raise ValueError("Presentation has no slides.")
