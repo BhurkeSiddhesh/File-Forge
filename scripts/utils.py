@@ -1,16 +1,15 @@
 """
-Common utility functions for Forge Files.
-Reduces code duplication across the application.
-"""
-import logging
-import os
-import re
-import shutil
-from pathlib import Path
-from typing import Callable, Any
-from fastapi import UploadFile, HTTPException
+Download-filename helpers for Forge Files.
 
-logger = logging.getLogger(__name__)
+Deliberately scoped to naming only. This module used to also carry a
+``process_uploaded_file()`` "common upload pattern" that wrote the raw,
+client-supplied ``file.filename`` into the upload directory — path traversal
+waiting for its first caller. Upload handling belongs to ``save_upload()`` in
+``main.py``, which has the extension allowlist, the size cap and the sandbox
+check; build any shared helper on that, not here.
+"""
+import re
+from pathlib import Path
 
 # Upload temp files are saved as "<uuid4>_<original_filename>" (see main.py); this
 # strips that prefix back off so output filenames reflect what the user uploaded.
@@ -35,65 +34,3 @@ def original_stem(input_path) -> str:
 def branded_filename(input_path, ext: str) -> str:
     """Build the public download filename: '<original name>_forgefiles.org.<ext>'."""
     return f"{original_stem(input_path)}_forgefiles.org.{ext.lstrip('.')}"
-
-
-async def process_uploaded_file(
-    file: UploadFile,
-    upload_dir: Path,
-    processor: Callable[[str], str],
-    debug_name: str = "Processing"
-) -> dict:
-    """
-    Common pattern for handling file upload, processing, and cleanup.
-    
-    Args:
-        file: The uploaded file from FastAPI
-        upload_dir: Directory to save temporary uploads
-        processor: Function that takes temp file path and returns output path
-        debug_name: Name for debug logging
-    
-    Returns:
-        Dict with status, message, and filename
-    
-    Raises:
-        HTTPException: If processing fails
-    """
-    temp_path = upload_dir / file.filename
-    logger.debug("%s: %s", debug_name, file.filename)
-    
-    try:
-        # Save uploaded file
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Process the file
-        output_path = processor(str(temp_path))
-        
-        logger.debug("%s successful: %s", debug_name, output_path)
-        return {
-            "status": "success",
-            "message": f"{debug_name} completed",
-            "filename": Path(output_path).name
-        }
-    
-    except Exception as e:
-        logger.exception("%s failed", debug_name)
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    finally:
-        cleanup_temp_file(temp_path)
-
-
-def cleanup_temp_file(file_path: Path) -> None:
-    """
-    Safely remove a temporary file, handling Windows file locking issues.
-    
-    Args:
-        file_path: Path to the file to remove
-    """
-    if file_path.exists():
-        try:
-            os.remove(file_path)
-        except PermissionError:
-            # Windows file locking - will be cleaned up later
-            pass
