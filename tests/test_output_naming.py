@@ -121,3 +121,50 @@ def test_api_compress_pdf_returns_branded_filename(auth_client, sample_pdf):
     assert response.status_code == 200
     data = response.json()
     assert data["filename"] == "Annual Report_forgefiles.org.pdf"
+
+
+# ──────────────────────────────────────────────────────────────
+# End-to-end: every endpoint shares one upload-naming scheme (issue #12)
+#
+# save_upload() used to name its temp file "<uuid4hex><ext>", discarding the
+# original name — a scheme original_stem() cannot undo, so the one endpoint
+# that used the helper (/api/pdf/remove-password) handed users a download
+# named after a UUID. Both schemes are now "<uuid4>_<original name>".
+# ──────────────────────────────────────────────────────────────
+
+def test_save_upload_keeps_the_original_name_recoverable(tmp_path, monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
+
+    class _Upload:
+        filename = "Bank Statement.pdf"
+
+        def __init__(self):
+            import io
+            self.file = io.BytesIO(b"%PDF-1.4 dummy")
+
+    dest = main.save_upload(_Upload(), main.PDF_EXTENSIONS)
+
+    assert original_stem(dest) == "Bank Statement"
+    assert branded_filename(dest, "pdf") == "Bank Statement_forgefiles.org.pdf"
+
+
+def test_unlock_endpoint_returns_a_branded_download_name(auth_client, locked_pdf, tmp_path, monkeypatch):
+    """The one save_upload() caller must brand like every other tool."""
+    import main
+
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
+
+    named = tmp_path / "Bank Statement.pdf"
+    named.write_bytes(Path(locked_pdf["path"]).read_bytes())
+
+    with open(named, "rb") as f:
+        resp = auth_client.post(
+            "/api/pdf/remove-password",
+            files={"file": ("Bank Statement.pdf", f, "application/pdf")},
+            data={"password": locked_pdf["password"]},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["filename"] == "Bank Statement_forgefiles.org.pdf"

@@ -63,14 +63,11 @@ class TestWorkflowStepValidation:
 
 
 class TestUploadSizeCapCoverage:
-    """save_upload() enforces MAX_UPLOAD_MB (413) and the extension allowlist,
-    but only /api/pdf/remove-password uses it; siblings like /api/pdf/rotate
-    stream any body to disk with shutil.copyfileobj and no size check."""
+    """MAX_UPLOAD_MB (413) and the extension allowlist are enforced by
+    save_upload()/save_uploads(), which every upload endpoint now routes
+    through — not just /api/pdf/remove-password. See test_input_validation.py
+    for the parametrised sweep over the whole API surface."""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: MAX_UPLOAD_MB is only enforced by save_upload(); /api/pdf/rotate accepts any size",
-    )
     def test_rotate_honors_upload_size_cap(self, tolerant_client, sample_pdf, monkeypatch):
         # With a 0 MB cap, any non-empty upload must be rejected with 413 —
         # exactly what /api/pdf/remove-password (via save_upload) already does.

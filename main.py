@@ -4,7 +4,6 @@ from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 import asyncio
-import shutil
 import os
 import uuid
 import html
@@ -144,6 +143,10 @@ BASE_URL = os.environ.get("BASE_URL", "https://www.forgefiles.org").rstrip("/")
 # real content change) so the sitemap reflects the true last edit, not "now".
 CONTENT_LAST_MODIFIED = os.environ.get("CONTENT_LAST_MODIFIED", "2026-07-20").strip()
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
+# Multi-file endpoints (the merge tools, images->PDF) share one budget across the
+# whole request: a per-file cap alone would let a single request write
+# MAX_UPLOAD_MB x N. Defaults to MAX_UPLOAD_MB so there is one number to tune.
+MAX_UPLOAD_TOTAL_MB_ENV = os.environ.get("MAX_UPLOAD_TOTAL_MB", "").strip()
 DISABLE_AI = os.environ.get("DISABLE_AI", "0") == "1"
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", "3600"))
 
@@ -368,43 +371,120 @@ async def cleanup_stale_files_loop():
             await run_in_threadpool(_delete_stale_files, d, FILE_TTL_SECONDS)
         await asyncio.sleep(900)
 
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic",
-                      ".xlsx", ".docx", ".pptx", ".csv"}
+# --- Upload intake ---
+# Every endpoint that accepts an UploadFile goes through save_upload() or
+# save_uploads(), so the size cap, the extension allowlist and the sandbox check
+# live in exactly one place. Do not hand-roll a shutil.copyfileobj() into a
+# handler: MAX_UPLOAD_MB is otherwise unenforced (nginx's client_max_body_size
+# guards only the proxied deploy, not the Docker image or render.yaml), and the
+# allowlist is what keeps arbitrary bytes out of the pikepdf / PyMuPDF /
+# LibreOffice / Pillow parsers.
+#
+# Allowlists are per tool family rather than one global set: a PDF endpoint has
+# no reason to accept a .pptx, and the narrower the set the smaller the parser
+# surface each route exposes.
+PDF_EXTENSIONS = {".pdf"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif",
+                    ".bmp", ".tif", ".tiff", ".gif"}
+# .doc/.odt/.rtf reach LibreOffice via word_to_pdf/word_to_pptx (see Dockerfile).
+WORD_EXTENSIONS = {".docx", ".doc", ".odt", ".rtf"}
+EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".csv"}
+PPT_EXTENSIONS = {".pptx", ".ppt"}
 
-def save_upload(file: UploadFile) -> Path:
-    """Save an uploaded file using a pure UUID name and validate its extension."""
-    import pathlib
-    exts = pathlib.PurePath(file.filename or "").suffixes
-    ext = "".join(exts).lower() if exts else ""
-    # Simplify extension if it's too long or weird, but usually we just want the last suffix.
-    # Actually, ''.join(exts) can be '.tar.gz', so check if it ends with one of the allowed extensions,
-    # or just use the last suffix.
-    final_ext = exts[-1].lower() if exts else ""
-    if final_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=415, detail=f"Unsupported file type: {final_ext}")
-        
-    dest = (UPLOAD_DIR / f"{uuid.uuid4().hex}{final_ext}").resolve()
-    
-    # Ensure it stays in the sandbox
+# The union: what a tool-agnostic endpoint (the workflow runner, whose step list
+# decides the real type) accepts, and the default when a caller doesn't narrow it.
+ALLOWED_EXTENSIONS = (
+    PDF_EXTENSIONS | IMAGE_EXTENSIONS | WORD_EXTENSIONS
+    | EXCEL_EXTENSIONS | PPT_EXTENSIONS
+)
+
+
+def _total_upload_budget_mb() -> int:
+    """Whole-request byte budget for the multi-file endpoints, in MB."""
+    # Resolved per call rather than at import so MAX_UPLOAD_MB stays the single
+    # knob when MAX_UPLOAD_TOTAL_MB is unset.
+    return int(MAX_UPLOAD_TOTAL_MB_ENV) if MAX_UPLOAD_TOTAL_MB_ENV else MAX_UPLOAD_MB
+
+
+def _upload_dest(file: UploadFile, allowed: set) -> Path:
+    """Validate an upload's extension and return the temp path to write it to.
+
+    The name keeps the "<uuid4>_<original name>" shape that
+    scripts.utils.original_stem() knows how to strip, so the file the user
+    downloads is still named after the file they uploaded.
+    """
+    safe_name = secure_filename(file.filename or "")
+    ext = Path(safe_name).suffix.lower()
+    if ext not in allowed:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type: {ext or safe_name}",
+        )
+    dest = (UPLOAD_DIR / f"{uuid.uuid4()}_{safe_name}").resolve()
+    # secure_filename() already strips path components; this is the belt to that
+    # braces, and it matters more now that the name is attacker-influenced.
     try:
         dest.relative_to(UPLOAD_DIR.resolve())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
+    return dest
 
-    max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+
+def _stream_to_disk(file: UploadFile, dest: Path, budget: int, limit_mb: int) -> int:
+    """Copy an upload to `dest` in chunks, stopping if it exceeds `budget` bytes.
+
+    Returns the bytes written. On overflow the partial file is removed and 413
+    is raised — the body is never fully buffered in memory or fully written.
+    """
     written = 0
     too_large = False
     with dest.open("wb") as out:
         while chunk := file.file.read(1024 * 1024):
             written += len(chunk)
-            if written > max_bytes:
+            if written > budget:
                 too_large = True
                 break
             out.write(chunk)
     if too_large:
         dest.unlink(missing_ok=True)
-        raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_MB} MB limit.")
+        raise HTTPException(
+            status_code=413, detail=f"Upload exceeds the {limit_mb} MB limit."
+        )
+    return written
+
+
+def save_upload(file: UploadFile, allowed: Optional[set] = None) -> Path:
+    """Save one upload under a unique name, size- and extension-checked.
+
+    Call this *before* the handler's try/except: an HTTPException raised here is
+    a 413/415 that must reach the client, and most handlers funnel every
+    in-try exception into a 400.
+    """
+    dest = _upload_dest(file, ALLOWED_EXTENSIONS if allowed is None else allowed)
+    _stream_to_disk(file, dest, MAX_UPLOAD_MB * 1024 * 1024, MAX_UPLOAD_MB)
     return dest
+
+
+def save_uploads(files: List[UploadFile], allowed: Optional[set] = None) -> List[Path]:
+    """Save a batch of uploads under a single shared size budget.
+
+    Everything written so far is removed before the 413/415 propagates, so a
+    rejected batch leaves nothing behind for the sweeper to find.
+    """
+    allowed = ALLOWED_EXTENSIONS if allowed is None else allowed
+    limit_mb = _total_upload_budget_mb()
+    remaining = limit_mb * 1024 * 1024
+    saved: List[Path] = []
+    try:
+        for f in files:
+            dest = _upload_dest(f, allowed)
+            remaining -= _stream_to_disk(f, dest, remaining, limit_mb)
+            saved.append(dest)
+    except Exception:
+        for p in saved:
+            p.unlink(missing_ok=True)
+        raise
+    return saved
 
 # --- Rate Limiting (Issue #47) ---
 import time
@@ -615,14 +695,10 @@ async def api_convert_to_word(
     password: str = Form(None)
 ):
     # Sanitize filename and add UUID prefix
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     logger.debug("Converting: %s, use_ai=%s, password=%s", safe_filename, use_ai, '***' if password else 'None')
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
         logger.debug("File saved to: %s", temp_path)
         
         if use_ai:
@@ -671,11 +747,8 @@ async def api_convert_to_word_stream(
     import queue as queue_mod
     from fastapi.responses import StreamingResponse
 
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
-    with temp_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     # Captured here because the worker runs on a raw thread, where the
     # middleware's contextvars don't propagate.
     ctx_country, ctx_session = event_log.get_request_context()
@@ -751,13 +824,10 @@ async def api_extract_pages(
     pages: str = Form(...),
     password: str = Form(None),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     logger.debug("Extracting pages: %s, pages='%s', password=%s", safe_filename, pages, '***' if password else 'None')
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         output_path = await event_log.timed(
             "page_extract",
             run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password),
@@ -783,14 +853,10 @@ async def api_compress_pdf(
     password: str = Form(None)
 ):
     """Compress PDF by optimizing structure and resampling large images."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     logger.debug("Compressing: %s, level=%s, password=%s", safe_filename, level, '***' if password else 'None')
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         result = await event_log.timed(
             "pdf_compress",
             run_in_threadpool(compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None),
@@ -825,16 +891,10 @@ async def api_merge_pdfs(
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two PDF files to merge.")
 
-    temp_paths: List[Path] = []
+    # Outside the try: a 413/415 from here must reach the client, and the
+    # handler below funnels every in-try exception into a 400.
+    temp_paths = save_uploads(files, PDF_EXTENSIONS)
     try:
-        for f in files:
-            safe_filename = Path(f.filename.replace("\\", "/")).name
-            unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-            temp_path = UPLOAD_DIR / unique_filename
-            with temp_path.open("wb") as buffer:
-                shutil.copyfileobj(f.file, buffer)
-            temp_paths.append(temp_path)
-
         pwd_list = None
         if passwords:
             pwd_list = [p if p else None for p in passwords.split(",")]
@@ -867,13 +927,9 @@ async def api_add_watermark(
     password: str = Form(None),
 ):
     """Stamp a text watermark on every page."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         output_path = await event_log.timed(
             "pdf_watermark",
             run_in_threadpool(
@@ -902,13 +958,9 @@ async def api_rotate_pdf(
     password: str = Form(None),
 ):
     """Rotate PDF pages by specified angle (90, 180, 270 degrees)."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         output_path = await event_log.timed(
             "pdf_rotate",
             run_in_threadpool(
@@ -937,13 +989,9 @@ async def api_pdf_to_images(
     password: str = Form(None),
 ):
     """Render every page to an image and return a zip."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         result = await event_log.timed(
             "pdf_to_images",
             run_in_threadpool(
@@ -984,16 +1032,13 @@ async def api_sign_pdf(
     if sig_ct not in ("image/png", "image/jpeg", "image/jpg"):
         raise HTTPException(status_code=400, detail="Signature must be a PNG or JPEG image.")
 
-    safe_pdf = Path(file.filename.replace("\\", "/")).name
-    safe_sig = Path(signature.filename.replace("\\", "/")).name
-    pdf_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_pdf}"
-    sig_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_sig}"
+    safe_pdf = secure_filename(file.filename)
+    # Two files, two allowlists — and one shared budget, so a signature image
+    # can't be used to smuggle a second MAX_UPLOAD_MB past the cap.
+    pdf_path, sig_path = save_uploads(
+        [file, signature], PDF_EXTENSIONS | IMAGE_EXTENSIONS
+    )
     try:
-        with pdf_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        with sig_path.open("wb") as buffer:
-            shutil.copyfileobj(signature.file, buffer)
-
         output_path = await event_log.timed(
             "pdf_sign",
             run_in_threadpool(
@@ -1023,13 +1068,10 @@ async def api_heic_to_jpeg(
     """Convert HEIC/HEIF image to JPEG format."""
     validate_quality(quality)
     # Sanitize filename to prevent path traversal
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     logger.debug("Converting HEIC: %s, quality=%d", safe_filename, quality)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
         output_path = event_log.timed_call(
             "heic_to_jpeg", heic_to_jpeg, str(temp_path), str(OUTPUT_DIR), quality
         )
@@ -1062,13 +1104,10 @@ async def api_resize_image(
     validate_range("percentage", percentage, 1, 500)
     validate_range("target_size_kb", target_size_kb, 1)
     # Sanitize filename to prevent path traversal
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     logger.debug("Resizing image: %s, mode=%s", safe_filename, mode)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
         from scripts.image_utils import resize_image
         output_path = event_log.timed_call(
             "resize",
@@ -1107,13 +1146,10 @@ async def api_crop_image(
     validate_range("width", width, 1)
     validate_range("height", height, 1)
     # Sanitize filename to prevent path traversal
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", safe_filename, x, y, width, height)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
         from scripts.image_utils import crop_image
         output_path = event_log.timed_call(
             "crop",
@@ -1141,11 +1177,9 @@ async def api_rotate_image(
     quality: int = Form(95),
 ):
     validate_quality(quality)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "image_rotate",
             run_in_threadpool(rotate_image, str(temp_path), str(OUTPUT_DIR), angle, quality),
@@ -1168,11 +1202,9 @@ async def api_compress_image(
     quality: int = Form(70),
 ):
     validate_quality(quality)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         result = await event_log.timed(
             "image_compress",
             run_in_threadpool(compress_image, str(temp_path), str(OUTPUT_DIR), quality),
@@ -1203,11 +1235,9 @@ async def api_convert_image(
     quality: int = Form(90),
 ):
     validate_quality(quality)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "image_convert",
             run_in_threadpool(convert_image_format, str(temp_path), str(OUTPUT_DIR), target_format, quality),
@@ -1233,11 +1263,9 @@ async def api_watermark_image(
     color: str = Form("white"),
 ):
     validate_range("opacity", opacity, 0.0, 1.0)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, IMAGE_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "image_watermark",
             run_in_threadpool(watermark_image, str(temp_path), str(OUTPUT_DIR), text, position, opacity, color),
@@ -1260,11 +1288,9 @@ async def api_watermark_image(
 async def api_excel_to_pdf(
     file: UploadFile = File(...),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, EXCEL_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "excel_to_pdf", run_in_threadpool(excel_to_pdf, str(temp_path), str(OUTPUT_DIR))
         )
@@ -1285,11 +1311,9 @@ async def api_csv_to_xlsx(
     file: UploadFile = File(...),
     delimiter: str = Form(","),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, EXCEL_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "csv_to_xlsx", run_in_threadpool(csv_to_xlsx, str(temp_path), str(OUTPUT_DIR), delimiter)
         )
@@ -1310,11 +1334,9 @@ async def api_xlsx_to_csv(
     file: UploadFile = File(...),
     sheet: str = Form(None),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, EXCEL_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "xlsx_to_csv", run_in_threadpool(xlsx_to_csv, str(temp_path), str(OUTPUT_DIR), sheet or None)
         )
@@ -1336,14 +1358,8 @@ async def api_merge_excel(
 ):
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two Excel files to merge.")
-    temp_paths: List[Path] = []
+    temp_paths = save_uploads(files, EXCEL_EXTENSIONS)
     try:
-        for f in files:
-            safe = Path(f.filename.replace("\\", "/")).name
-            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
-            with tp.open("wb") as buffer:
-                shutil.copyfileobj(f.file, buffer)
-            temp_paths.append(tp)
         output_path = await event_log.timed(
             "excel_merge",
             run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
@@ -1367,11 +1383,9 @@ async def api_merge_excel(
 async def api_ppt_to_pdf(
     file: UploadFile = File(...),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PPT_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "ppt_to_pdf", run_in_threadpool(ppt_to_pdf, str(temp_path), str(OUTPUT_DIR))
         )
@@ -1392,11 +1406,9 @@ async def api_ppt_to_images(
     file: UploadFile = File(...),
     fmt: str = Form("png"),
 ):
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PPT_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         result = await event_log.timed(
             "ppt_to_images", run_in_threadpool(ppt_to_images_zip, str(temp_path), str(OUTPUT_DIR), fmt)
         )
@@ -1423,14 +1435,8 @@ async def api_merge_pptx(
 ):
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two PPTX files to merge.")
-    temp_paths: List[Path] = []
+    temp_paths = save_uploads(files, PPT_EXTENSIONS)
     try:
-        for f in files:
-            safe = Path(f.filename.replace("\\", "/")).name
-            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
-            with tp.open("wb") as buffer:
-                shutil.copyfileobj(f.file, buffer)
-            temp_paths.append(tp)
         output_path = await event_log.timed(
             "ppt_merge",
             run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
@@ -1454,15 +1460,11 @@ async def execute_workflow(
     steps: str = Form(...),
 ):
     """Execute a multi-step workflow on a file with SSE progress streaming."""
-    import json
     from fastapi.responses import StreamingResponse
 
-    # Sanitize filename and add UUID prefix to prevent path traversal and concurrent collisions
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    temp_path = UPLOAD_DIR / f"{uuid.uuid4()}_{safe_filename}"
-    
+    safe_filename = secure_filename(file.filename)
     logger.info("Workflow started: %s, steps=%s", safe_filename, steps)
-    
+
     # Parse steps JSON
     try:
         step_list = json.loads(steps)
@@ -1470,10 +1472,11 @@ async def execute_workflow(
             raise ValueError("No steps provided")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid steps JSON")
-    
-    # Save initial file
-    with temp_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+
+    # Saved after the steps parse, so a malformed request never touches disk.
+    # The step list decides what the file really has to be, so the intake here
+    # takes the union allowlist rather than one tool family's.
+    temp_path = save_upload(file, ALLOWED_EXTENSIONS)
 
     # Captured here because generate_progress runs while the response streams,
     # outside the middleware's request context.
@@ -1512,12 +1515,6 @@ async def execute_workflow(
 
                 logger.debug("Step %d: %s", i+1, step_type)
 
-                # Artificial delay to ensure UI updates are visible
-                import asyncio
-                await asyncio.sleep(1.0)
-
-                # Timing starts after the UI delay so the artificial second
-                # never inflates the logged step duration.
                 step_started = time.perf_counter()
 
                 if step_type == 'remove_password':
@@ -1774,12 +1771,9 @@ async def api_protect_pdf(
     password: str = Form(None),
 ):
     """Add password protection and permissions to a PDF."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "pdf_protect",
             run_in_threadpool(
@@ -1813,15 +1807,8 @@ async def api_images_to_pdf(
 ):
     """Convert one or more images into a single PDF."""
     validate_range("margin_pt", margin_pt, 0, 200)
-    temp_paths = []
+    temp_paths = save_uploads(files, IMAGE_EXTENSIONS)
     try:
-        for f in files:
-            safe = Path(f.filename.replace("\\", "/")).name
-            tp = UPLOAD_DIR / f"{uuid.uuid4()}_{safe}"
-            with tp.open("wb") as buf:
-                shutil.copyfileobj(f.file, buf)
-            temp_paths.append(tp)
-
         output_path = await event_log.timed(
             "images_to_pdf",
             run_in_threadpool(
@@ -1851,12 +1838,9 @@ async def api_word_to_pdf(
     file: UploadFile = File(...),
 ):
     """Convert a Word document (DOCX/DOC) to PDF."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, WORD_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "word_to_pdf", run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
         )
@@ -1880,12 +1864,9 @@ async def api_word_to_pptx(
 ):
     """Convert a Word document (DOCX/DOC) to a PowerPoint presentation."""
     validate_range("dpi", dpi, 30, 600)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, WORD_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "word_to_pptx", run_in_threadpool(word_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi)
         )
@@ -1912,12 +1893,9 @@ async def api_pdf_to_excel(
     password: str = Form(None),
 ):
     """Extract tables from a PDF and convert to Excel."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         result = await event_log.timed(
             "pdf_to_excel",
             run_in_threadpool(pdf_to_excel, str(temp_path), str(OUTPUT_DIR), password or None),
@@ -1952,12 +1930,9 @@ async def api_pdf_to_pptx(
 ):
     """Convert PDF pages to a PowerPoint presentation."""
     validate_range("dpi", dpi, 30, 600)
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "pdf_to_pptx",
             run_in_threadpool(pdf_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi, password or None),
@@ -1986,12 +1961,9 @@ async def api_extract_text(
     password: str = Form(None),
 ):
     """Extract all text content from a PDF to a .txt file."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         result = await event_log.timed(
             "pdf_extract_text",
             run_in_threadpool(
@@ -2028,13 +2000,9 @@ async def api_organize_pdf(
 ):
     """Reorder, delete, or duplicate PDF pages. page_order is comma-separated 1-based page numbers."""
     import json as _json
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         # Parse page_order: accepts "1,3,2" or "[1,3,2]"
         raw = page_order.strip()
         if raw.startswith("["):
@@ -2074,12 +2042,9 @@ async def api_add_page_numbers(
     password: str = Form(None),
 ):
     """Insert page numbers onto each PDF page."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "pdf_add_page_numbers",
             run_in_threadpool(
@@ -2109,12 +2074,9 @@ async def api_repair_pdf(
     file: UploadFile = File(...),
 ):
     """Attempt to recover/repair a corrupted PDF."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         result = await event_log.timed(
             "pdf_repair", run_in_threadpool(repair_pdf, str(temp_path), str(OUTPUT_DIR))
         )
@@ -2193,13 +2155,9 @@ async def api_annotate_pdf(
     """Add annotations (highlight/underline/strikeout/note/text/redact) to a PDF.
     annotations is a JSON array of annotation objects."""
     import json as _json
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         ann_list = _json.loads(annotations)
         if not isinstance(ann_list, list):
             raise ValueError("annotations must be a JSON array.")
@@ -2237,12 +2195,9 @@ async def api_edit_pdf_metadata(
     password: str = Form(None),
 ):
     """Edit PDF metadata (title, author, subject, keywords, creator)."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         output_path = await event_log.timed(
             "pdf_edit_metadata",
             run_in_threadpool(
@@ -2269,12 +2224,9 @@ async def api_read_pdf_metadata(
     password: str = Form(None),
 ):
     """Read metadata from a PDF without modifying it."""
-    safe_filename = Path(file.filename.replace("\\", "/")).name
-    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
-    temp_path = UPLOAD_DIR / unique_filename
+    safe_filename = secure_filename(file.filename)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
     try:
-        with temp_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         metadata = await event_log.timed(
             "pdf_read_metadata", run_in_threadpool(get_pdf_metadata, str(temp_path), password or None)
         )

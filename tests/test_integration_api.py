@@ -221,14 +221,16 @@ class TestWordToPDF:
         assert resp.json()["filename"].endswith(".pdf")
 
 
-    def test_400_invalid_file_type(self):
+    def test_415_invalid_file_type(self):
         client = _make_client()
         resp = client.post(
             "/api/word/to-pdf",
             headers=AUTH_HEADERS,
             files={"file": ("test.txt", b"plain text", "text/plain")},
         )
-        assert resp.status_code == 400
+        # Rejected by the extension allowlist at intake, before the bytes ever
+        # reach LibreOffice — 415, not the converter's own 400.
+        assert resp.status_code == 415
 
 
 # ──────────────────────────────────────────────────────────────

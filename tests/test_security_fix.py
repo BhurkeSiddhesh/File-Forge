@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from main import app
@@ -17,14 +18,26 @@ def mock_dirs(tmp_path):
 
 import main
 
+_UUID_PREFIX_RE = re.compile(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_'
+)
+
+
 def test_upload_filename_is_unique(mock_dirs, auth_client):
+    """Uploads land under '<uuid4>_<sanitized original>'.
+
+    The original name is deliberately *kept* (scripts/utils.original_stem strips
+    the prefix back off so the download is named after what the user sent). The
+    security property is the unique prefix — it makes the path unguessable and
+    collision-free — not the erasure of the name.
+    """
     upload_dir, _ = mock_dirs
 
     saved_paths = []
     real_save_upload = main.save_upload
 
-    def spy_save_upload(file):
-        dest = real_save_upload(file)
+    def spy_save_upload(file, allowed=None):
+        dest = real_save_upload(file, allowed)
         saved_paths.append(dest)
         return dest
 
@@ -43,14 +56,37 @@ def test_upload_filename_is_unique(mock_dirs, auth_client):
 
             filename = Path(saved_paths[0]).name
 
-            # Security check: filename should NOT be exactly "test.pdf"
-            # It should be purely a UUID + .pdf
             if filename == "test.pdf":
                 pytest.fail(f"VULNERABILITY DETECTED: Uploaded file saved as '{filename}' without randomization.")
 
-            assert "test.pdf" not in filename
-            # UUID hex is 32 chars, plus ".pdf" = 36 chars.
-            assert len(filename) >= 36
+            assert _UUID_PREFIX_RE.match(filename), filename
+            # ...and the original name survives behind the prefix, which is what
+            # keeps the user's download from being named after a UUID (issue #12).
+            assert filename.endswith("_test.pdf")
+
+
+def test_two_uploads_of_the_same_name_do_not_collide(mock_dirs, auth_client):
+    """Concurrent users converting identically-named files get separate paths."""
+    saved_paths = []
+    real_save_upload = main.save_upload
+
+    def spy_save_upload(file, allowed=None):
+        dest = real_save_upload(file, allowed)
+        saved_paths.append(dest)
+        return dest
+
+    with patch.object(main, "save_upload", side_effect=spy_save_upload):
+        with patch.object(main, "remove_pdf_password") as mock_remove:
+            mock_remove.return_value = "output.pdf"
+            for _ in range(2):
+                auth_client.post(
+                    "/api/pdf/remove-password",
+                    files={"file": ("report.pdf", b"dummy content", "application/pdf")},
+                    data={"password": "pass"},
+                )
+
+    assert len(saved_paths) == 2
+    assert saved_paths[0] != saved_paths[1]
 
 
 def test_upload_size_cap_enforced(mock_dirs, auth_client, monkeypatch):

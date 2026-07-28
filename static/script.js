@@ -1870,16 +1870,34 @@ async function runWorkflow() {
     }
 }
 
+// Minimum time a step stays visibly "processing", in ms. The server used to
+// sleep 1s before every step so the animation couldn't be missed, which cost
+// every workflow N seconds of real latency on the app's most expensive
+// endpoint. Holding the class here instead keeps the feedback legible without
+// the server ever waiting — and a step that finishes in 40ms is honest.
+const MIN_STEP_VISIBLE_MS = 250;
+const stepStartedAt = new Map();
+
 function handleWorkflowEvent(data, statusDisplay, resultDisplay) {
     switch (data.event) {
         case 'step_start':
+            stepStartedAt.set(data.step, Date.now());
             setStepProcessing(data.step);
             updateStatusText(`Processing: ${data.label}`, data.step + 1, data.total);
             break;
 
-        case 'step_complete':
-            setStepCompleted(data.step);
+        case 'step_complete': {
+            const started = stepStartedAt.get(data.step);
+            stepStartedAt.delete(data.step);
+            const elapsed = started === undefined ? MIN_STEP_VISIBLE_MS : Date.now() - started;
+            const hold = Math.max(0, MIN_STEP_VISIBLE_MS - elapsed);
+            if (hold === 0) {
+                setStepCompleted(data.step);
+            } else {
+                setTimeout(() => setStepCompleted(data.step), hold);
+            }
             break;
+        }
 
         case 'complete':
             statusDisplay.classList.add('hidden');

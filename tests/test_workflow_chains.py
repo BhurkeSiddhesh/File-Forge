@@ -237,3 +237,48 @@ def test_chain_word_rotate_protect(tmp_path):
 
     with pikepdf.open(protected_path, password=_TEST_PW) as pdf:
         assert len(pdf.pages) >= 1
+
+
+# ──────────────────────────────────────────────────────────────
+# No artificial per-step delay (issue #14)
+#
+# execute_workflow used to `await asyncio.sleep(1.0)` before every step so the
+# UI animation was guaranteed visible, and started the timer *after* the sleep
+# so /admin/stats couldn't see the cost. A minimum visible duration is now held
+# client-side (MIN_STEP_VISIBLE_MS in static/script.js) instead.
+# ──────────────────────────────────────────────────────────────
+
+def test_workflow_does_not_sleep_between_steps(auth_client, tmp_path):
+    """An N-step chain of trivial rotations must not cost ~N seconds of dead time."""
+    import json
+    import time
+
+    src = create_blank_pdf(str(tmp_path), num_pages=1)
+
+    steps = json.dumps([{"type": "rotate_pdf", "config": {"angle": 90}}] * 4)
+    with open(src, "rb") as f:
+        started = time.perf_counter()
+        resp = auth_client.post(
+            "/api/workflow/execute",
+            files={"file": ("chain.pdf", f, "application/pdf")},
+            data={"steps": steps},
+        )
+        body = resp.text
+        elapsed = time.perf_counter() - started
+
+    assert resp.status_code == 200
+    assert '"event": "complete"' in body or "'event': 'complete'" in body, body
+    # Four rotations of a blank page are milliseconds of real work. The old code
+    # spent 4s sleeping; anything near that means the delay is back.
+    assert elapsed < 2.0, f"4-step chain took {elapsed:.2f}s — artificial delay reintroduced?"
+
+
+def test_workflow_source_has_no_sleep_call():
+    """Belt to the timing test's braces: wall-clock bounds get flaky on loaded CI."""
+    import inspect
+    import main
+
+    source = inspect.getsource(main.execute_workflow)
+    assert "asyncio.sleep" not in source, (
+        "execute_workflow must not sleep; hold the animation client-side instead"
+    )
