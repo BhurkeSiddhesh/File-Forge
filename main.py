@@ -5,6 +5,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 import asyncio
 import os
+import re
+import secrets
+import shutil
 import uuid
 import html
 import json
@@ -360,8 +363,18 @@ def _delete_stale_files(directory: Path, ttl: int) -> None:
     now = __import__("time").time()
     for f in directory.iterdir():
         try:
-            if f.is_file() and (now - f.stat().st_mtime) > ttl:
-                f.unlink(missing_ok=True)
+            if f.is_file():
+                if (now - f.stat().st_mtime) > ttl:
+                    f.unlink(missing_ok=True)
+            elif f.is_dir():
+                # A per-result output directory (its name is the download
+                # token). Age it by its newest member so a multi-step workflow
+                # writing into it can't have the directory swept mid-chain.
+                mtimes = [c.stat().st_mtime for c in f.iterdir() if c.is_file()]
+                newest = max(mtimes, default=f.stat().st_mtime)
+                if (now - newest) > ttl:
+                    shutil.rmtree(f, ignore_errors=True)
+                    app.state.downloads.discard(f.name)
         except Exception:
             pass
 
@@ -518,6 +531,103 @@ class SlidingWindowRateLimiter:
             self._hits.clear()
 
 
+# --- Result delivery ---
+# Output names are deterministic — branded_filename() turns "resume.pdf" into
+# "resume_forgefiles.org.pdf" every time — so serving them out of one flat
+# directory meant anyone who could guess a name could download a stranger's
+# document, and two people converting "report.pdf" at once wrote to the same
+# path. Each result now lands in its own directory named by an unguessable
+# token; that token is the only download key, and the branded name survives
+# purely as the Content-Disposition label the user sees when saving.
+#
+# 24 bytes -> 192 bits of entropy, well past guessing, and URL-safe so it needs
+# no escaping in the path segment.
+_DOWNLOAD_TOKEN_BYTES = 24
+_DOWNLOAD_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+# Defence in depth for a *leaked* link (referrer, shared history), not the
+# primary control — the token is. Off by default because the Capacitor mobile
+# app calls this API cross-origin, where the browser does not attach the ff_sid
+# cookie, and a hard requirement would break downloads there.
+DOWNLOAD_BIND_SESSION = os.environ.get("DOWNLOAD_BIND_SESSION", "0") == "1"
+
+
+class DownloadRegistry:
+    """Maps a download token to the finished result it stands for.
+
+    In-process, deliberately: results live on this box's local disk, so a second
+    worker could not serve another worker's files even with a shared map. Going
+    multi-worker means shared *storage*, not just shared state — see the note on
+    SlidingWindowRateLimiter, which has the same constraint.
+    """
+
+    def __init__(self):
+        self._entries = {}
+        self._lock = threading.Lock()
+
+    def add(self, path: Path, session_id) -> str:
+        """Register a finished result and return its download token."""
+        token = path.parent.name
+        with self._lock:
+            self._entries[token] = (path, session_id, time.monotonic())
+        return token
+
+    def resolve(self, token: str, session_id):
+        """Return the registered path, or None if unknown/expired/not yours."""
+        with self._lock:
+            entry = self._entries.get(token)
+            if entry is None:
+                return None
+            path, owner, created = entry
+            # Entries expire with the files themselves, so a token can never
+            # outlive its result and point at a directory reused later.
+            if time.monotonic() - created > FILE_TTL_SECONDS:
+                del self._entries[token]
+                return None
+        if DOWNLOAD_BIND_SESSION and owner is not None and owner != session_id:
+            return None
+        return path
+
+    def discard(self, token: str) -> None:
+        with self._lock:
+            self._entries.pop(token, None)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+app.state.downloads = DownloadRegistry()
+
+
+def new_result_dir() -> Path:
+    """Create a fresh per-result output directory; its name is the token."""
+    d = OUTPUT_DIR / secrets.token_urlsafe(_DOWNLOAD_TOKEN_BYTES)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+_CTX_SESSION = object()  # sentinel: "take the session from the request context"
+
+
+def download_fields(output_path, session_id=_CTX_SESSION) -> dict:
+    """Register a finished result and describe it for the client.
+
+    `filename` stays the branded display name every tool already returned — the
+    clients show it as text — while `download_token` is what /api/download
+    actually takes.
+
+    Pass `session_id` explicitly from a worker thread: contextvars don't
+    propagate there, so the request context would read back empty (the SSE
+    endpoints already capture it up front for exactly this reason).
+    """
+    path = Path(output_path)
+    if session_id is _CTX_SESSION:
+        _, session_id = event_log.get_request_context()
+    token = app.state.downloads.add(path, session_id)
+    return {"filename": path.name, "download_token": token}
+
+
 # Endpoints that are CPU/memory intensive get a stricter limit
 RATE_LIMIT_HEAVY_PATHS = {
     "/api/pdf/convert-to-word",
@@ -658,12 +768,13 @@ async def api_remove_password(
     file: UploadFile = File(...),
     password: str = Form(...)
 ):
-    temp_path = save_upload(file)
+    temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = event_log.timed_call(
-            "pdf_unlock", remove_pdf_password, str(temp_path), password, str(OUTPUT_DIR)
+            "pdf_unlock", remove_pdf_password, str(temp_path), password, str(result_dir)
         )
-        return {"status": "success", "message": "Password removed", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Password removed", **download_fields(output_path)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
@@ -697,6 +808,7 @@ async def api_convert_to_word(
     # Sanitize filename and add UUID prefix
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Converting: %s, use_ai=%s, password=%s", safe_filename, use_ai, '***' if password else 'None')
     try:
         logger.debug("File saved to: %s", temp_path)
@@ -706,7 +818,7 @@ async def api_convert_to_word(
             # We should probably implement a progress bar or background task with polling.
             ai_method = {}
             output_path = event_log.timed_call(
-                "pdf_to_word_ai", pdf_to_word_ai, str(temp_path), str(OUTPUT_DIR), password,
+                "pdf_to_word_ai", pdf_to_word_ai, str(temp_path), str(result_dir), password,
                 method_callback=lambda m: ai_method.__setitem__("value", m),
                 use_ai=True,
             )
@@ -714,12 +826,12 @@ async def api_convert_to_word(
         else:
             output_path = await event_log.timed(
                 "pdf_to_word_standard",
-                run_in_threadpool(pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password),
+                run_in_threadpool(pdf_to_docx, str(temp_path), str(result_dir), password),
             )
             message = "Converted to Word (Standard)"
 
         logger.info("Conversion successful: %s", output_path)
-        return {"status": "success", "message": message, "filename": Path(output_path).name}
+        return {"status": "success", "message": message, **download_fields(output_path)}
     except Exception as e:
         logger.exception("Conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -749,6 +861,7 @@ async def api_convert_to_word_stream(
 
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     # Captured here because the worker runs on a raw thread, where the
     # middleware's contextvars don't propagate.
     ctx_country, ctx_session = event_log.get_request_context()
@@ -766,7 +879,7 @@ async def api_convert_to_word_stream(
                     ai_method = {}
                     output_path = event_log.timed_call(
                         op_name, pdf_to_word_ai,
-                        str(temp_path), str(OUTPUT_DIR), password, progress_callback=progress_cb,
+                        str(temp_path), str(result_dir), password, progress_callback=progress_cb,
                         method_callback=lambda m: ai_method.__setitem__("value", m),
                         use_ai=True, country=ctx_country, session_id=ctx_session,
                     )
@@ -774,7 +887,7 @@ async def api_convert_to_word_stream(
                     message = _ai_conversion_message(method)
                 else:
                     output_path = event_log.timed_call(
-                        op_name, pdf_to_docx, str(temp_path), str(OUTPUT_DIR), password,
+                        op_name, pdf_to_docx, str(temp_path), str(result_dir), password,
                         country=ctx_country, session_id=ctx_session,
                     )
                     method = "standard"
@@ -783,7 +896,7 @@ async def api_convert_to_word_stream(
                     "event": "complete",
                     "message": message,
                     "method": method,
-                    "filename": Path(output_path).name,
+                    **download_fields(output_path, ctx_session),
                 })
             except Exception as e:
                 logger.exception("Streaming conversion failed for %s", safe_filename)
@@ -826,13 +939,14 @@ async def api_extract_pages(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Extracting pages: %s, pages='%s', password=%s", safe_filename, pages, '***' if password else 'None')
     try:
         output_path = await event_log.timed(
             "page_extract",
-            run_in_threadpool(extract_pdf_pages, str(temp_path), str(OUTPUT_DIR), pages, password),
+            run_in_threadpool(extract_pdf_pages, str(temp_path), str(result_dir), pages, password),
         )
-        return {"status": "success", "message": "Pages extracted", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Pages extracted", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -855,16 +969,17 @@ async def api_compress_pdf(
     """Compress PDF by optimizing structure and resampling large images."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Compressing: %s, level=%s, password=%s", safe_filename, level, '***' if password else 'None')
     try:
         result = await event_log.timed(
             "pdf_compress",
-            run_in_threadpool(compress_pdf, str(temp_path), str(OUTPUT_DIR), level, password or None),
+            run_in_threadpool(compress_pdf, str(temp_path), str(result_dir), level, password or None),
         )
         return {
             "status": "success",
             "message": "PDF compressed successfully",
-            "filename": Path(result['output_path']).name,
+            **download_fields(result['output_path']),
             "original_size": result['original_size'],
             "compressed_size": result['compressed_size'],
             "reduction_pct": result['reduction_pct'],
@@ -894,6 +1009,7 @@ async def api_merge_pdfs(
     # Outside the try: a 413/415 from here must reach the client, and the
     # handler below funnels every in-try exception into a 400.
     temp_paths = save_uploads(files, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         pwd_list = None
         if passwords:
@@ -901,9 +1017,9 @@ async def api_merge_pdfs(
 
         output_path = await event_log.timed(
             "pdf_merge",
-            run_in_threadpool(merge_pdfs, [str(p) for p in temp_paths], str(OUTPUT_DIR), pwd_list),
+            run_in_threadpool(merge_pdfs, [str(p) for p in temp_paths], str(result_dir), pwd_list),
         )
-        return {"status": "success", "message": "PDFs merged", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PDFs merged", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -929,14 +1045,15 @@ async def api_add_watermark(
     """Stamp a text watermark on every page."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_watermark",
             run_in_threadpool(
-                add_watermark, str(temp_path), str(OUTPUT_DIR), text, position, opacity, password or None
+                add_watermark, str(temp_path), str(result_dir), text, position, opacity, password or None
             ),
         )
-        return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Watermark added", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -960,14 +1077,15 @@ async def api_rotate_pdf(
     """Rotate PDF pages by specified angle (90, 180, 270 degrees)."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_rotate",
             run_in_threadpool(
-                rotate_pdf, str(temp_path), str(OUTPUT_DIR), angle, pages or None, password or None
+                rotate_pdf, str(temp_path), str(result_dir), angle, pages or None, password or None
             ),
         )
-        return {"status": "success", "message": f"PDF rotated by {angle}°", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"PDF rotated by {angle}°", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -991,17 +1109,18 @@ async def api_pdf_to_images(
     """Render every page to an image and return a zip."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
             "pdf_to_images",
             run_in_threadpool(
-                pdf_to_images_zip, str(temp_path), str(OUTPUT_DIR), dpi, fmt, password or None
+                pdf_to_images_zip, str(temp_path), str(result_dir), dpi, fmt, password or None
             ),
         )
         return {
             "status": "success",
             "message": f"Rendered {result['page_count']} page(s) to images",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "page_count": result["page_count"],
         }
     except ValueError as e:
@@ -1028,6 +1147,7 @@ async def api_sign_pdf(
     password: str = Form(None),
 ):
     """Stamp a signature image onto the chosen page."""
+    result_dir = new_result_dir()
     sig_ct = (signature.content_type or "").lower()
     if sig_ct not in ("image/png", "image/jpeg", "image/jpg"):
         raise HTTPException(status_code=400, detail="Signature must be a PNG or JPEG image.")
@@ -1042,10 +1162,10 @@ async def api_sign_pdf(
         output_path = await event_log.timed(
             "pdf_sign",
             run_in_threadpool(
-                sign_pdf, str(pdf_path), str(sig_path), str(OUTPUT_DIR), page, x, y, width, password or None
+                sign_pdf, str(pdf_path), str(sig_path), str(result_dir), page, x, y, width, password or None
             ),
         )
-        return {"status": "success", "message": "Signature added", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Signature added", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1070,12 +1190,13 @@ async def api_heic_to_jpeg(
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Converting HEIC: %s, quality=%d", safe_filename, quality)
     try:
         output_path = event_log.timed_call(
-            "heic_to_jpeg", heic_to_jpeg, str(temp_path), str(OUTPUT_DIR), quality
+            "heic_to_jpeg", heic_to_jpeg, str(temp_path), str(result_dir), quality
         )
-        return {"status": "success", "message": "Converted to JPEG", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Converted to JPEG", **download_fields(output_path)}
     except Exception as e:
         logger.exception("HEIC conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -1106,6 +1227,7 @@ async def api_resize_image(
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Resizing image: %s, mode=%s", safe_filename, mode)
     try:
         from scripts.image_utils import resize_image
@@ -1113,14 +1235,14 @@ async def api_resize_image(
             "resize",
             resize_image,
             str(temp_path),
-            str(OUTPUT_DIR),
+            str(result_dir),
             mode,
             width=width,
             height=height,
             percentage=percentage,
             target_size_kb=target_size_kb
         )
-        return {"status": "success", "message": "Image Resized", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Image Resized", **download_fields(output_path)}
     except Exception as e:
         logger.exception("Image resize failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -1148,6 +1270,7 @@ async def api_crop_image(
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", safe_filename, x, y, width, height)
     try:
         from scripts.image_utils import crop_image
@@ -1155,10 +1278,10 @@ async def api_crop_image(
             "crop",
             crop_image,
             str(temp_path),
-            str(OUTPUT_DIR),
+            str(result_dir),
             x=x, y=y, width=width, height=height
         )
-        return {"status": "success", "message": "Image Cropped", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Image Cropped", **download_fields(output_path)}
     except Exception as e:
         logger.exception("Image crop failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -1179,12 +1302,13 @@ async def api_rotate_image(
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "image_rotate",
-            run_in_threadpool(rotate_image, str(temp_path), str(OUTPUT_DIR), angle, quality),
+            run_in_threadpool(rotate_image, str(temp_path), str(result_dir), angle, quality),
         )
-        return {"status": "success", "message": f"Rotated by {angle}°", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"Rotated by {angle}°", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1204,15 +1328,16 @@ async def api_compress_image(
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
             "image_compress",
-            run_in_threadpool(compress_image, str(temp_path), str(OUTPUT_DIR), quality),
+            run_in_threadpool(compress_image, str(temp_path), str(result_dir), quality),
         )
         return {
             "status": "success",
             "message": "Image compressed",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "original_size": result["original_size"],
             "compressed_size": result["compressed_size"],
             "reduction_pct": result["reduction_pct"],
@@ -1237,12 +1362,13 @@ async def api_convert_image(
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "image_convert",
-            run_in_threadpool(convert_image_format, str(temp_path), str(OUTPUT_DIR), target_format, quality),
+            run_in_threadpool(convert_image_format, str(temp_path), str(result_dir), target_format, quality),
         )
-        return {"status": "success", "message": f"Converted to {target_format.upper()}", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"Converted to {target_format.upper()}", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1265,12 +1391,13 @@ async def api_watermark_image(
     validate_range("opacity", opacity, 0.0, 1.0)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "image_watermark",
-            run_in_threadpool(watermark_image, str(temp_path), str(OUTPUT_DIR), text, position, opacity, color),
+            run_in_threadpool(watermark_image, str(temp_path), str(result_dir), text, position, opacity, color),
         )
-        return {"status": "success", "message": "Watermark added", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Watermark added", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1290,11 +1417,12 @@ async def api_excel_to_pdf(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "excel_to_pdf", run_in_threadpool(excel_to_pdf, str(temp_path), str(OUTPUT_DIR))
+            "excel_to_pdf", run_in_threadpool(excel_to_pdf, str(temp_path), str(result_dir))
         )
-        return {"status": "success", "message": "Excel converted to PDF", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Excel converted to PDF", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1313,11 +1441,12 @@ async def api_csv_to_xlsx(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "csv_to_xlsx", run_in_threadpool(csv_to_xlsx, str(temp_path), str(OUTPUT_DIR), delimiter)
+            "csv_to_xlsx", run_in_threadpool(csv_to_xlsx, str(temp_path), str(result_dir), delimiter)
         )
-        return {"status": "success", "message": "CSV converted to XLSX", "filename": Path(output_path).name}
+        return {"status": "success", "message": "CSV converted to XLSX", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1336,11 +1465,12 @@ async def api_xlsx_to_csv(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "xlsx_to_csv", run_in_threadpool(xlsx_to_csv, str(temp_path), str(OUTPUT_DIR), sheet or None)
+            "xlsx_to_csv", run_in_threadpool(xlsx_to_csv, str(temp_path), str(result_dir), sheet or None)
         )
-        return {"status": "success", "message": "XLSX converted to CSV", "filename": Path(output_path).name}
+        return {"status": "success", "message": "XLSX converted to CSV", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1359,12 +1489,13 @@ async def api_merge_excel(
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two Excel files to merge.")
     temp_paths = save_uploads(files, EXCEL_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "excel_merge",
-            run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
+            run_in_threadpool(merge_excel_files, [str(p) for p in temp_paths], str(result_dir)),
         )
-        return {"status": "success", "message": "Excel files merged", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Excel files merged", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1385,11 +1516,12 @@ async def api_ppt_to_pdf(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PPT_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "ppt_to_pdf", run_in_threadpool(ppt_to_pdf, str(temp_path), str(OUTPUT_DIR))
+            "ppt_to_pdf", run_in_threadpool(ppt_to_pdf, str(temp_path), str(result_dir))
         )
-        return {"status": "success", "message": "PPT converted to PDF (best-effort layout)", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PPT converted to PDF (best-effort layout)", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1408,14 +1540,15 @@ async def api_ppt_to_images(
 ):
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PPT_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
-            "ppt_to_images", run_in_threadpool(ppt_to_images_zip, str(temp_path), str(OUTPUT_DIR), fmt)
+            "ppt_to_images", run_in_threadpool(ppt_to_images_zip, str(temp_path), str(result_dir), fmt)
         )
         return {
             "status": "success",
             "message": f"Rendered {result['slide_count']} slide(s)",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "slide_count": result["slide_count"],
         }
     except ValueError as e:
@@ -1436,12 +1569,13 @@ async def api_merge_pptx(
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two PPTX files to merge.")
     temp_paths = save_uploads(files, PPT_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "ppt_merge",
-            run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(OUTPUT_DIR)),
+            run_in_threadpool(merge_pptx, [str(p) for p in temp_paths], str(result_dir)),
         )
-        return {"status": "success", "message": "PPTX files merged", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PPTX files merged", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1477,6 +1611,10 @@ async def execute_workflow(
     # The step list decides what the file really has to be, so the intake here
     # takes the union allowlist rather than one tool family's.
     temp_path = save_upload(file, ALLOWED_EXTENSIONS)
+    # One directory for the whole chain: every step's output and every renamed
+    # intermediate lands here, and only the final file is ever registered for
+    # download, so the intermediates are unreachable rather than merely unlinked.
+    result_dir = new_result_dir()
 
     # Captured here because generate_progress runs while the response streams,
     # outside the middleware's request context.
@@ -1522,21 +1660,21 @@ async def execute_workflow(
                     if not password:
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'Password required for unlock step'})}\n\n"
                         return
-                    output_path = await run_in_threadpool(remove_pdf_password, str(current_file), password, str(OUTPUT_DIR))
+                    output_path = await run_in_threadpool(remove_pdf_password, str(current_file), password, str(result_dir))
                     current_file = Path(output_path)
                     
                 elif step_type == 'pdf_to_word':
                     use_ai = config.get('use_ai', False)
                     password = config.get('password')
                     if use_ai:
-                        output_path = await run_in_threadpool(pdf_to_word_ai, str(current_file), str(OUTPUT_DIR), password)
+                        output_path = await run_in_threadpool(pdf_to_word_ai, str(current_file), str(result_dir), password)
                     else:
-                        output_path = await run_in_threadpool(pdf_to_docx, str(current_file), str(OUTPUT_DIR), password)
+                        output_path = await run_in_threadpool(pdf_to_docx, str(current_file), str(result_dir), password)
                     current_file = Path(output_path)
                     
                 elif step_type == 'heic_to_jpeg':
                     quality = config.get('quality', 95)
-                    output_path = await run_in_threadpool(heic_to_jpeg, str(current_file), str(OUTPUT_DIR), quality)
+                    output_path = await run_in_threadpool(heic_to_jpeg, str(current_file), str(result_dir), quality)
                     current_file = Path(output_path)
                     
                 elif step_type == 'resize_image':
@@ -1546,7 +1684,7 @@ async def execute_workflow(
                     output_path = await run_in_threadpool(
                         resize_image,
                         str(current_file), 
-                        str(OUTPUT_DIR), 
+                        str(result_dir), 
                         mode,
                         percentage=percentage
                     )
@@ -1561,7 +1699,7 @@ async def execute_workflow(
                     output_path = await run_in_threadpool(
                         crop_image,
                         str(current_file), 
-                        str(OUTPUT_DIR), 
+                        str(result_dir), 
                         x=x, y=y, width=width, height=height
                     )
                     current_file = Path(output_path)
@@ -1569,24 +1707,24 @@ async def execute_workflow(
                 elif step_type == 'compress_pdf':
                     level = config.get('level', 'medium')
                     password = config.get('password') or None
-                    result = await run_in_threadpool(compress_pdf, str(current_file), str(OUTPUT_DIR), level, password)
+                    result = await run_in_threadpool(compress_pdf, str(current_file), str(result_dir), level, password)
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'rotate_image':
                     angle = config.get('angle', 90)
-                    output_path = await run_in_threadpool(rotate_image, str(current_file), str(OUTPUT_DIR), angle)
+                    output_path = await run_in_threadpool(rotate_image, str(current_file), str(result_dir), angle)
                     current_file = Path(output_path)
 
                 elif step_type == 'compress_image':
                     quality = config.get('quality', 70)
-                    result = await run_in_threadpool(compress_image, str(current_file), str(OUTPUT_DIR), quality)
+                    result = await run_in_threadpool(compress_image, str(current_file), str(result_dir), quality)
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'convert_image':
                     target_format = config.get('target_format', 'jpg')
                     quality = config.get('quality', 90)
                     output_path = await run_in_threadpool(
-                        convert_image_format, str(current_file), str(OUTPUT_DIR), target_format, quality
+                        convert_image_format, str(current_file), str(result_dir), target_format, quality
                     )
                     current_file = Path(output_path)
 
@@ -1596,38 +1734,38 @@ async def execute_workflow(
                     opacity = config.get('opacity', 0.4)
                     color = config.get('color', 'white')
                     output_path = await run_in_threadpool(
-                        watermark_image, str(current_file), str(OUTPUT_DIR), text, position, opacity, color
+                        watermark_image, str(current_file), str(result_dir), text, position, opacity, color
                     )
                     current_file = Path(output_path)
 
                 elif step_type == 'excel_to_pdf':
-                    output_path = await run_in_threadpool(excel_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    output_path = await run_in_threadpool(excel_to_pdf, str(current_file), str(result_dir))
                     current_file = Path(output_path)
 
                 elif step_type == 'csv_to_xlsx':
                     delimiter = config.get('delimiter', ',')
-                    output_path = await run_in_threadpool(csv_to_xlsx, str(current_file), str(OUTPUT_DIR), delimiter)
+                    output_path = await run_in_threadpool(csv_to_xlsx, str(current_file), str(result_dir), delimiter)
                     current_file = Path(output_path)
 
                 elif step_type == 'xlsx_to_csv':
                     sheet = config.get('sheet') or None
-                    output_path = await run_in_threadpool(xlsx_to_csv, str(current_file), str(OUTPUT_DIR), sheet)
+                    output_path = await run_in_threadpool(xlsx_to_csv, str(current_file), str(result_dir), sheet)
                     current_file = Path(output_path)
 
                 elif step_type == 'ppt_to_pdf':
-                    output_path = await run_in_threadpool(ppt_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    output_path = await run_in_threadpool(ppt_to_pdf, str(current_file), str(result_dir))
                     current_file = Path(output_path)
 
                 elif step_type == 'ppt_to_images':
                     fmt = config.get('fmt', 'png')
-                    result = await run_in_threadpool(ppt_to_images_zip, str(current_file), str(OUTPUT_DIR), fmt)
+                    result = await run_in_threadpool(ppt_to_images_zip, str(current_file), str(result_dir), fmt)
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'rotate_pdf':
                     angle = int(config.get('angle', 90))
                     pages = config.get('pages') or None
                     password = config.get('password') or None
-                    output_path = await run_in_threadpool(rotate_pdf, str(current_file), str(OUTPUT_DIR), angle, pages, password)
+                    output_path = await run_in_threadpool(rotate_pdf, str(current_file), str(result_dir), angle, pages, password)
                     current_file = Path(output_path)
 
                 elif step_type == 'protect_pdf':
@@ -1636,35 +1774,35 @@ async def execute_workflow(
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'user_password required for protect_pdf step'})}\n\n"
                         return
                     output_path = await run_in_threadpool(
-                        protect_pdf, str(current_file), str(OUTPUT_DIR),
+                        protect_pdf, str(current_file), str(result_dir),
                         user_pw, config.get('owner_password'), True, False, False, config.get('password')
                     )
                     current_file = Path(output_path)
 
                 elif step_type == 'word_to_pdf':
-                    output_path = await run_in_threadpool(word_to_pdf, str(current_file), str(OUTPUT_DIR))
+                    output_path = await run_in_threadpool(word_to_pdf, str(current_file), str(result_dir))
                     current_file = Path(output_path)
 
                 elif step_type == 'word_to_pptx':
                     dpi = int(config.get('dpi', 150))
-                    output_path = await run_in_threadpool(word_to_pptx, str(current_file), str(OUTPUT_DIR), dpi)
+                    output_path = await run_in_threadpool(word_to_pptx, str(current_file), str(result_dir), dpi)
                     current_file = Path(output_path)
 
                 elif step_type == 'pdf_to_excel':
                     password = config.get('password') or None
-                    result = await run_in_threadpool(pdf_to_excel, str(current_file), str(OUTPUT_DIR), password)
+                    result = await run_in_threadpool(pdf_to_excel, str(current_file), str(result_dir), password)
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'pdf_to_pptx':
                     dpi = int(config.get('dpi', 150))
                     password = config.get('password') or None
-                    output_path = await run_in_threadpool(pdf_to_pptx, str(current_file), str(OUTPUT_DIR), dpi, password)
+                    output_path = await run_in_threadpool(pdf_to_pptx, str(current_file), str(result_dir), dpi, password)
                     current_file = Path(output_path)
 
                 elif step_type == 'extract_text':
                     preserve = config.get('preserve_layout', False)
                     password = config.get('password') or None
-                    result = await run_in_threadpool(extract_text_from_pdf, str(current_file), str(OUTPUT_DIR), preserve, password)
+                    result = await run_in_threadpool(extract_text_from_pdf, str(current_file), str(result_dir), preserve, password)
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'organize_pdf':
@@ -1673,12 +1811,12 @@ async def execute_workflow(
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'page_order required for organize_pdf step'})}\n\n"
                         return
                     password = config.get('password') or None
-                    output_path = await run_in_threadpool(organize_pdf, str(current_file), str(OUTPUT_DIR), page_order, password)
+                    output_path = await run_in_threadpool(organize_pdf, str(current_file), str(result_dir), page_order, password)
                     current_file = Path(output_path)
 
                 elif step_type == 'add_page_numbers':
                     output_path = await run_in_threadpool(
-                        add_page_numbers, str(current_file), str(OUTPUT_DIR),
+                        add_page_numbers, str(current_file), str(result_dir),
                         config.get('position', 'bottom-center'),
                         int(config.get('start_number', 1)),
                         int(config.get('font_size', 12)),
@@ -1689,18 +1827,18 @@ async def execute_workflow(
                     current_file = Path(output_path)
 
                 elif step_type == 'repair_pdf':
-                    result = await run_in_threadpool(repair_pdf, str(current_file), str(OUTPUT_DIR))
+                    result = await run_in_threadpool(repair_pdf, str(current_file), str(result_dir))
                     current_file = Path(result['output_path'])
 
                 elif step_type == 'annotate_pdf':
                     annotations = config.get('annotations', [])
                     password = config.get('password') or None
-                    output_path = await run_in_threadpool(annotate_pdf, str(current_file), str(OUTPUT_DIR), annotations, password)
+                    output_path = await run_in_threadpool(annotate_pdf, str(current_file), str(result_dir), annotations, password)
                     current_file = Path(output_path)
 
                 elif step_type == 'edit_metadata':
                     output_path = await run_in_threadpool(
-                        edit_pdf_metadata, str(current_file), str(OUTPUT_DIR),
+                        edit_pdf_metadata, str(current_file), str(result_dir),
                         config.get('title'), config.get('author'), config.get('subject'),
                         config.get('keywords'), config.get('creator'),
                         bool(config.get('clear_all', False)), config.get('password') or None,
@@ -1721,7 +1859,7 @@ async def execute_workflow(
                 # the exact path it's about to read from and fail (or, for tools
                 # without pikepdf's overwrite guard, silently corrupt it).
                 if i < len(step_list) - 1:
-                    intermediate_path = OUTPUT_DIR / f"{uuid.uuid4()}_{current_file.name}"
+                    intermediate_path = result_dir / f"{uuid.uuid4()}_{current_file.name}"
                     current_file = current_file.replace(intermediate_path)
 
                 # Send "completed" event for this step
@@ -1729,7 +1867,12 @@ async def execute_workflow(
 
             # Send final success event
             logger.info("Workflow complete: %s", current_file)
-            yield f"data: {json.dumps({'event': 'complete', 'message': f'Workflow completed ({len(step_list)} steps)', 'filename': current_file.name})}\n\n"
+            complete = {
+                'event': 'complete',
+                'message': f'Workflow completed ({len(step_list)} steps)',
+                **download_fields(current_file, wf_session),
+            }
+            yield f"data: {json.dumps(complete)}\n\n"
 
         except Exception as e:
             if step_started is not None:
@@ -1773,15 +1916,16 @@ async def api_protect_pdf(
     """Add password protection and permissions to a PDF."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_protect",
             run_in_threadpool(
-                protect_pdf, str(temp_path), str(OUTPUT_DIR),
+                protect_pdf, str(temp_path), str(result_dir),
                 user_password, owner_password, allow_print, allow_copy, allow_edit, password or None
             ),
         )
-        return {"status": "success", "message": "PDF protected with password", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PDF protected with password", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1808,14 +1952,15 @@ async def api_images_to_pdf(
     """Convert one or more images into a single PDF."""
     validate_range("margin_pt", margin_pt, 0, 200)
     temp_paths = save_uploads(files, IMAGE_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "images_to_pdf",
             run_in_threadpool(
-                images_to_pdf, [str(p) for p in temp_paths], str(OUTPUT_DIR), page_size, fit_mode, margin_pt
+                images_to_pdf, [str(p) for p in temp_paths], str(result_dir), page_size, fit_mode, margin_pt
             ),
         )
-        return {"status": "success", "message": f"Created PDF from {len(files)} image(s)", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"Created PDF from {len(files)} image(s)", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1840,11 +1985,12 @@ async def api_word_to_pdf(
     """Convert a Word document (DOCX/DOC) to PDF."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, WORD_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "word_to_pdf", run_in_threadpool(word_to_pdf, str(temp_path), str(OUTPUT_DIR))
+            "word_to_pdf", run_in_threadpool(word_to_pdf, str(temp_path), str(result_dir))
         )
-        return {"status": "success", "message": "Word document converted to PDF", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Word document converted to PDF", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1866,11 +2012,12 @@ async def api_word_to_pptx(
     validate_range("dpi", dpi, 30, 600)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, WORD_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "word_to_pptx", run_in_threadpool(word_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi)
+            "word_to_pptx", run_in_threadpool(word_to_pptx, str(temp_path), str(result_dir), dpi)
         )
-        return {"status": "success", "message": "Word document converted to PowerPoint", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Word document converted to PowerPoint", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1895,15 +2042,16 @@ async def api_pdf_to_excel(
     """Extract tables from a PDF and convert to Excel."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
             "pdf_to_excel",
-            run_in_threadpool(pdf_to_excel, str(temp_path), str(OUTPUT_DIR), password or None),
+            run_in_threadpool(pdf_to_excel, str(temp_path), str(result_dir), password or None),
         )
         return {
             "status": "success",
             "message": f"Extracted {result['tables_found']} table(s) to Excel",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "tables_found": result["tables_found"],
         }
     except ValueError as e:
@@ -1932,12 +2080,13 @@ async def api_pdf_to_pptx(
     validate_range("dpi", dpi, 30, 600)
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_to_pptx",
-            run_in_threadpool(pdf_to_pptx, str(temp_path), str(OUTPUT_DIR), dpi, password or None),
+            run_in_threadpool(pdf_to_pptx, str(temp_path), str(result_dir), dpi, password or None),
         )
-        return {"status": "success", "message": "PDF converted to PowerPoint", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PDF converted to PowerPoint", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -1963,17 +2112,18 @@ async def api_extract_text(
     """Extract all text content from a PDF to a .txt file."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
             "pdf_extract_text",
             run_in_threadpool(
-                extract_text_from_pdf, str(temp_path), str(OUTPUT_DIR), preserve_layout, password or None
+                extract_text_from_pdf, str(temp_path), str(result_dir), preserve_layout, password or None
             ),
         )
         return {
             "status": "success",
             "message": f"Text extracted from {result['page_count']} page(s)",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "page_count": result["page_count"],
         }
     except ValueError as e:
@@ -2002,6 +2152,7 @@ async def api_organize_pdf(
     import json as _json
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         # Parse page_order: accepts "1,3,2" or "[1,3,2]"
         raw = page_order.strip()
@@ -2012,9 +2163,9 @@ async def api_organize_pdf(
 
         output_path = await event_log.timed(
             "pdf_organize",
-            run_in_threadpool(organize_pdf, str(temp_path), str(OUTPUT_DIR), order, password or None),
+            run_in_threadpool(organize_pdf, str(temp_path), str(result_dir), order, password or None),
         )
-        return {"status": "success", "message": f"PDF organized ({len(order)} pages in output)", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"PDF organized ({len(order)} pages in output)", **download_fields(output_path)}
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2044,15 +2195,16 @@ async def api_add_page_numbers(
     """Insert page numbers onto each PDF page."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_add_page_numbers",
             run_in_threadpool(
-                add_page_numbers, str(temp_path), str(OUTPUT_DIR),
+                add_page_numbers, str(temp_path), str(result_dir),
                 position, start_number, font_size, skip_first, fmt, password or None
             ),
         )
-        return {"status": "success", "message": "Page numbers added", "filename": Path(output_path).name}
+        return {"status": "success", "message": "Page numbers added", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2076,14 +2228,15 @@ async def api_repair_pdf(
     """Attempt to recover/repair a corrupted PDF."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         result = await event_log.timed(
-            "pdf_repair", run_in_threadpool(repair_pdf, str(temp_path), str(OUTPUT_DIR))
+            "pdf_repair", run_in_threadpool(repair_pdf, str(temp_path), str(result_dir))
         )
         return {
             "status": "success",
             "message": f"PDF repair status: {result['repair_status']}",
-            "filename": Path(result["output_path"]).name,
+            **download_fields(result["output_path"]),
             "repair_status": result["repair_status"],
         }
     except RuntimeError as e:
@@ -2111,14 +2264,15 @@ async def api_create_pdf_from_text(
     margin_pt: int = Form(72),
 ):
     """Create a new PDF from plain text content."""
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_create_from_text",
             run_in_threadpool(
-                create_pdf_from_text, str(OUTPUT_DIR), content, title, font_size, page_size, margin_pt
+                create_pdf_from_text, str(result_dir), content, title, font_size, page_size, margin_pt
             ),
         )
-        return {"status": "success", "message": "PDF created from text", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PDF created from text", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2131,11 +2285,12 @@ async def api_create_blank_pdf(
     page_size: str = Form("A4"),
 ):
     """Create a blank PDF with the given number of pages."""
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
-            "pdf_create_blank", run_in_threadpool(create_blank_pdf, str(OUTPUT_DIR), num_pages, page_size)
+            "pdf_create_blank", run_in_threadpool(create_blank_pdf, str(result_dir), num_pages, page_size)
         )
-        return {"status": "success", "message": f"Created blank PDF with {num_pages} page(s)", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"Created blank PDF with {num_pages} page(s)", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2157,6 +2312,7 @@ async def api_annotate_pdf(
     import json as _json
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         ann_list = _json.loads(annotations)
         if not isinstance(ann_list, list):
@@ -2164,9 +2320,9 @@ async def api_annotate_pdf(
 
         output_path = await event_log.timed(
             "pdf_annotate",
-            run_in_threadpool(annotate_pdf, str(temp_path), str(OUTPUT_DIR), ann_list, password or None),
+            run_in_threadpool(annotate_pdf, str(temp_path), str(result_dir), ann_list, password or None),
         )
-        return {"status": "success", "message": f"Added {len(ann_list)} annotation(s)", "filename": Path(output_path).name}
+        return {"status": "success", "message": f"Added {len(ann_list)} annotation(s)", **download_fields(output_path)}
     except (ValueError, _json.JSONDecodeError) as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2197,15 +2353,16 @@ async def api_edit_pdf_metadata(
     """Edit PDF metadata (title, author, subject, keywords, creator)."""
     safe_filename = secure_filename(file.filename)
     temp_path = save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
             "pdf_edit_metadata",
             run_in_threadpool(
-                edit_pdf_metadata, str(temp_path), str(OUTPUT_DIR),
+                edit_pdf_metadata, str(temp_path), str(result_dir),
                 title, author, subject, keywords, creator, clear_all, password or None
             ),
         )
-        return {"status": "success", "message": "PDF metadata updated", "filename": Path(output_path).name}
+        return {"status": "success", "message": "PDF metadata updated", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
@@ -2241,30 +2398,41 @@ async def api_read_pdf_metadata(
                 pass
 
 
-def delete_file_after_download(path: Path) -> None:
-    """
-    Deletes the file at the given path.
-    Designed to be used as a FastAPI BackgroundTask after a file has been served.
-    
-    Args:
-        path: Path to the file to delete.
-    """
-    try:
-        if path.exists():
-            path.unlink()
-            logger.debug("Deleted file after download: %s", path)
-    except OSError:
-        logger.exception("Failed to delete file %s", path)
+def delete_file_after_download(token: str, path: Path) -> None:
+    """Retire a result once it has been served.
 
-@app.api_route("/api/download/{filename}", methods=["GET", "HEAD"])
-async def download_file(filename: str, request: Request, background_tasks: BackgroundTasks):
-    safe_filename = Path(filename.replace("\\", "/")).name
-    file_path = OUTPUT_DIR / safe_filename
-    if file_path.exists():
-        if request.method == "GET":
-            background_tasks.add_task(delete_file_after_download, file_path)
-        return FileResponse(file_path, filename=safe_filename)
-    raise HTTPException(status_code=404, detail="File not found")
+    Used as a FastAPI BackgroundTask. Removes the whole per-result directory
+    (a workflow chain leaves its intermediates in there too) and forgets the
+    token, so a replayed URL 404s instead of racing the filesystem.
+    """
+    app.state.downloads.discard(token)
+    try:
+        shutil.rmtree(path.parent, ignore_errors=True)
+        logger.debug("Deleted result after download: %s", path)
+    except OSError:
+        logger.exception("Failed to delete result %s", path)
+
+
+@app.api_route("/api/download/{token}", methods=["GET", "HEAD"])
+async def download_file(token: str, request: Request, background_tasks: BackgroundTasks):
+    """Serve a finished result by its opaque token.
+
+    The token is the authorization: it is the only thing that maps to a path,
+    and it is not derived from anything the client supplied. There is
+    deliberately no fallback to a filename lookup — that fallback *was* the
+    vulnerability, since output names are fully deterministic.
+    """
+    if not _DOWNLOAD_TOKEN_RE.match(token):
+        raise HTTPException(status_code=404, detail="File not found")
+    _, session_id = event_log.get_request_context()
+    file_path = app.state.downloads.resolve(token, session_id)
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if request.method == "GET":
+        background_tasks.add_task(delete_file_after_download, token, file_path)
+    # The branded name never addresses anything; it is only what the browser
+    # offers to save the download as.
+    return FileResponse(file_path, filename=file_path.name)
 
 # Note: there is deliberately no /admin/stats route in the public app. Only the
 # write side of the event log (recording operations + funnel steps) lives here;

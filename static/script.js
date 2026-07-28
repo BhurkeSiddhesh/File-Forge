@@ -31,9 +31,13 @@ window.ffTrack = ffTrack;
 // send their own page_view via a tiny inline beacon.
 try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 
-function updateDownloadLink(element, filename) {
+// `token` is the opaque per-result download key returned as `download_token`.
+// It is deliberately not the display filename: output names are deterministic
+// ("resume_forgefiles.org.pdf" for every "resume.pdf"), so addressing results
+// by name let anyone guess their way to a stranger's document.
+function updateDownloadLink(element, token) {
     if (!element) return;
-    const url = apiUrl(`/api/download/${encodeURIComponent(filename)}`);
+    const url = apiUrl(`/api/download/${encodeURIComponent(token)}`);
     element.href = url;
 
     // A result is ready for download — the successful end of the processing
@@ -496,7 +500,7 @@ async function convertToWordWithProgress(formData, useAI) {
                 } else if (event.event === 'start') {
                     if (useAI) statusText.textContent = 'Analyzing layout with AI...';
                 } else if (event.event === 'complete') {
-                    showResult(event.filename, event.message);
+                    showResult(event.filename, event.message, event.download_token);
                 } else if (event.event === 'error') {
                     alert('Error: ' + event.detail);
                 }
@@ -645,7 +649,7 @@ async function processAction(url, text, formData = null) {
 
         if (response.ok) {
             const data = await response.json();
-            showResult(data.filename, data.message);
+            showResult(data.filename, data.message, data.download_token);
         } else {
             // Try to parse as JSON first, fall back to text
             const contentType = response.headers.get('content-type');
@@ -671,7 +675,7 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
-function showResult(filename, message) {
+function showResult(filename, message, token) {
     const resultDisplay = document.getElementById('result-display');
     const resultMessage = document.getElementById('result-message');
     const downloadLink = document.getElementById('download-link');
@@ -684,7 +688,7 @@ function showResult(filename, message) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, filename);
+    updateDownloadLink(downloadLink, token);
 }
 
 function showCompressResult(data) {
@@ -700,7 +704,7 @@ function showCompressResult(data) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = 'Compressed: ' + data.filename;
-    updateDownloadLink(downloadLink, data.filename);
+    updateDownloadLink(downloadLink, data.download_token);
 
     // Build size stats display
     const badge = document.createElement('div');
@@ -870,7 +874,7 @@ async function processImageAction(url, text, formData) {
 
         if (response.ok) {
             const data = await response.json();
-            showImageResult(data.filename, data.message);
+            showImageResult(data.filename, data.message, data.download_token);
         } else {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
@@ -888,14 +892,14 @@ async function processImageAction(url, text, formData) {
     }
 }
 
-function showImageResult(filename, message) {
+function showImageResult(filename, message, token) {
     const resultDisplay = document.getElementById('image-result-display');
     const resultMessage = document.getElementById('image-result-message');
     const downloadLink = document.getElementById('image-download-link');
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, filename);
+    updateDownloadLink(downloadLink, token);
 }
 
 // --- Image Resize & Crop Functions ---
@@ -1024,7 +1028,7 @@ async function initCropper() {
                     scalable: false,
                 });
             };
-            image.src = `/api/download/${encodeURIComponent(data.filename)}`;
+            image.src = apiUrl(`/api/download/${encodeURIComponent(data.download_token)}`);
 
         } catch (e) {
             console.error(e);
@@ -1140,7 +1144,7 @@ async function resizeImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${data.message}: ${data.filename}`;
-            updateDownloadLink(downloadLink, data.filename);
+            updateDownloadLink(downloadLink, data.download_token);
             downloadLink.innerText = `Download ${data.filename}`;
         } else {
             throw new Error(data.detail || 'Resize failed');
@@ -1191,7 +1195,7 @@ async function cropImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${respData.message}: ${respData.filename}`;
-            updateDownloadLink(downloadLink, respData.filename);
+            updateDownloadLink(downloadLink, respData.download_token);
             downloadLink.innerText = `Download ${respData.filename}`;
         } else {
             throw new Error(respData.detail || 'Crop failed');
@@ -1903,7 +1907,7 @@ function handleWorkflowEvent(data, statusDisplay, resultDisplay) {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             document.getElementById('workflow-result-message').textContent = `${data.message}: ${data.filename}`;
-            updateDownloadLink(document.getElementById('workflow-download-link'), data.filename);
+            updateDownloadLink(document.getElementById('workflow-download-link'), data.download_token);
             // Keep completed states visible for a moment
             setTimeout(() => clearStepStates(), 3000);
             break;
@@ -2204,7 +2208,7 @@ async function processExcelAction(url, text, formData) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');
             document.getElementById('excel-result-message').textContent = `${data.message}: ${data.filename}`;
-            updateDownloadLink(document.getElementById('excel-download-link'), data.filename);
+            updateDownloadLink(document.getElementById('excel-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             alert('Error: ' + (data.detail || 'Failed'));
@@ -2343,7 +2347,7 @@ async function processPptAction(url, text, formData) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');
             document.getElementById('ppt-result-message').textContent = `${data.message}: ${data.filename}`;
-            updateDownloadLink(document.getElementById('ppt-download-link'), data.filename);
+            updateDownloadLink(document.getElementById('ppt-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             alert('Error: ' + (data.detail || 'Failed'));
@@ -2633,7 +2637,7 @@ async function processWordAction(url, statusText, formData) {
             const data = await response.json();
             resultDisplay.classList.remove('hidden');
             document.getElementById('word-result-message').textContent = `${data.message}: ${data.filename}`;
-            updateDownloadLink(document.getElementById('word-download-link'), data.filename);
+            updateDownloadLink(document.getElementById('word-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             alert('Error: ' + (data.detail || 'Failed'));

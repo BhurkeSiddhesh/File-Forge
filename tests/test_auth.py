@@ -25,15 +25,17 @@ def test_download_head_does_not_delete_file(tmp_path, monkeypatch):
     """The frontend's HEAD pre-check must not consume (delete) the file."""
     import main as main_module
     monkeypatch.setattr(main_module, "OUTPUT_DIR", tmp_path)
-    target = tmp_path / "result.txt"
+    result_dir = main_module.new_result_dir()
+    target = result_dir / "result.txt"
     target.write_text("hello")
+    token = main_module.app.state.downloads.add(target, None)
 
     client = TestClient(app)
-    head = client.head("/api/download/result.txt")
+    head = client.head(f"/api/download/{token}")
     assert head.status_code == 200
     assert target.exists(), "HEAD request must not delete the file"
 
-    get = client.get("/api/download/result.txt")
+    get = client.get(f"/api/download/{token}")
     assert get.status_code == 200
     assert not target.exists(), "GET download should delete the file afterwards"
 

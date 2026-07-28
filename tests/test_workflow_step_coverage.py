@@ -9,6 +9,8 @@ backend step is reachable and functioning, matching what the palette now exposes
 import json
 from unittest.mock import patch
 
+from conftest import result_path
+
 import pytest
 import pikepdf
 
@@ -73,12 +75,12 @@ def test_api_workflow_protect_pdf_step(sample_pdf, mock_dirs, auth_client):
     assert response.status_code == 200
     assert "complete" in response.text
 
-    filename = [
-        json.loads(line[len("data: "):])["filename"]
+    payload = [
+        json.loads(line[len("data: "):])
         for line in response.text.splitlines()
         if line.startswith("data: ") and '"event": "complete"' in line
     ][0]
-    output_path = mock_dirs["output"] / filename
+    output_path = result_path(mock_dirs["output"], payload)
     assert output_path.exists()
     with pytest.raises(pikepdf.PasswordError):
         pikepdf.open(output_path)

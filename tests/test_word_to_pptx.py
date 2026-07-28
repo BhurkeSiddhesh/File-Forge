@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from conftest import result_path
+
 import pytest
 from pptx import Presentation
 
@@ -97,7 +99,7 @@ def test_api_word_to_pptx(mock_dirs, auth_client, tmp_path):
     data = response.json()
     assert data["status"] == "success"
     assert data["filename"] == "Slides Source_forgefiles.org.pptx"
-    assert (mock_dirs["output"] / data["filename"]).exists()
+    assert result_path(mock_dirs["output"], data).exists()
 
 
 def test_api_word_to_pptx_invalid_dpi(mock_dirs, auth_client, tmp_path):

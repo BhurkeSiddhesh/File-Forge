@@ -114,3 +114,85 @@ def test_extract_pages_path_traversal_sanitized(mock_dirs, auth_client, multi_pa
     assert "/" not in filename and "\\" not in filename
     # Nothing escaped the upload dir
     assert not (upload_dir.parent / "evil.pdf").exists()
+
+
+# ---------------------------------------------------------------------------
+# Download authorization (issue #5)
+#
+# Output names are deterministic — branded_filename() maps every "resume.pdf"
+# to "resume_forgefiles.org.pdf" — and /api/download used to serve them out of
+# one flat directory with no ownership check, so polling guessable names
+# harvested other visitors' documents. Results now live in a per-result
+# directory named by an unguessable token, and only that token addresses them.
+# ---------------------------------------------------------------------------
+
+def _convert(client, name="resume.pdf"):
+    """Run a cheap conversion and return the response payload."""
+    import io
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 750, "hello")
+    c.save()
+    buf.seek(0)
+    resp = client.post(
+        "/api/pdf/rotate",
+        files={"file": (name, buf, "application/pdf")},
+        data={"angle": "90"},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_branded_filename_is_not_a_download_key(mock_dirs, auth_client):
+    """The old attack: guess the output name, fetch the stranger's file."""
+    payload = _convert(auth_client, "resume.pdf")
+    assert payload["filename"] == "resume_forgefiles.org.pdf"
+
+    # A second visitor guesses the (entirely predictable) name.
+    stranger = TestClient(app)
+    assert stranger.get("/api/download/resume_forgefiles.org.pdf").status_code == 404
+
+    # And the real owner's token still works.
+    assert auth_client.get(f"/api/download/{payload['download_token']}").status_code == 200
+
+
+def test_concurrent_same_name_conversions_do_not_collide(mock_dirs, auth_client):
+    """Two people converting 'report.pdf' must not share an output path."""
+    first = _convert(auth_client, "report.pdf")
+    second = _convert(TestClient(app), "report.pdf")
+
+    assert first["filename"] == second["filename"] == "report_forgefiles.org.pdf"
+    assert first["download_token"] != second["download_token"]
+
+    first_path = main.app.state.downloads.resolve(first["download_token"], None)
+    second_path = main.app.state.downloads.resolve(second["download_token"], None)
+    assert first_path != second_path
+    assert first_path.exists() and second_path.exists()
+
+    # Downloading one must not consume the other.
+    assert auth_client.get(f"/api/download/{first['download_token']}").status_code == 200
+    assert second_path.exists()
+
+
+def test_token_from_another_session_is_rejected_when_bound(mock_dirs, auth_client, monkeypatch):
+    """With DOWNLOAD_BIND_SESSION on, a leaked token is useless elsewhere."""
+    monkeypatch.setattr(main, "DOWNLOAD_BIND_SESSION", True)
+
+    payload = _convert(auth_client, "payslip.pdf")
+    token = payload["download_token"]
+
+    # A different client carries a different ff_sid.
+    other_session = TestClient(app)
+    other_session.get("/api/ai-capabilities")  # pick up its own session cookie
+    assert other_session.get(f"/api/download/{token}").status_code == 404
+
+    # The originating session is unaffected.
+    assert auth_client.get(f"/api/download/{token}").status_code == 200
+
+
+def test_download_rejects_malformed_tokens(auth_client):
+    for bogus in ("../../etc/passwd", "..%2f..%2fetc%2fpasswd", "short", "a" * 200):
+        resp = auth_client.get(f"/api/download/{bogus}")
+        assert resp.status_code == 404, bogus

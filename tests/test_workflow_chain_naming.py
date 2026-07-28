@@ -19,6 +19,8 @@ import json
 import pytest
 from unittest.mock import patch
 
+from conftest import result_path
+
 
 @pytest.fixture
 def mock_dirs(tmp_path):
@@ -66,7 +68,7 @@ def test_pdf_to_word_then_word_to_pptx_chain(sample_pdf, mock_dirs, auth_client)
     assert filename.endswith("_forgefiles.org.pptx")
     # The bug this guards against: branding stacking with every step.
     assert filename.count("forgefiles.org") == 1
-    assert (mock_dirs["output"] / filename).exists()
+    assert result_path(mock_dirs["output"], event).exists()
 
 
 def test_same_extension_pdf_chain_does_not_collide(multi_page_pdf, mock_dirs, auth_client):
@@ -88,7 +90,7 @@ def test_same_extension_pdf_chain_does_not_collide(multi_page_pdf, mock_dirs, au
     filename = event["filename"]
     assert filename.endswith("_forgefiles.org.pdf")
     assert filename.count("forgefiles.org") == 1
-    assert (mock_dirs["output"] / filename).exists()
+    assert result_path(mock_dirs["output"], event).exists()
 
 
 def test_three_step_chain_stays_idempotent(mock_dirs, auth_client, tmp_path):
@@ -112,4 +114,4 @@ def test_three_step_chain_stays_idempotent(mock_dirs, auth_client, tmp_path):
     filename = event["filename"]
     assert filename.endswith("_forgefiles.org.pdf")
     assert filename.count("forgefiles.org") == 1
-    assert (mock_dirs["output"] / filename).exists()
+    assert result_path(mock_dirs["output"], event).exists()

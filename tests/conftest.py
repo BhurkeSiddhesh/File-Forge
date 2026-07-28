@@ -146,3 +146,14 @@ def auth_client():
     """Returns a TestClient. (Auth was removed — the app is fully public;
     the fixture keeps its old name to avoid churn across the test files.)"""
     return TestClient(app)
+
+
+def result_path(output_dir, payload):
+    """Where a finished result lives on disk, given an API response body.
+
+    Results are written to "<outputs>/<download_token>/<branded name>": each one
+    gets its own directory named by an unguessable token, so two people
+    converting "report.pdf" at the same time can't collide and the branded name
+    on its own addresses nothing. See main.new_result_dir / main.download_fields.
+    """
+    return Path(output_dir) / payload["download_token"] / payload["filename"]

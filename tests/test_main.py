@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from main import app
+from conftest import result_path
 from unittest.mock import patch
 import pytest
 import os
@@ -39,7 +40,7 @@ def test_api_remove_password(locked_pdf, mock_dirs, auth_client):
 
     # Verify file exists in mock output dir
     output_filename = data["filename"]
-    assert (mock_dirs["output"] / output_filename).exists()
+    assert result_path(mock_dirs["output"], data).exists()
 
 def test_api_remove_password_wrong_password(locked_pdf, mock_dirs, auth_client):
     file_path = locked_pdf["path"]
@@ -65,7 +66,7 @@ def test_api_convert_to_word(sample_pdf, mock_dirs, auth_client):
 
     # Verify file exists in mock output dir
     output_filename = data["filename"]
-    assert (mock_dirs["output"] / output_filename).exists()
+    assert result_path(mock_dirs["output"], data).exists()
 
 def test_api_extract_pages(multi_page_pdf, mock_dirs, auth_client):
     file_path = multi_page_pdf
@@ -79,7 +80,7 @@ def test_api_extract_pages(multi_page_pdf, mock_dirs, auth_client):
     resp_data = response.json()
     assert resp_data["status"] == "success"
     output_filename = resp_data["filename"]
-    output_path = mock_dirs["output"] / output_filename
+    output_path = result_path(mock_dirs["output"], resp_data)
     assert output_path.exists()
 
     with pikepdf.open(output_path) as pdf:
@@ -91,10 +92,11 @@ def test_download_file(sample_pdf, mock_dirs, auth_client):
         files = {"file": (sample_pdf.name, f, "application/pdf")}
         response = auth_client.post("/api/pdf/convert-to-word", files=files)
 
-    filename = response.json()["filename"]
+    payload = response.json()
+    filename = payload["filename"]
 
-    # Download it
-    response = auth_client.get(f"/api/download/{filename}")
+    # Download it by its opaque token; the branded name is only the save-as label.
+    response = auth_client.get(f"/api/download/{payload['download_token']}")
     assert response.status_code == 200
     assert response.headers["content-disposition"] == f'attachment; filename="{filename}"'
 
@@ -119,7 +121,7 @@ def test_api_heic_to_jpeg(sample_heic, mock_dirs, auth_client):
 
     # Verify file exists in mock output dir
     output_filename = data["filename"]
-    assert (mock_dirs["output"] / output_filename).exists()
+    assert result_path(mock_dirs["output"], data).exists()
 
 
 def test_api_resize_image(sample_image_file, mock_dirs, auth_client):
@@ -133,7 +135,7 @@ def test_api_resize_image(sample_image_file, mock_dirs, auth_client):
     resp_data = response.json()
     assert resp_data["status"] == "success"
     assert "forgefiles.org" in resp_data["filename"]
-    assert (mock_dirs["output"] / resp_data["filename"]).exists()
+    assert result_path(mock_dirs["output"], resp_data).exists()
 
 
 def test_api_crop_image(sample_image_file, mock_dirs, auth_client):
@@ -147,7 +149,7 @@ def test_api_crop_image(sample_image_file, mock_dirs, auth_client):
     resp_data = response.json()
     assert resp_data["status"] == "success"
     assert "forgefiles.org" in resp_data["filename"]
-    assert (mock_dirs["output"] / resp_data["filename"]).exists()
+    assert result_path(mock_dirs["output"], resp_data).exists()
 
 def test_download_file_deletes_after_download(sample_pdf, mock_dirs, auth_client) -> None:
     """
@@ -160,17 +162,22 @@ def test_download_file_deletes_after_download(sample_pdf, mock_dirs, auth_client
         response = auth_client.post("/api/pdf/convert-to-word", files=files)
     
     assert response.status_code == 200
-    filename = response.json()["filename"]
-    file_path = mock_dirs["output"] / filename
+    payload = response.json()
+    file_path = result_path(mock_dirs["output"], payload)
 
     assert file_path.exists()
 
     # Download it
-    response = auth_client.get(f"/api/download/{filename}")
+    response = auth_client.get(f"/api/download/{payload['download_token']}")
     assert response.status_code == 200
 
-    # Check if the file is deleted
+    # Check if the file is deleted, along with its per-result directory
     assert not file_path.exists()
+    assert not file_path.parent.exists()
+
+    # ...and the token is retired, so replaying the URL 404s.
+    replay = auth_client.get(f"/api/download/{payload['download_token']}")
+    assert replay.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +198,7 @@ def test_api_compress_pdf(sample_pdf, mock_dirs, auth_client):
     assert "original_size" in resp_data
     assert "compressed_size" in resp_data
     assert "reduction_pct" in resp_data
-    assert (mock_dirs["output"] / resp_data["filename"]).exists()
+    assert result_path(mock_dirs["output"], resp_data).exists()
 
 
 def test_api_compress_pdf_medium_level(sample_pdf, mock_dirs, auth_client):
@@ -259,7 +266,7 @@ def test_api_extract_text(sample_pdf, mock_dirs, auth_client):
     resp_data = response.json()
     assert resp_data["status"] == "success"
     assert resp_data["filename"].endswith("_forgefiles.org.txt")
-    output_path = mock_dirs["output"] / resp_data["filename"]
+    output_path = result_path(mock_dirs["output"], resp_data)
     assert output_path.exists()
     assert "Hello, this is a test PDF." in output_path.read_text(encoding="utf-8")
 
@@ -407,23 +414,26 @@ def test_api_workflow_crop_image_step(sample_image_file, mock_dirs, auth_client)
 # ---------------------------------------------------------------------------
 
 def test_delete_file_after_download_removes_file(tmp_path):
-    """delete_file_after_download removes an existing file."""
+    """delete_file_after_download removes the whole per-result directory."""
     from main import delete_file_after_download
-    test_file = tmp_path / "to_delete.txt"
+    result_dir = tmp_path / "sometoken"
+    result_dir.mkdir()
+    test_file = result_dir / "to_delete.txt"
     test_file.write_text("hello")
 
-    delete_file_after_download(test_file)
+    delete_file_after_download("sometoken", test_file)
 
     assert not test_file.exists()
+    assert not result_dir.exists()
 
 
 def test_delete_file_after_download_missing_file_is_silent(tmp_path):
     """delete_file_after_download does not raise when file does not exist."""
     from main import delete_file_after_download
-    missing = tmp_path / "nonexistent.txt"
+    missing = tmp_path / "gone" / "nonexistent.txt"
 
     # Should not raise
-    delete_file_after_download(missing)
+    delete_file_after_download("gone", missing)
 
 
 # ---------------------------------------------------------------------------
