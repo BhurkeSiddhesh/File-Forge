@@ -10,6 +10,7 @@ import uuid
 import html
 import json
 import logging
+from contextlib import asynccontextmanager, suppress
 from functools import lru_cache
 from pathlib import Path
 
@@ -75,11 +76,38 @@ from scripts import blog_content
 from scripts import event_log
 
 PROD = os.environ.get("ENV") == "production"
+
+
+# --- Application lifespan ---
+# Replaces the deprecated @app.on_event("startup") hooks. Defined here because
+# FastAPI() takes the lifespan at construction time; the helpers it calls
+# (`cleanup_stale_files_loop`, `_warmup_ai`) are defined further down and are
+# resolved when the app boots, not when this function is defined.
+#
+# A deployment that mounts extra routers onto this app and needs its own startup
+# work must *wrap* this context manager, not assign over `lifespan_context` —
+# unlike the on_event hooks it replaces, a lifespan does not accumulate, and
+# replacing it would silently drop the stale-file sweeper (a privacy guarantee).
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the stale-file sweeper (and optionally warm AI models), then stop it."""
+    # Hold a reference: a bare create_task() may be garbage-collected mid-flight.
+    sweeper = asyncio.create_task(cleanup_stale_files_loop())
+    await _warmup_ai()
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
+
+
 app = FastAPI(
     title="Forge Files API",
     docs_url=None if PROD else "/docs",
     redoc_url=None if PROD else "/redoc",
     openapi_url=None if PROD else "/openapi.json",
+    lifespan=lifespan,
 )
 
 # --- CORS ---
@@ -298,15 +326,12 @@ _AI_METHOD_MESSAGES = {
 def _ai_conversion_message(method: Optional[str]) -> str:
     return _AI_METHOD_MESSAGES.get(method, "Converted to Word with AI Layout Recovery")
 
-@app.on_event("startup")
-async def startup_event():
-    """Optionally warm up AI models, and start the stale-file sweeper."""
-    asyncio.create_task(cleanup_stale_files_loop())
+async def _warmup_ai():
+    """Load the OCR backend at boot (opt-in) so the first request isn't the one that pays for it."""
     if os.environ.get("WARMUP_AI") != "1" or DISABLE_AI:
         return
     logger.info("Initializing AI Models... This may take a while on first run.")
     try:
-        from fastapi.concurrency import run_in_threadpool
         from scripts.ocr_engine import get_ocr_engine
         engine = await run_in_threadpool(get_ocr_engine)
         logger.info("OCR backend ready: %s", engine.name if engine else "none")
@@ -339,9 +364,8 @@ def _delete_stale_files(directory: Path, ttl: int) -> None:
 
 async def cleanup_stale_files_loop():
     while True:
-        from fastapi.concurrency import run_in_threadpool as _rtp
         for d in (UPLOAD_DIR, OUTPUT_DIR):
-            await _rtp(_delete_stale_files, d, FILE_TTL_SECONDS)
+            await run_in_threadpool(_delete_stale_files, d, FILE_TTL_SECONDS)
         await asyncio.sleep(900)
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic",
