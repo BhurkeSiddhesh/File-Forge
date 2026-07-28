@@ -2,8 +2,10 @@
 Excel/CSV utilities for Forge Files.
 
 Pure-Python implementations using openpyxl + pandas + reportlab.
-Excel→PDF renders sheets as styled tables, NOT as a Microsoft-Office-grade rendering;
-cell colors, merged cells, charts, and conditional formatting are approximated or dropped.
+Excel→PDF prefers LibreOffice (Calc) for Microsoft-Office-grade rendering and only
+falls back to a pure-Python reportlab table dump when LibreOffice is unavailable; in
+that fallback cell colors, merged cells, charts, and conditional formatting are
+approximated or dropped.
 """
 import csv
 import uuid
@@ -18,7 +20,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,
 )
 
-from scripts.utils import branded_filename, original_stem
+from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf
 
 
 def _sanitize_cell(value) -> str:
@@ -28,10 +30,27 @@ def _sanitize_cell(value) -> str:
 
 
 def excel_to_pdf(input_path: str, output_dir: str) -> str:
-    """Render every sheet of an .xlsx workbook as a table in a PDF."""
+    """Convert a spreadsheet to PDF.
+
+    Prefers LibreOffice (Calc) for Microsoft-Office-grade fidelity — cell fill
+    colors, fonts, number formats, merged cells, charts and conditional
+    formatting are preserved, and the layout follows the workbook's own page
+    setup. Falls back to the pure-Python reportlab table renderer below when
+    LibreOffice is unavailable; that fallback recovers every cell's text but
+    approximates the rest (colors, merged-cell spans, charts and conditional
+    formatting are dropped, and huge sheets are truncated).
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
+    # ── LibreOffice-first (Office-grade fidelity) ──────────────
+    produced = libreoffice_to_pdf(input_path, output_dir)
+    if produced is not None:
+        if produced != output_file:
+            produced.replace(output_file)
+        return str(output_file)
+
+    # ── Pure-Python fallback (reportlab table dump) ────────────
     wb = load_workbook(input_file, data_only=True, read_only=True)
     try:
         if not wb.sheetnames:

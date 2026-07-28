@@ -37,6 +37,57 @@ def branded_filename(input_path, ext: str) -> str:
     return f"{original_stem(input_path)}_forgefiles.org.{ext.lstrip('.')}"
 
 
+def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
+    """Convert an office document to PDF using headless LibreOffice.
+
+    LibreOffice is the reference renderer for Office formats, so it preserves
+    the fidelity a pure-Python renderer can't (cell fill colors, fonts, merged
+    cells, charts and conditional formatting for spreadsheets; slide layout,
+    themes, gradients and fonts for presentations). It is an environment
+    invariant on the deploy target (installed by the Dockerfile / self-healed by
+    the deploy workflow), and already powers ``word_to_pdf``.
+
+    Returns the Path LibreOffice produced ("<input stem>.pdf" in ``output_dir``)
+    on success, or ``None`` when LibreOffice is unavailable or the conversion
+    failed — so callers keep a pure-Python fallback and never hard-depend on it.
+
+    A private per-call user-profile directory is passed via
+    ``-env:UserInstallation`` so concurrent conversions don't contend on the
+    shared ``~/.config/libreoffice`` profile lock.
+    """
+    import subprocess
+    import tempfile
+
+    input_file = Path(input_path)
+    binary = shutil.which("libreoffice") or shutil.which("soffice")
+    if binary is None:
+        return None
+
+    profile_dir = tempfile.mkdtemp(prefix="ff_lo_profile_")
+    try:
+        result = subprocess.run(
+            [binary, "--headless",
+             f"-env:UserInstallation=file://{profile_dir}",
+             "--convert-to", "pdf",
+             "--outdir", str(output_dir), str(input_file)],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        # LibreOffice writes "<input stem>.pdf" itself into --outdir.
+        produced = Path(output_dir) / f"{input_file.stem}.pdf"
+        if result.returncode == 0 and produced.exists():
+            return produced
+        logger.warning(
+            "LibreOffice PDF conversion failed for %s (rc=%s): %s",
+            input_file.name, result.returncode, (result.stderr or "").strip()[:200],
+        )
+        return None
+    except Exception as exc:  # timeout, missing shared libs, etc. -> fall back
+        logger.warning("LibreOffice PDF conversion errored for %s: %s", input_file.name, exc)
+        return None
+    finally:
+        shutil.rmtree(profile_dir, ignore_errors=True)
+
+
 async def process_uploaded_file(
     file: UploadFile,
     upload_dir: Path,
