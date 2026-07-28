@@ -93,6 +93,7 @@ PROD = os.environ.get("ENV") == "production"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the stale-file sweeper (and optionally warm AI models), then stop it."""
+    _assert_single_worker()
     # Hold a reference: a bare create_task() may be garbage-collected mid-flight.
     sweeper = asyncio.create_task(cleanup_stale_files_loop())
     await _warmup_ai()
@@ -120,20 +121,34 @@ app = FastAPI(
 # CORS_EXTRA_ORIGINS, e.g. the production site domain).
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
+# Only the two origins Capacitor actually loads from. "https://localhost" was
+# in this list and is used by neither platform — and since these entries are
+# port-less they match only :443/:80, so it never served local development
+# either. Dropping it removes one more origin that any process able to bind the
+# victim's port 443 could have spoken from.
 _CORS_ORIGINS = [
     "capacitor://localhost",
     "http://localhost",
-    "https://localhost",
 ]
 _CORS_ORIGINS += [
     o.strip()
     for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",")
     if o.strip()
 ]
+
+# The API is not cookie-authenticated: the mobile app sends a bearer token in
+# the Authorization header, and ff_sid is an anonymous analytics id the server
+# sets itself — nothing cross-origin reads it or depends on it being sent.
+# Leaving allow_credentials on meant a page served from http://localhost could
+# make credentialed calls whose responses it could actually read. Off by
+# default; CORS_ALLOW_CREDENTIALS=1 restores the old behaviour if some caller
+# turns out to need it.
+_CORS_ALLOW_CREDENTIALS = os.environ.get("CORS_ALLOW_CREDENTIALS", "0") == "1"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=_CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -382,6 +397,10 @@ async def cleanup_stale_files_loop():
     while True:
         for d in (UPLOAD_DIR, OUTPUT_DIR):
             await run_in_threadpool(_delete_stale_files, d, FILE_TTL_SECONDS)
+        # Same cadence, same purpose: reclaim bookkeeping nobody can reach any
+        # more. The limiter's map would otherwise grow one entry per distinct
+        # client seen since boot.
+        app.state.rate_limiter.prune()
         await asyncio.sleep(900)
 
 # --- Upload intake ---
@@ -506,7 +525,13 @@ from collections import defaultdict, deque
 
 
 class SlidingWindowRateLimiter:
-    """Thread-safe in-memory sliding-window rate limiter keyed by client."""
+    """Thread-safe in-memory sliding-window rate limiter keyed by client.
+
+    State is per-process. With more than one worker the effective limit
+    multiplies by the worker count, so this has to move to shared storage
+    (Redis, or the event-log SQLite) before the app is run with `-w N`.
+    assert_single_worker() below turns that from a silent 4x into a boot error.
+    """
 
     def __init__(self, window_seconds: float = 60.0):
         self.window = window_seconds
@@ -525,6 +550,21 @@ class SlidingWindowRateLimiter:
                 return False, retry_after
             hits.append(now)
             return True, 0
+
+    def prune(self) -> int:
+        """Drop keys whose window has fully drained. Returns the count removed.
+
+        defaultdict(deque) creates an entry per distinct key and check() only
+        pops expired *hits*, never the emptied deque — so _hits grew by one
+        entry per client seen since boot, unbounded, and an attacker rotating
+        spoofed addresses could drive that growth deliberately.
+        """
+        cutoff = time.monotonic() - self.window
+        with self._lock:
+            stale = [k for k, hits in self._hits.items() if not hits or hits[-1] <= cutoff]
+            for k in stale:
+                del self._hits[k]
+            return len(stale)
 
     def reset(self):
         with self._lock:
@@ -638,6 +678,33 @@ RATE_LIMIT_HEAVY_PATHS = {
     "/api/word/to-pptx",
 }
 
+def _assert_single_worker() -> None:
+    """Refuse to boot multi-worker while per-process state is load-bearing.
+
+    Both the rate limiter and the download registry keep their state in this
+    process, so a second worker silently multiplies the rate limits and cannot
+    resolve tokens minted by its sibling. gunicorn is already in
+    requirements.txt, so `-w 4` is one flag away from being a quiet
+    correctness bug with no error to notice. Fail loudly instead.
+
+    Set ALLOW_MULTI_WORKER=1 once both have moved to shared storage.
+    """
+    if os.environ.get("ALLOW_MULTI_WORKER") == "1":
+        return
+    workers = os.environ.get("WEB_CONCURRENCY") or os.environ.get("GUNICORN_WORKERS")
+    try:
+        count = int(workers) if workers else 1
+    except ValueError:
+        return
+    if count > 1:
+        raise RuntimeError(
+            f"This app keeps rate-limit and download-token state per process, so "
+            f"{count} workers would multiply the rate limits by {count} and break "
+            f"downloads served by another worker. Run a single worker, or move "
+            f"both to shared storage and set ALLOW_MULTI_WORKER=1."
+        )
+
+
 app.state.rate_limiter = SlidingWindowRateLimiter()
 app.state.rate_limit_enabled = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in ("0", "false", "no")
 app.state.rate_limit_heavy = int(os.environ.get("RATE_LIMIT_HEAVY", "5"))    # req/min per IP
@@ -647,13 +714,50 @@ app.state.rate_limit_light = int(os.environ.get("RATE_LIMIT_LIGHT", "20"))   # r
 app.state.rate_limit_track = int(os.environ.get("RATE_LIMIT_TRACK", "120"))  # req/min per IP
 
 
+# Header carrying the true client address, most-trustworthy first.
+#
+# request.client.host is NOT usable behind this deployment's proxy chain:
+# nginx sets X-Forwarded-For to $proxy_add_x_forwarded_for, which *appends* the
+# peer to whatever the client sent, and uvicorn's ProxyHeadersMiddleware trusts
+# localhost proxies by default — so a request arriving with a fabricated
+# "X-Forwarded-For: 1.2.3.4" reaches the app as client.host == "1.2.3.4".
+# Rotating that value walked straight past the 5/min limit on the endpoints
+# that run OCR, pdf2docx and LibreOffice on one small VM.
+#
+# CF-Connecting-IP is first because Cloudflare sets it from the real connection
+# and strips any client-supplied copy — it is the one value in the chain an
+# origin-facing client cannot forge. The app already reads Cloudflare headers
+# (cf-ipcountry) so this adds no new dependency.
+#
+# Set RATE_LIMIT_TRUSTED_HEADER to override for a different fronting proxy, or
+# to "" to fall back to the socket peer (a direct, unproxied deploy).
+_DEFAULT_CLIENT_IP_HEADERS = ("cf-connecting-ip", "x-real-ip")
+_TRUSTED_IP_HEADER = os.environ.get("RATE_LIMIT_TRUSTED_HEADER")
+CLIENT_IP_HEADERS = (
+    tuple(h.strip().lower() for h in _TRUSTED_IP_HEADER.split(",") if h.strip())
+    if _TRUSTED_IP_HEADER is not None
+    else _DEFAULT_CLIENT_IP_HEADERS
+)
+
+
+def client_identity(request: Request) -> str:
+    """The address to bucket this request under, from a header a client can't set."""
+    for header in CLIENT_IP_HEADERS:
+        value = request.headers.get(header)
+        if value:
+            # X-Real-IP is a single address; be tolerant of a list anyway and
+            # take the first entry, which is the one the trusted proxy wrote.
+            return value.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     state = request.app.state
     if not getattr(state, "rate_limit_enabled", False) or not request.url.path.startswith("/api/"):
         return await call_next(request)
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = client_identity(request)
     if request.url.path == "/api/track":
         tier, limit = "track", getattr(state, "rate_limit_track", 120)
     elif request.url.path in RATE_LIMIT_HEAVY_PATHS:
