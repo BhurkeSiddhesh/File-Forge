@@ -13,6 +13,7 @@ The database lives at ``data/events.db`` next to the app (override with the
 storage failure is swallowed and reported at WARNING level.
 """
 
+import asyncio
 import contextvars
 import logging
 import os
@@ -96,25 +97,31 @@ def _db_path() -> Path:
     return Path(os.environ.get("EVENT_DB_PATH") or str(_BASE_DIR / "data" / "events.db"))
 
 
-def _connect(path: Path) -> sqlite3.Connection:
+def _ensure_schema(path: Path) -> None:
     key = str(path)
-    if key not in _initialized_paths:
-        with _init_lock:
-            if key not in _initialized_paths:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                conn = sqlite3.connect(path, timeout=5)
-                try:
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    conn.executescript(_SCHEMA)
-                    conn.commit()
-                finally:
-                    conn.close()
-                _initialized_paths.add(key)
+    if key in _initialized_paths:
+        return
+    with _init_lock:
+        if key in _initialized_paths:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(path, timeout=5)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.executescript(_SCHEMA)
+            conn.commit()
+        finally:
+            conn.close()
+        _initialized_paths.add(key)
+
+
+def _connect(path: Path) -> sqlite3.Connection:
+    """Open a fresh connection. Used for reads; writes go through _write()."""
+    _ensure_schema(path)
     conn = sqlite3.connect(path, timeout=5)
     # WAL + synchronous=NORMAL is SQLite's recommended durable-enough mode: it
-    # drops the per-commit fsync (the dominant cost of this write, which runs on
-    # the event loop after each operation) at the price of losing at most the
-    # last few analytics rows on an OS crash — fine for droppable event data.
+    # drops the per-commit fsync at the price of losing at most the last few
+    # analytics rows on an OS crash — fine for droppable event data.
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
@@ -125,6 +132,76 @@ def get_connection() -> sqlite3.Connection:
     endpoint). Plain plumbing — this module only ever writes; it has no
     aggregation logic of its own."""
     return _connect(_db_path())
+
+
+# --- The write path ---
+#
+# Every event used to open a connection, insert, commit and close it — one
+# connection setup plus a disk commit in the hot path of every API call, and
+# (via timed()) directly on the asyncio event loop, where it stalled *every*
+# concurrent request rather than just the one being logged. The `PRAGMA
+# synchronous=NORMAL` was re-executed on each new handle for good measure.
+#
+# WAL supports one writer with concurrent readers, so a single long-lived write
+# connection serialized by a lock is the natural shape: the connect/close and
+# the repeated PRAGMA disappear, and the remaining cost is the insert itself.
+# check_same_thread=False is safe precisely because _writer_lock serializes
+# every use — log_event is called from threadpool workers and raw worker
+# threads alike.
+_writer_lock = threading.Lock()
+_writer: Optional[Tuple[str, sqlite3.Connection]] = None
+
+
+def _writer_connection(path: Path) -> sqlite3.Connection:
+    """The shared write connection for `path`. Caller must hold _writer_lock."""
+    global _writer
+    key = str(path)
+    if _writer is not None and _writer[0] == key:
+        return _writer[1]
+    # The path changed (tests point EVENT_DB_PATH at a fresh temp DB per case).
+    # Only one is ever live, so drop the old handle rather than accumulating.
+    _close_writer_locked()
+    _ensure_schema(path)
+    conn = sqlite3.connect(path, timeout=5, check_same_thread=False)
+    conn.execute("PRAGMA synchronous=NORMAL")
+    _writer = (key, conn)
+    return conn
+
+
+def _close_writer_locked() -> None:
+    """Drop the shared write connection. Caller must hold _writer_lock."""
+    global _writer
+    if _writer is None:
+        return
+    try:
+        _writer[1].close()
+    except Exception:
+        pass
+    _writer = None
+
+
+def close_connections() -> None:
+    """Close the shared write connection (app shutdown, and between tests)."""
+    with _writer_lock:
+        _close_writer_locked()
+
+
+def _write(sql: str, params: tuple, what: str) -> None:
+    """Execute one insert on the shared connection. Never raises."""
+    try:
+        with _writer_lock:
+            try:
+                conn = _writer_connection(_db_path())
+                conn.execute(sql, params)
+                conn.commit()
+            except Exception:
+                # A broken handle would poison every later event, so drop it and
+                # let the next call reopen. Still swallowed below: this module's
+                # contract is that analytics never break an operation.
+                _close_writer_locked()
+                raise
+    except Exception:
+        logger.warning("Failed to record %s", what, exc_info=True)
 
 
 # Exception messages routinely embed the temp-file path (which contains the
@@ -165,38 +242,45 @@ def log_event(
         country = ctx_country
     if session_id is None:
         session_id = ctx_session
-    try:
-        conn = _connect(_db_path())
-        try:
-            conn.execute(
-                "INSERT INTO operation_events"
-                " (timestamp, operation, use_ai, success, duration_ms, error, country, session_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-                    operation,
-                    1 if use_ai else 0,
-                    1 if success else 0,
-                    int(duration_ms),
-                    sanitize_error(error),
-                    country,
-                    session_id,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        logger.warning("Failed to record operation event for %s", operation, exc_info=True)
+    _write(
+        "INSERT INTO operation_events"
+        " (timestamp, operation, use_ai, success, duration_ms, error, country, session_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            operation,
+            1 if use_ai else 0,
+            1 if success else 0,
+            int(duration_ms),
+            sanitize_error(error),
+            country,
+            session_id,
+        ),
+        f"operation event for {operation}",
+    )
+
+
+async def alog_event(operation: str, **kwargs) -> None:
+    """log_event() from async code, off the event loop.
+
+    asyncio.to_thread copies the current context, so the contextvar-backed
+    request context still resolves inside the worker.
+    """
+    await asyncio.to_thread(lambda: log_event(operation, **kwargs))
 
 
 async def timed(operation: str, awaitable: Awaitable, use_ai: bool = False):
-    """Await an operation call, logging its outcome and duration."""
+    """Await an operation call, logging its outcome and duration.
+
+    The logging is awaited on a worker thread: timed() wraps essentially every
+    endpoint in main.py, so a synchronous SQLite write here landed on the event
+    loop and stalled every *other* in-flight request too.
+    """
     started = time.perf_counter()
     try:
         result = await awaitable
     except Exception as exc:
-        log_event(
+        await alog_event(
             operation,
             success=False,
             duration_ms=(time.perf_counter() - started) * 1000,
@@ -204,7 +288,7 @@ async def timed(operation: str, awaitable: Awaitable, use_ai: bool = False):
             error=exc,
         )
         raise
-    log_event(
+    await alog_event(
         operation,
         success=True,
         duration_ms=(time.perf_counter() - started) * 1000,
@@ -269,25 +353,18 @@ def log_funnel_event(
         session_id = ctx_session
     if label is not None:
         label = str(label)[:_LABEL_MAX]
-    try:
-        conn = _connect(_db_path())
-        try:
-            conn.execute(
-                "INSERT INTO funnel_events (timestamp, event, label, country, session_id)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (
-                    datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-                    event,
-                    label,
-                    country,
-                    session_id,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        logger.warning("Failed to record funnel event %s", event, exc_info=True)
+    _write(
+        "INSERT INTO funnel_events (timestamp, event, label, country, session_id)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (
+            datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            event,
+            label,
+            country,
+            session_id,
+        ),
+        f"funnel event {event}",
+    )
     return True
 
 

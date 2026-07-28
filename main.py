@@ -103,6 +103,8 @@ async def lifespan(app: FastAPI):
         sweeper.cancel()
         with suppress(asyncio.CancelledError):
             await sweeper
+        # The event log holds one long-lived SQLite write connection.
+        event_log.close_connections()
 
 
 app = FastAPI(

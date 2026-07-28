@@ -133,6 +133,20 @@ from main import app
 from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
+def close_event_log_connection():
+    """Drop the event log's shared write connection between tests.
+
+    It is keyed by EVENT_DB_PATH and most tests point that at their own temp
+    DB, so a handle left open would otherwise outlive the tmp_path it belongs
+    to (and, on Windows, keep the file locked).
+    """
+    from scripts import event_log as _event_log
+
+    yield
+    _event_log.close_connections()
+
+
+@pytest.fixture(autouse=True)
 def disable_rate_limit():
     """Disable rate limiting for tests (dedicated tests re-enable it)."""
     previous = app.state.rate_limit_enabled

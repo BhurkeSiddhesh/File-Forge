@@ -4,6 +4,7 @@ the request-context middleware, and handler instrumentation."""
 import asyncio
 import json
 import sqlite3
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -259,3 +260,123 @@ def test_track_without_a_user_agent_is_still_recorded(event_db, auth_client):
     resp = auth_client.post("/api/track", json={"event": "page_view", "label": "/"})
     assert resp.status_code == 204
     assert len(_read_funnel(event_db)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The write path (issue #17)
+#
+# Every event used to open a connection, insert, commit and close it — and
+# timed(), which wraps essentially every endpoint, did that synchronously on
+# the asyncio event loop, stalling every *other* in-flight request too.
+# ---------------------------------------------------------------------------
+
+def test_writer_connection_is_reused_across_events(event_db):
+    """One long-lived connection, not one per event."""
+    event_log.close_connections()
+
+    opened = []
+    real_connect = sqlite3.connect
+
+    def counting_connect(*args, **kwargs):
+        opened.append(args[0])
+        return real_connect(*args, **kwargs)
+
+    with patch.object(event_log.sqlite3, "connect", side_effect=counting_connect):
+        for i in range(25):
+            event_log.log_event(f"op_{i}", success=True, duration_ms=1)
+
+    assert len(read_rows(event_db)) == 25
+    # One for the schema bootstrap, one for the writer. Not 25 (or 50).
+    assert len(opened) <= 2, opened
+
+
+def test_timed_does_not_write_on_the_event_loop(event_db):
+    """timed() must hand the SQLite write to a worker thread."""
+    writer_threads = []
+    real_write = event_log._write
+
+    def recording_write(*args, **kwargs):
+        writer_threads.append(threading.current_thread())
+        return real_write(*args, **kwargs)
+
+    async def scenario():
+        loop_thread = threading.current_thread()
+
+        async def work():
+            return "done"
+
+        with patch.object(event_log, "_write", side_effect=recording_write):
+            assert await event_log.timed("op_async", work()) == "done"
+        return loop_thread
+
+    loop_thread = asyncio.run(scenario())
+
+    assert writer_threads, "no event was written"
+    for t in writer_threads:
+        assert t is not loop_thread, "SQLite write ran on the event loop"
+    assert [r["operation"] for r in read_rows(event_db)] == ["op_async"]
+
+
+def test_timed_logs_the_failure_off_the_loop_too(event_db):
+    writer_threads = []
+    real_write = event_log._write
+
+    def recording_write(*args, **kwargs):
+        writer_threads.append(threading.current_thread())
+        return real_write(*args, **kwargs)
+
+    async def scenario():
+        loop_thread = threading.current_thread()
+
+        async def boom():
+            raise ValueError("nope")
+
+        with patch.object(event_log, "_write", side_effect=recording_write):
+            with pytest.raises(ValueError):
+                await event_log.timed("op_fail", boom())
+        return loop_thread
+
+    loop_thread = asyncio.run(scenario())
+
+    assert writer_threads
+    for t in writer_threads:
+        assert t is not loop_thread
+    rows = read_rows(event_db)
+    assert rows[0]["success"] == 0
+
+
+def test_events_survive_concurrent_writers(event_db):
+    """WAL + one serialized writer: no lost rows, no 'database is locked'."""
+    errors = []
+
+    def worker(n):
+        try:
+            for i in range(20):
+                event_log.log_event(f"op_t{n}", success=True, duration_ms=i)
+        except Exception as exc:  # pragma: no cover - the point is that it doesn't
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert len(read_rows(event_db)) == 8 * 20
+
+
+def test_broken_connection_is_dropped_and_recovered(event_db):
+    """A poisoned handle must not wedge every later event."""
+    event_log.log_event("before", success=True, duration_ms=1)
+
+    with event_log._writer_lock:
+        event_log._writer[1].close()   # handle is now unusable
+
+    # Swallowed, and the dead handle is dropped...
+    event_log.log_event("during", success=True, duration_ms=1)
+    # ...so the next event reopens and lands.
+    event_log.log_event("after", success=True, duration_ms=1)
+
+    ops = [r["operation"] for r in read_rows(event_db)]
+    assert "before" in ops and "after" in ops
