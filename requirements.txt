@@ -6,7 +6,9 @@ fastapi>=0.115,<1
 uvicorn>=0.30,<1
 python-multipart
 pdf2docx
-pytest
+# >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
+# resolve the app's top-level modules (see pytest.ini).
+pytest>=7.0
 httpx
 rapidocr>=2.0,<3.0
 opencv-python-headless
