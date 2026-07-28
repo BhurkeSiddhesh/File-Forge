@@ -1458,6 +1458,13 @@ async def execute_workflow(
     async def generate_progress():
         """Generator for SSE progress events."""
         current_file = temp_path
+        # Each non-final step's output is renamed to a uuid name and consumed by
+        # the next step. Those intermediates are never the deliverable (the last
+        # step's result is never renamed), so they must be removed — on success
+        # AND on failure — or they accumulate in OUTPUT_DIR and fill the VM disk
+        # (only the periodic stale-file sweep would eventually reap them).
+        # Tracked here, deleted in the `finally` below.
+        intermediate_files = []
 
         def log_step(step_type, ok, started, config, err=None):
             # config may be a non-dict if the client sent a malformed step; the
@@ -1702,6 +1709,7 @@ async def execute_workflow(
                 if i < len(step_list) - 1:
                     intermediate_path = OUTPUT_DIR / f"{uuid.uuid4()}_{current_file.name}"
                     current_file = current_file.replace(intermediate_path)
+                    intermediate_files.append(current_file)
 
                 # Send "completed" event for this step
                 yield f"data: {json.dumps({'event': 'step_complete', 'step': i, 'total': len(step_list), 'label': step_label})}\n\n"
@@ -1717,13 +1725,16 @@ async def execute_workflow(
             yield f"data: {json.dumps({'event': 'error', 'detail': event_log.scrub_paths(str(e))})}\n\n"
         
         finally:
-            # Clean up temp file
-            if temp_path.exists():
+            # Clean up the upload plus every intermediate step output. The final
+            # deliverable is never renamed into intermediate_files, so it stays
+            # for the client's follow-up download; only the throwaway temps go.
+            for p in (temp_path, *intermediate_files):
                 try:
-                    os.remove(temp_path)
-                except PermissionError:
+                    if p.exists():
+                        os.remove(p)
+                except (PermissionError, OSError):
                     pass
-    
+
     return StreamingResponse(
         generate_progress(),
         media_type="text/event-stream",
