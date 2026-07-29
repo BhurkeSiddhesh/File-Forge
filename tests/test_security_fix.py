@@ -82,7 +82,7 @@ def test_two_uploads_of_the_same_name_do_not_collide(mock_dirs, auth_client):
                 auth_client.post(
                     "/api/pdf/remove-password",
                     files={"file": ("report.pdf", b"dummy content", "application/pdf")},
-                    data={"password": "pass"},
+                    data={"password": "pass"},  # ggignore
                 )
 
     assert len(saved_paths) == 2

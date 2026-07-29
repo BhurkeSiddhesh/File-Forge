@@ -148,9 +148,11 @@ import main as _main
 # A new endpoint with a new required field lands here.
 _FORM_SAMPLES = {
     "mode": "percentage",
-    "password": "pw",
-    "user_password": "pw",
-    "owner_password": "pw",
+    # Dummy values, never credentials: these requests are all rejected at
+    # intake (413/415) before any of them reaches a PDF.
+    "password": "pw",          # ggignore
+    "user_password": "pw",     # ggignore
+    "owner_password": "pw",    # ggignore
     "pages": "1",
     "page_order": "1",
     "angle": "90",
