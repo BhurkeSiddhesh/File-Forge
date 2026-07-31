@@ -131,6 +131,53 @@ def pdf_with_table(tmp_path):
     return p
 
 
+@pytest.fixture
+def borderless_table_pdf(tmp_path):
+    """PDF whose table separates columns by whitespace only — no ruling lines.
+
+    This is exactly what the default "lines" strategy cannot see; it exercises
+    the text-position fallback in pdf_to_excel.
+    """
+    import fitz
+    p = tmp_path / "borderless.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    rows = [
+        ("Region", "Q1", "Q2", "Q3"),
+        ("North", "100", "120", "140"),
+        ("South", "90", "95", "99"),
+        ("East", "70", "72", "80"),
+    ]
+    x_positions = [72, 200, 300, 400]
+    y = 100
+    for r in rows:
+        for x, cell in zip(x_positions, r):
+            page.insert_text((x, y), cell, fontsize=12)
+        y += 30
+    doc.save(str(p))
+    doc.close()
+    return p
+
+
+@pytest.fixture
+def prose_pdf(tmp_path):
+    """A page of ordinary prose — must NOT be mistaken for a table."""
+    import fitz
+    p = tmp_path / "prose.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_textbox(
+        fitz.Rect(72, 72, 500, 400),
+        "This is an ordinary paragraph of prose text that flows across the page "
+        "without any tabular structure whatsoever. It should not be mistaken for "
+        "a table by the text strategy because the words do not align into columns.",
+        fontsize=12,
+    )
+    doc.save(str(p))
+    doc.close()
+    return p
+
+
 # ──────────────────────────────────────────────
 # Feature #53: Protect PDF
 # ──────────────────────────────────────────────
@@ -381,6 +428,53 @@ class TestPDFToExcel:
         wb = openpyxl.load_workbook(result["output_path"])
         # Should have at least one sheet (text fallback or table sheet)
         assert len(wb.sheetnames) >= 1
+
+    # ── Borderless-table recovery (text-position fallback) ──────────────
+
+    def test_borderless_table_recovered(self, borderless_table_pdf, tmp_path):
+        """Regression: whitespace-aligned tables were silently dropped by the
+        default 'lines' strategy; the text-position fallback must now recover
+        every cell."""
+        import openpyxl
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_excel(str(borderless_table_pdf), str(out))
+        assert result["tables_found"] >= 1, "borderless table was dropped"
+        wb = openpyxl.load_workbook(result["output_path"])
+        # A real table sheet (P#_T#), not the raw-text dump.
+        assert any(name.startswith("P") and "_T" in name for name in wb.sheetnames)
+        # Every source cell must survive into the workbook.
+        cells = set()
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for c in row:
+                    if c is not None and str(c).strip():
+                        cells.add(str(c).strip())
+        for expected in ("Region", "Q1", "North", "100", "South", "East", "80"):
+            assert expected in cells, f"missing cell {expected!r}"
+
+    def test_prose_not_treated_as_table(self, prose_pdf, tmp_path):
+        """Guard: a page of prose must not become a spurious table — it should
+        still fall through to the raw-text fallback sheet."""
+        import openpyxl
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_excel(str(prose_pdf), str(out))
+        assert result["tables_found"] == 0
+        wb = openpyxl.load_workbook(result["output_path"])
+        assert "Text Content" in wb.sheetnames
+
+    def test_bordered_table_unchanged(self, pdf_with_table, tmp_path):
+        """Regression: the ruled-table path must be untouched — the text
+        fallback only runs when 'lines' finds nothing, so a bordered table is
+        still extracted by the 'lines' strategy exactly as before."""
+        import openpyxl
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_excel(str(pdf_with_table), str(out))
+        assert result["tables_found"] >= 1
+        wb = openpyxl.load_workbook(result["output_path"])
+        assert any(name.startswith("P") and "_T" in name for name in wb.sheetnames)
 
 
 # ──────────────────────────────────────────────
