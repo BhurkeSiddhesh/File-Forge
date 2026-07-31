@@ -1529,10 +1529,55 @@ def word_to_pptx(input_path: str, output_dir: str, dpi: int = 150) -> str:
 # Feature #56: PDF to Excel (Table Extraction)
 # ──────────────────────────────────────────────
 
+def _extract_borderless_tables(page) -> list:
+    """Recover whitespace-aligned (borderless) tables the default 'lines'
+    strategy cannot see.
+
+    ``page.find_tables()`` defaults to the "lines" strategy, which relies on
+    drawn ruling lines/rectangles. Tables that separate columns by whitespace
+    alone (common in financial statements, invoices, bank statements) carry no
+    such geometry and are therefore missed entirely — the page contributes no
+    tables and its data is lost. PyMuPDF's own text-position strategy
+    (``strategy="text"``) reconstructs virtual column/row boundaries from word
+    alignment and is the documented remedy for borderless tables.
+
+    Called only for pages where the "lines" pass found nothing, so it never
+    alters an already-detected table. Returns a list of cleaned row-lists
+    (fully-empty spacer rows trimmed). To avoid mangling ordinary prose into a
+    spurious table, only genuine grids (>= 2 columns and >= 2 non-empty rows)
+    are returned; anything else yields ``[]`` so the page still falls through to
+    the raw-text fallback sheet exactly as before.
+    """
+    try:
+        found = page.find_tables(
+            vertical_strategy="text",
+            horizontal_strategy="text",
+        )
+    except Exception:
+        # Text-strategy detection is best-effort; never let it break extraction.
+        return []
+
+    accepted = []
+    for table in getattr(found, "tables", []) or []:
+        if getattr(table, "col_count", 0) < 2:
+            continue
+        rows = [
+            [("" if cell is None else cell) for cell in row]
+            for row in table.extract()
+            if any(cell is not None and str(cell).strip() != "" for cell in row)
+        ]
+        if len(rows) < 2:
+            continue
+        accepted.append(rows)
+    return accepted
+
+
 def pdf_to_excel(input_path: str, output_dir: str, password: str = None) -> dict:
     """Extract tables from a PDF and save to an Excel workbook.
 
-    Uses PyMuPDF's find_tables for extraction.
+    Uses PyMuPDF's find_tables (default "lines" strategy) for extraction, with a
+    text-position fallback for borderless tables on pages the "lines" strategy
+    can't see (see :func:`_extract_borderless_tables`).
 
     Args:
         input_path: Path to the input PDF.
@@ -1557,14 +1602,22 @@ def pdf_to_excel(input_path: str, output_dir: str, password: str = None) -> dict
 
         for page_num, page in enumerate(doc, start=1):
             tables = page.find_tables()
-            if not tables or not tables.tables:
-                continue
-            for tbl_idx, table in enumerate(tables.tables):
-                tables_found += 1
-                sheet_name = f"P{page_num}_T{tbl_idx + 1}"[:31]  # Excel max 31 chars
-                ws = wb.create_sheet(title=sheet_name)
-                for row in table.extract():
-                    ws.append([cell if cell is not None else "" for cell in row])
+            if tables and tables.tables:
+                for tbl_idx, table in enumerate(tables.tables):
+                    tables_found += 1
+                    sheet_name = f"P{page_num}_T{tbl_idx + 1}"[:31]  # Excel max 31 chars
+                    ws = wb.create_sheet(title=sheet_name)
+                    for row in table.extract():
+                        ws.append([cell if cell is not None else "" for cell in row])
+            else:
+                # No ruled table on this page — try to recover a borderless one
+                # before giving up (additive; leaves ruled-table output intact).
+                for tbl_idx, rows in enumerate(_extract_borderless_tables(page)):
+                    tables_found += 1
+                    sheet_name = f"P{page_num}_T{tbl_idx + 1}"[:31]  # Excel max 31 chars
+                    ws = wb.create_sheet(title=sheet_name)
+                    for row in rows:
+                        ws.append([cell if cell is not None else "" for cell in row])
 
         doc.close()
 
