@@ -1683,26 +1683,52 @@ def pdf_to_pptx(
         doc = fitz.open(decrypted_path)
         prs = Presentation()
 
-        for page in doc:
-            rect = page.rect
-            # Set slide size to match page aspect ratio (in inches)
-            slide_w = rect.width / 72.0  # points to inches
-            slide_h = rect.height / 72.0
-            prs.slide_width = int(slide_w * 914400)   # inches to EMU
-            prs.slide_height = int(slide_h * 914400)
+        # PowerPoint supports only ONE slide size for the whole deck (a hard limit
+        # of the .pptx format, not just python-pptx). The previous code set
+        # prs.slide_width/height *inside* the per-page loop, so on a mixed-page-size
+        # PDF only the LAST page's size survived: every earlier slide kept a
+        # full-page image sized to its own page but sat on a differently-sized
+        # canvas, clipping or off-setting the page. Instead, size the deck once to
+        # the bounding box of all pages (max width, max height in EMU) so no page
+        # can overflow, then place each page's image at its native size, centered —
+        # preserving each page's aspect ratio (no stretching) and clipping nothing.
+        # For a uniform-size PDF the bounding box equals the page size, so every
+        # image fills its slide exactly at (0, 0) — identical to the old output.
+        EMU_PER_PT = 914400 / 72.0
+        page_count = len(doc)
+        page_sizes_emu = []
+        for i in range(page_count):
+            rect = doc[i].rect
+            page_sizes_emu.append(
+                (int(rect.width * EMU_PER_PT), int(rect.height * EMU_PER_PT))
+            )
 
-            # Render page to image bytes
+        prs.slide_width = max(
+            (w for w, _ in page_sizes_emu), default=int(8.5 * 914400)
+        )
+        prs.slide_height = max(
+            (h for _, h in page_sizes_emu), default=int(11 * 914400)
+        )
+
+        for i in range(page_count):
+            page = doc[i]
+            page_w, page_h = page_sizes_emu[i]
+
+            # Render page to image bytes (unchanged — lossless PNG at the DPI)
             pix = page.get_pixmap(dpi=dpi)
             img_bytes = io.BytesIO(pix.tobytes("png"))
 
             blank_layout = prs.slide_layouts[6]  # blank layout
             slide = prs.slides.add_slide(blank_layout)
 
-            # Add image as full-slide background
+            # Center the page image on the shared canvas at its native size —
+            # aspect preserved, nothing clipped. left/top are 0 for uniform decks.
+            left = (prs.slide_width - page_w) // 2
+            top = (prs.slide_height - page_h) // 2
             slide.shapes.add_picture(
-                img_bytes, 0, 0,
-                width=prs.slide_width,
-                height=prs.slide_height,
+                img_bytes, left, top,
+                width=page_w,
+                height=page_h,
             )
             pix = None
 
