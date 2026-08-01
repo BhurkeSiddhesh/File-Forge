@@ -93,9 +93,18 @@ class TestUploadSizeCapCoverage:
 
 
 class TestPdfToPptxMixedPageSizes:
-    """pdf_to_pptx sets prs.slide_width/height inside the per-page loop; the
-    saved deck keeps only the LAST page's size, so earlier slides' full-page
-    images (sized at insertion time) no longer match their slide."""
+    """FIXED (2026-08-01): a .pptx deck can carry only ONE slide size, so
+    pdf_to_pptx now sizes the deck once to the bounding box of every page and
+    places each page's image at its native size, centered — preserving each
+    page's aspect ratio (no stretching) and clipping nothing. Previously the
+    slide size was mutated per page inside the loop, so only the last page's
+    size survived and every earlier slide's full-page image no longer matched
+    its canvas.
+
+    The old xfail here asserted the image should *fill* its slide; on a
+    mixed-size deck that would force a stretch and distort off-size pages,
+    violating the feature's "no visible raster loss" bar. The guard below now
+    encodes the correct behavior: aspect preserved and nothing clipped."""
 
     @pytest.fixture
     def mixed_size_pdf(self, tmp_path):
@@ -111,21 +120,56 @@ class TestPdfToPptxMixedPageSizes:
         c.save()
         return path
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: per-page slide-size mutation leaves every slide but the last mis-scaled",
-    )
-    def test_each_slide_image_fills_its_slide(self, mixed_size_pdf, tmp_path):
+    @pytest.fixture
+    def uniform_pdf(self, tmp_path):
+        from reportlab.pdfgen import canvas
+
+        path = tmp_path / "uniform.pdf"
+        c = canvas.Canvas(str(path), pagesize=(595, 842))  # two portrait A4 pages
+        c.drawString(72, 700, "page one")
+        c.showPage()
+        c.drawString(72, 700, "page two")
+        c.showPage()
+        c.save()
+        return path
+
+    def test_mixed_pages_preserve_aspect_and_are_not_clipped(self, mixed_size_pdf, tmp_path):
+        import fitz
         from pptx import Presentation
 
         from scripts.pdf_utils import pdf_to_pptx
 
         out = pdf_to_pptx(str(mixed_size_pdf), str(tmp_path))
+
+        # Expected per-page aspect ratios, straight from the source PDF.
+        src = fitz.open(str(mixed_size_pdf))
+        expected_aspect = [p.rect.width / p.rect.height for p in src]
+        src.close()
+
         prs = Presentation(out)
-        assert len(list(prs.slides)) == 2
-        for slide in prs.slides:
+        slides = list(prs.slides)
+        assert len(slides) == 2
+        for idx, slide in enumerate(slides):
             pictures = [s for s in slide.shapes if s.shape_type == 13]  # PICTURE
             assert pictures, "each slide should carry the rendered page image"
             pic = pictures[0]
-            # The full-page image must fill the slide it lives on.
+            # Aspect ratio matches the source page (no stretch/distortion).
+            assert pic.width / pic.height == pytest.approx(expected_aspect[idx], rel=1e-3)
+            # Fully on-canvas: nothing clipped, positioned within the slide.
+            assert pic.left >= 0 and pic.top >= 0
+            assert pic.left + pic.width <= prs.slide_width
+            assert pic.top + pic.height <= prs.slide_height
+
+    def test_uniform_pages_still_fill_their_slide(self, uniform_pdf, tmp_path):
+        """The common case (all pages same size) must be unchanged: every image
+        fills its slide exactly at (0, 0)."""
+        from pptx import Presentation
+
+        from scripts.pdf_utils import pdf_to_pptx
+
+        out = pdf_to_pptx(str(uniform_pdf), str(tmp_path))
+        prs = Presentation(out)
+        for slide in prs.slides:
+            pic = [s for s in slide.shapes if s.shape_type == 13][0]
+            assert (pic.left, pic.top) == (0, 0)
             assert (pic.width, pic.height) == (prs.slide_width, prs.slide_height)
