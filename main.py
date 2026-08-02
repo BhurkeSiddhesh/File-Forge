@@ -118,18 +118,22 @@ app = FastAPI(
 # --- CORS ---
 # The web frontend is served same-origin (no CORS needed there), but the
 # Capacitor mobile app loads its assets from capacitor://localhost (iOS) and
-# http://localhost (Android) and calls this API cross-origin. Allow those
+# https://localhost (Android) and calls this API cross-origin. Allow those
 # origins plus any explicitly configured web origins (comma-separated in
 # CORS_EXTRA_ORIGINS, e.g. the production site domain).
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-# Only the two origins Capacitor actually loads from. "https://localhost" was
-# in this list and is used by neither platform — and since these entries are
-# port-less they match only :443/:80, so it never served local development
-# either. Dropping it removes one more origin that any process able to bind the
-# victim's port 443 could have spoken from.
+# The origins Capacitor actually loads from. "https" is Capacitor's default
+# androidScheme (since Capacitor 4; this repo is on @capacitor/android ^8.5.0)
+# and mobile/capacitor.config.ts sets no `server` block, so the shipped Android
+# WebView origin is https://localhost — dropping it took the whole Android app
+# offline. "http://localhost" is the Capacitor 3 default, kept for older
+# installs. Both are port-less, so they match only :443/:80 and never served
+# local development; the spoofing concern applies to them equally, which is why
+# allow_credentials is off below rather than the origin being removed.
 _CORS_ORIGINS = [
     "capacitor://localhost",
+    "https://localhost",
     "http://localhost",
 ]
 _CORS_ORIGINS += [
