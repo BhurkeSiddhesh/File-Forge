@@ -87,6 +87,10 @@ let currentOp = null;
 function ffFunnelLabel() {
     return currentOp || currentTool || 'unknown';
 }
+// Exported alongside ffTrack so anything layered on top of this script can emit
+// funnel events with the same label this file would have used, instead of
+// guessing one or reporting none.
+window.ffFunnelLabel = ffFunnelLabel;
 
 // One delegated listener covers every action card, including the ones added
 // after this file was written — no per-card wiring to keep in sync.
