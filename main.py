@@ -194,12 +194,22 @@ def _build_adsense_head() -> str:
     # Ad-free gate (build-prompt task 4.5): before filling, we make a best-effort
     # call to the backend-controlled GET /api/me and skip ads entirely (hiding the
     # reserved .ad-slot boxes) when features.ad_free is true. The public app only
-    # ever reads features.ad_free — never entitlement internals. The session token
-    # comes from window.__ffSession (populated by the auth layer once login is
-    # wired); with no token — the current free-launch default, payments off — the
-    # gate resolves to "show ads", so behaviour is identical to before.
+    # ever reads features.ad_free — never entitlement internals.
+    #
+    # The session token comes from window.__ffSession, which static/session.js
+    # populates from the record the auth layer writes on sign-in. That file used
+    # not to exist: the global was read here and set nowhere, so every "Ad-Free
+    # Forever" purchase resolved to "show ads" forever. It is loaded here rather
+    # than from the page templates because {{ADSENSE_HEAD}} is the one token every
+    # page carries, and because it must run before this script's DOMContentLoaded
+    # init() — a customer should never see an ad flash before the gate resolves.
+    # It is also only needed where ads exist, which is exactly where this renders.
+    #
+    # With no session — the free-launch default, payments off — the gate resolves
+    # to "show ads", so behaviour is identical to before.
     return (
         '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>\n'
+        '    <script src="/static/session.js?v=20260802"></script>\n'
         '    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}'
         "gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',"
         "ad_personalization:'denied',analytics_storage:'denied',wait_for_update:500});</script>\n"
@@ -211,11 +221,17 @@ def _build_adsense_head() -> str:
         "el.setAttribute('data-lazy-filled','1');}catch(e){}}"
         "function hideSlots(){var s=document.querySelectorAll('.ad-slot');"
         'for(var i=0;i<s.length;i++){s[i].style.display=\'none\';}}'
-        'function adFree(cb){var t=(window.__ffSession&&window.__ffSession.access_token);'
+        'function adFree(cb){'
+        # A cached positive answers synchronously: an expired access token must
+        # not put ads back in front of someone who bought a lifetime removal.
+        'if(window.__ffAdFreeHint&&window.__ffAdFreeHint()===true){cb(true);return;}'
+        'var t=(window.__ffSession&&window.__ffSession.access_token);'
         'if(!t){cb(false);return;}'
-        "fetch('/api/me',{headers:{Authorization:'Bearer '+t}})"
+        "var u=(window.apiUrl?window.apiUrl('/api/me'):'/api/me');"
+        "fetch(u,{headers:{Authorization:'Bearer '+t}})"
         '.then(function(r){return r.ok?r.json():null;})'
-        '.then(function(d){cb(!!(d&&d.features&&d.features.ad_free));})'
+        '.then(function(d){var af=!!(d&&d.features&&d.features.ad_free);'
+        'if(window.__ffCacheAdFree)window.__ffCacheAdFree(af);cb(af);})'
         '.catch(function(){cb(false);});}'
         "function runFill(){if(!granted())return;"
         "var ads=document.querySelectorAll('ins.adsbygoogle:not([data-lazy-filled])');"
