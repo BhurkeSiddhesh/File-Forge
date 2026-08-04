@@ -182,6 +182,205 @@ class TestClientIdentity:
         assert other.status_code != 429, "a different real IP must have its own bucket"
 
 
+# ---------------------------------------------------------------------------
+# Trusting the edge (issue #73)
+#
+# #11 stopped trusting X-Forwarded-For and moved to CF-Connecting-IP, which
+# Cloudflare overwrites — but only for requests that go through Cloudflare. The
+# origin answers on 443 from anywhere, so a request sent straight to it carries
+# whatever CF-Connecting-IP its sender chose, and rotating it is the same bypass
+# one header over. The app now honours the header only with proof the request
+# came through our edge.
+# ---------------------------------------------------------------------------
+
+class _FakeRequest:
+    def __init__(self, headers, peer="192.0.2.9"):
+        self.headers = headers
+        self.client = type("c", (), {"host": peer})() if peer else None
+
+
+class TestEdgeAuthentication:
+    def test_unauthenticated_edge_header_is_ignored(self, monkeypatch):
+        from main import client_identity
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        spoofed = _FakeRequest({"cf-connecting-ip": "10.0.0.1"}, peer="192.0.2.9")
+
+        assert client_identity(spoofed) == "192.0.2.9", "peer must win over an unproven header"
+
+    def test_header_is_honoured_when_the_edge_secret_matches(self, monkeypatch):
+        from main import client_identity
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        real = _FakeRequest(
+            {"cf-connecting-ip": "203.0.113.7", "x-ff-edge-auth": "s3cret"}, peer="192.0.2.9"
+        )
+
+        assert client_identity(real) == "203.0.113.7"
+
+    def test_wrong_secret_is_ignored(self, monkeypatch):
+        from main import client_identity
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        wrong = _FakeRequest(
+            {"cf-connecting-ip": "203.0.113.7", "x-ff-edge-auth": "nope"}, peer="192.0.2.9"
+        )
+
+        assert client_identity(wrong) == "192.0.2.9"
+
+    def test_non_ascii_secret_header_does_not_raise(self, monkeypatch):
+        """hmac.compare_digest raises TypeError on a str holding non-ASCII."""
+        from main import client_identity
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        weird = _FakeRequest(
+            {"cf-connecting-ip": "203.0.113.7", "x-ff-edge-auth": "sécret"}, peer="192.0.2.9"
+        )
+
+        assert client_identity(weird) == "192.0.2.9"
+
+    def test_unset_secret_keeps_the_previous_behaviour(self, monkeypatch):
+        from main import client_identity
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "")
+        req = _FakeRequest({"cf-connecting-ip": "203.0.113.7"}, peer="192.0.2.9")
+
+        assert client_identity(req) == "203.0.113.7"
+
+    def test_rotating_the_header_no_longer_mints_fresh_buckets(self, monkeypatch, rate_limited_client):
+        """The attack from the issue, end to end."""
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        codes = []
+        for i in range(6):
+            resp = rate_limited_client.post(
+                "/api/pdf/convert-to-word",
+                headers={"CF-Connecting-IP": f"10.0.0.{i}"},   # a different lie each time
+                files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
+            )
+            codes.append(resp.status_code)
+
+        assert 429 in codes, codes
+        assert codes.count(429) == 4, codes
+
+
+class TestCountryIsNotClientControlled:
+    def test_unauthenticated_country_is_dropped(self, monkeypatch):
+        from main import _client_country
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
+        assert _client_country(_FakeRequest({"cf-ipcountry": "ZZ"})) is None
+
+    def test_junk_country_is_dropped_even_from_the_edge(self, monkeypatch):
+        from main import _client_country
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "")
+        assert _client_country(_FakeRequest({"cf-ipcountry": "'; DROP TABLE--"})) is None
+        assert _client_country(_FakeRequest({"cf-ipcountry": "INDIA"})) is None
+        assert _client_country(_FakeRequest({"cf-ipcountry": ""})) is None
+
+    def test_valid_codes_pass_through_uppercased(self, monkeypatch):
+        from main import _client_country
+
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "")
+        assert _client_country(_FakeRequest({"cf-ipcountry": "in"})) == "IN"
+        assert _client_country(_FakeRequest({"cf-ipcountry": "T1"})) == "T1"   # Cloudflare: Tor
+
+
+# ---------------------------------------------------------------------------
+# Routes outside /api/ (issue #74)
+# ---------------------------------------------------------------------------
+
+class TestNonApiPrefixesAreLimited:
+    def test_premium_and_admin_prefixes_are_covered(self):
+        from main import RATE_LIMIT_PREFIXES
+
+        for prefix in ("/api/", "/premium/", "/admin/", "/checkout"):
+            assert prefix in RATE_LIMIT_PREFIXES
+
+    def test_batch_ocr_is_a_heavy_path(self):
+        assert "/premium/batch-ocr" in RATE_LIMIT_HEAVY_PATHS
+
+    def test_a_mounted_premium_route_is_throttled(self, rate_limited_client):
+        """The public app has no /premium route; server.py mounts one onto it.
+
+        Register a stand-in on the same app so the middleware sees the path it
+        would see in the private deploy — the 404 the bare public app returns
+        would pass the assertions vacuously.
+        """
+        from main import app
+
+        @app.get("/premium/jobs/{job_id}")
+        async def _stub(job_id: str):        # pragma: no cover - exercised via HTTP
+            return {"id": job_id}
+
+        try:
+            codes = [
+                rate_limited_client.get("/premium/jobs/1", headers={"CF-Connecting-IP": "203.0.113.44"}).status_code
+                for _ in range(6)
+            ]
+        finally:
+            app.router.routes[:] = [
+                r for r in app.router.routes if getattr(r, "path", None) != "/premium/jobs/{job_id}"
+            ]
+
+        # light limit is 4 in this fixture
+        assert codes[:4] == [200, 200, 200, 200], codes
+        assert codes[4:] == [429, 429], codes
+
+
+class TestHeavyTierIsCappedIndependentlyOfIdentity:
+    """Whatever identity a flood claims, the box still runs N heavy jobs at once."""
+
+    def test_gate_refuses_past_the_ceiling_and_recovers(self):
+        from main import _InFlightGate
+
+        gate = _InFlightGate(2)
+        assert gate.acquire()
+        assert gate.acquire()
+        assert not gate.acquire(), "third concurrent heavy job must be refused"
+
+        gate.release()
+        assert gate.acquire(), "a finished job must free its slot"
+
+    def test_zero_disables_the_gate(self):
+        from main import _InFlightGate
+
+        gate = _InFlightGate(0)
+        assert all(gate.acquire() for _ in range(50))
+
+    def test_saturated_gate_returns_503_not_429(self, rate_limited_client):
+        from main import app, _InFlightGate
+
+        previous = app.state.heavy_gate
+        app.state.heavy_gate = _InFlightGate(0)
+        app.state.heavy_gate.acquire = lambda: False    # pretend it is saturated
+        try:
+            resp = rate_limited_client.post(
+                "/api/pdf/convert-to-word",
+                headers={"CF-Connecting-IP": "203.0.113.55"},
+                files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
+            )
+        finally:
+            app.state.heavy_gate = previous
+
+        assert resp.status_code == 503
+        assert resp.headers["Retry-After"] == "5"
+
+    def test_light_requests_are_not_gated(self, rate_limited_client):
+        from main import app, _InFlightGate
+
+        previous = app.state.heavy_gate
+        gate = _InFlightGate(1)
+        gate.acquire()          # fully saturated
+        app.state.heavy_gate = gate
+        try:
+            resp = rate_limited_client.post("/api/pdf/remove-password", files={}, data={})
+        finally:
+            app.state.heavy_gate = previous
+
+        assert resp.status_code != 503
+
+
 class TestLimiterStateIsBounded:
     """defaultdict(deque) grew one entry per key seen since boot, forever."""
 
@@ -216,6 +415,25 @@ class TestLimiterStateIsBounded:
 
         assert limiter.prune() == 1
         assert limiter._hits == {}
+
+    def test_map_is_capped_between_prunes(self):
+        """prune() only runs every 900s; a key-rotating flood grew it until then."""
+        limiter = SlidingWindowRateLimiter(window_seconds=60, max_keys=50)
+        for i in range(500):
+            limiter.check(f"spoofed{i}:heavy", 5)
+
+        assert len(limiter._hits) <= 50
+
+    def test_eviction_prefers_the_least_recently_seen(self):
+        limiter = SlidingWindowRateLimiter(window_seconds=60, max_keys=3)
+        for key in ("a:light", "b:light", "c:light"):
+            limiter.check(key, 5)
+        limiter.check("a:light", 5)      # a is now the most recent
+        limiter.check("d:light", 5)      # forces one eviction
+
+        assert "a:light" in limiter._hits
+        assert "d:light" in limiter._hits
+        assert "b:light" not in limiter._hits
 
 
 class TestMultiWorkerGuard:

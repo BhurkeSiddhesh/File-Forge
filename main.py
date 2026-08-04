@@ -10,6 +10,7 @@ import secrets
 import shutil
 import uuid
 import html
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager, suppress
@@ -94,6 +95,7 @@ PROD = os.environ.get("ENV") == "production"
 async def lifespan(app: FastAPI):
     """Start the stale-file sweeper (and optionally warm AI models), then stop it."""
     _assert_single_worker()
+    _warn_if_edge_unauthenticated()
     # Hold a reference: a bare create_task() may be garbage-collected mid-flight.
     sweeper = asyncio.create_task(cleanup_stale_files_loop())
     await _warmup_ai()
@@ -535,8 +537,9 @@ class SlidingWindowRateLimiter:
     assert_single_worker() below turns that from a silent 4x into a boot error.
     """
 
-    def __init__(self, window_seconds: float = 60.0):
+    def __init__(self, window_seconds: float = 60.0, max_keys: int = 20000):
         self.window = window_seconds
+        self.max_keys = max_keys
         self._hits = defaultdict(deque)
         self._lock = threading.Lock()
 
@@ -544,6 +547,8 @@ class SlidingWindowRateLimiter:
         """Record a hit for `key`. Returns (allowed, retry_after_seconds)."""
         now = time.monotonic()
         with self._lock:
+            if key not in self._hits and len(self._hits) >= self.max_keys:
+                self._evict_locked()
             hits = self._hits[key]
             while hits and hits[0] <= now - self.window:
                 hits.popleft()
@@ -553,6 +558,34 @@ class SlidingWindowRateLimiter:
             hits.append(now)
             return True, 0
 
+    def _prune_locked(self, cutoff: float) -> int:
+        stale = [k for k, hits in self._hits.items() if not hits or hits[-1] <= cutoff]
+        for k in stale:
+            del self._hits[k]
+        return len(stale)
+
+    def _evict_locked(self) -> None:
+        """Make room for a new key. Caller holds the lock.
+
+        prune() only runs every 900s from the sweeper, so between sweeps a
+        client rotating its identity — which is cheap to do whenever the
+        trusted header isn't authenticated, see `client_identity` — grew this
+        map without bound. Drain the expired keys first; if that isn't enough,
+        drop the least-recently-seen keys until we're back under the cap.
+
+        Eviction is deliberately not "refuse the request": refusing would let a
+        flood of junk keys 429 everybody else, which is the outage the cap
+        exists to prevent. An evicted attacker gets a fresh bucket, but that is
+        what they already had by rotating the key; what actually bounds their
+        damage is the identity-independent heavy-tier gate below.
+        """
+        self._prune_locked(time.monotonic() - self.window)
+        if len(self._hits) < self.max_keys:
+            return
+        oldest = sorted(self._hits, key=lambda k: self._hits[k][-1] if self._hits[k] else 0.0)
+        for k in oldest[: max(1, len(self._hits) - self.max_keys + 1)]:
+            del self._hits[k]
+
     def prune(self) -> int:
         """Drop keys whose window has fully drained. Returns the count removed.
 
@@ -561,12 +594,8 @@ class SlidingWindowRateLimiter:
         entry per client seen since boot, unbounded, and an attacker rotating
         spoofed addresses could drive that growth deliberately.
         """
-        cutoff = time.monotonic() - self.window
         with self._lock:
-            stale = [k for k, hits in self._hits.items() if not hits or hits[-1] <= cutoff]
-            for k in stale:
-                del self._hits[k]
-            return len(stale)
+            return self._prune_locked(time.monotonic() - self.window)
 
     def reset(self):
         with self._lock:
@@ -678,7 +707,26 @@ RATE_LIMIT_HEAVY_PATHS = {
     "/api/pdf/to-excel",
     "/api/pdf/to-pptx",
     "/api/word/to-pptx",
+    # Mounted by the private server.py, not by this app — but it is the most
+    # expensive route in the deployment (a 200 MB multi-PDF OCR batch), so it
+    # belongs in the strictest tier wherever it happens to be registered.
+    "/premium/batch-ocr",
 }
+
+# Path prefixes the limiter applies to.
+#
+# This used to be a bare `startswith("/api/")`, which was right while the free
+# app owned every route. The private server.py then mounted /premium, /whoami,
+# /admin/stats and /checkout onto this same app, and each one silently landed
+# outside the prefix — unthrottled, including the batch-OCR route above. Match
+# on a tuple instead so mounting a new prefix is an explicit decision.
+_DEFAULT_RATE_LIMIT_PREFIXES = ("/api/", "/premium/", "/admin/", "/checkout", "/whoami")
+_RATE_LIMIT_PREFIXES_ENV = os.environ.get("RATE_LIMIT_PREFIXES")
+RATE_LIMIT_PREFIXES = (
+    tuple(p.strip() for p in _RATE_LIMIT_PREFIXES_ENV.split(",") if p.strip())
+    if _RATE_LIMIT_PREFIXES_ENV
+    else _DEFAULT_RATE_LIMIT_PREFIXES
+)
 
 def _assert_single_worker() -> None:
     """Refuse to boot multi-worker while per-process state is load-bearing.
@@ -714,6 +762,9 @@ app.state.rate_limit_light = int(os.environ.get("RATE_LIMIT_LIGHT", "20"))   # r
 # Funnel beacons (/api/track) get their own generous bucket so page-view pings
 # never eat into a visitor's file-operation budget (the "light" tier).
 app.state.rate_limit_track = int(os.environ.get("RATE_LIMIT_TRACK", "120"))  # req/min per IP
+# Concurrent heavy jobs allowed across ALL clients, whatever they claim to be.
+# Set to 0 to disable the gate.
+app.state.rate_limit_heavy_concurrency = int(os.environ.get("RATE_LIMIT_HEAVY_CONCURRENCY", "4"))
 
 
 # Header carrying the true client address, most-trustworthy first.
@@ -727,9 +778,13 @@ app.state.rate_limit_track = int(os.environ.get("RATE_LIMIT_TRACK", "120"))  # r
 # that run OCR, pdf2docx and LibreOffice on one small VM.
 #
 # CF-Connecting-IP is first because Cloudflare sets it from the real connection
-# and strips any client-supplied copy — it is the one value in the chain an
-# origin-facing client cannot forge. The app already reads Cloudflare headers
-# (cf-ipcountry) so this adds no new dependency.
+# and strips any client-supplied copy. That makes it unforgeable *for requests
+# that actually traverse Cloudflare* — which is not the same as unforgeable.
+# The origin answers on 443 from anywhere and its hostname is public (the
+# Let's Encrypt cert is in the CT logs), so a request sent straight to the VM
+# arrives with a fully attacker-controlled CF-Connecting-IP and nginx forwards
+# it verbatim. Rotating it is then exactly the bypass that rotating
+# X-Forwarded-For used to be.
 #
 # Set RATE_LIMIT_TRUSTED_HEADER to override for a different fronting proxy, or
 # to "" to fall back to the socket peer (a direct, unproxied deploy).
@@ -741,46 +796,152 @@ CLIENT_IP_HEADERS = (
     else _DEFAULT_CLIENT_IP_HEADERS
 )
 
+# Proof that a request reached us through our own edge rather than direct to
+# the origin. nginx injects this header, and only for peers in Cloudflare's
+# published ranges (see docs/cloudflare-edge.md); a client that reaches the
+# origin directly cannot produce it, so its client-IP headers are ignored and
+# it is bucketed on the socket peer instead.
+#
+# Unset means "no proof available" and preserves the old, spoofable behaviour —
+# the deploy is not broken by upgrading, but _warn_if_edge_unauthenticated()
+# says so at boot. Note that the header is only ever compared, never logged.
+EDGE_AUTH_HEADER = os.environ.get("RATE_LIMIT_EDGE_HEADER", "x-ff-edge-auth").strip().lower()
+EDGE_AUTH_SECRET = os.environ.get("RATE_LIMIT_EDGE_SECRET", "").strip()
+
+
+def _from_trusted_edge(request: Request) -> bool:
+    """True if this request carries our edge's shared secret (or none is set)."""
+    if not EDGE_AUTH_SECRET:
+        return True
+    presented = request.headers.get(EDGE_AUTH_HEADER) or ""
+    # Compare as bytes: hmac.compare_digest raises TypeError on a str holding
+    # non-ASCII, which a client controls and could otherwise turn into a 500.
+    return hmac.compare_digest(
+        presented.encode("utf-8", "replace"), EDGE_AUTH_SECRET.encode("utf-8", "replace")
+    )
+
+
+def _warn_if_edge_unauthenticated() -> None:
+    if not EDGE_AUTH_SECRET and CLIENT_IP_HEADERS:
+        logger.warning(
+            "Rate limiting buckets on %s but RATE_LIMIT_EDGE_SECRET is unset, so a "
+            "request sent straight to the origin can forge it and mint a fresh "
+            "bucket per request. Restrict 443 to Cloudflare's ranges, or set "
+            "RATE_LIMIT_EDGE_SECRET here and inject %s at the edge "
+            "(see docs/cloudflare-edge.md).",
+            CLIENT_IP_HEADERS[0],
+            EDGE_AUTH_HEADER,
+        )
+
 
 def client_identity(request: Request) -> str:
-    """The address to bucket this request under, from a header a client can't set."""
-    for header in CLIENT_IP_HEADERS:
-        value = request.headers.get(header)
-        if value:
-            # X-Real-IP is a single address; be tolerant of a list anyway and
-            # take the first entry, which is the one the trusted proxy wrote.
-            return value.split(",")[0].strip()
+    """The address to bucket this request under.
+
+    Only reads the forwarded client-IP headers when the request demonstrably
+    came through our edge; otherwise the socket peer is the best available
+    identity, and unlike the headers the client cannot choose it.
+    """
+    if _from_trusted_edge(request):
+        for header in CLIENT_IP_HEADERS:
+            value = request.headers.get(header)
+            if value:
+                # X-Real-IP is a single address; be tolerant of a list anyway and
+                # take the first entry, which is the one the trusted proxy wrote.
+                return value.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+class _InFlightGate:
+    """Counts concurrent requests in a tier, and refuses past a ceiling.
+
+    The per-identity limits above are only as good as the identity. This gate
+    is deliberately identity-free: however many buckets an attacker mints, the
+    box still runs at most `limit` OCR / pdf2docx / LibreOffice jobs at once,
+    which is what stops a spoofed flood from taking the single worker down with
+    it. It bounds concurrency, not rate, so ordinary bursty use is unaffected —
+    a legitimate visitor is only ever refused while the machine is genuinely
+    saturated, and can retry a second later.
+    """
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> bool:
+        with self._lock:
+            if self.limit > 0 and self._active >= self.limit:
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._active = max(0, self._active - 1)
+
+
+app.state.heavy_gate = _InFlightGate(app.state.rate_limit_heavy_concurrency)
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     state = request.app.state
-    if not getattr(state, "rate_limit_enabled", False) or not request.url.path.startswith("/api/"):
+    path = request.url.path
+    if not getattr(state, "rate_limit_enabled", False) or not path.startswith(RATE_LIMIT_PREFIXES):
         return await call_next(request)
 
     client_ip = client_identity(request)
-    if request.url.path == "/api/track":
+    if path == "/api/track":
         tier, limit = "track", getattr(state, "rate_limit_track", 120)
-    elif request.url.path in RATE_LIMIT_HEAVY_PATHS:
+    elif path in RATE_LIMIT_HEAVY_PATHS:
         tier, limit = "heavy", state.rate_limit_heavy
     else:
         tier, limit = "light", state.rate_limit_light
 
     allowed, retry_after = state.rate_limiter.check(f"{client_ip}:{tier}", limit)
     if not allowed:
-        logger.warning("Rate limit exceeded for %s on %s", client_ip, request.url.path)
+        logger.warning("Rate limit exceeded for %s on %s", client_ip, path)
         return JSONResponse(
             status_code=429,
             content={"detail": "Too many requests. Please slow down."},
             headers={"Retry-After": str(retry_after)},
         )
-    return await call_next(request)
+
+    if tier != "heavy":
+        return await call_next(request)
+
+    gate = getattr(state, "heavy_gate", None)
+    if gate is None:
+        return await call_next(request)
+    if not gate.acquire():
+        logger.warning("Heavy-tier capacity reached; refusing %s", path)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "The server is busy processing other files. Please retry shortly."},
+            headers={"Retry-After": "5"},
+        )
+    try:
+        return await call_next(request)
+    finally:
+        gate.release()
 
 
 # --- Anonymous operation-event context (server-side analytics, no tracking script) ---
 SESSION_COOKIE_NAME = "ff_sid"
 SESSION_COOKIE_MAX_AGE = 365 * 24 * 3600
+
+# Cloudflare sends an ISO-3166-1 alpha-2 code, plus "XX" (unknown) and "T1"
+# (Tor). Anything else is a client writing whatever it likes into
+# operation_events.country, which is what /admin/stats reports on.
+_COUNTRY_CODE_RE = re.compile(r"^[A-Z0-9]{2}$")
+
+
+def _client_country(request: Request) -> Optional[str]:
+    """The visitor's country, or None when we have no trustworthy answer."""
+    if not _from_trusted_edge(request):
+        return None
+    value = (request.headers.get("cf-ipcountry") or "").strip().upper()
+    return value if _COUNTRY_CODE_RE.match(value) else None
 
 
 @app.middleware("http")
@@ -794,7 +955,7 @@ async def event_context_middleware(request: Request, call_next):
     """
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
-    country = request.headers.get("cf-ipcountry")
+    country = _client_country(request)
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     is_new_session = session_id is None
     if is_new_session:
