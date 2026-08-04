@@ -97,6 +97,48 @@ def test_paying_customer_gets_no_ads(tmp_path):
     assert result["adsFilled"] == 0
 
 
+def test_a_session_the_sdk_already_stored_is_adopted(tmp_path):
+    """Everyone who signed in before this shipped has a live session in
+    supabase-js's own storage and no ff_session record. Without adoption they
+    keep seeing ads until they happen to open /checkout again — the same
+    "nothing the customer can do" failure, just narrower."""
+    sdk = json.dumps(
+        {"access_token": "tok_sdk", "refresh_token": "r1", "expires_at": _FRESH_EXP}
+    )
+    result = _run(
+        tmp_path,
+        localStorage={"sb-abcdefgh-auth-token": sdk},
+        me={"features": {"ad_free": True, "batch_ocr": False}},
+    )
+    assert result["hasSession"] is True
+    assert result["slotsHidden"] is True
+    # Copied into our own record, so the scan happens once and not on every page.
+    assert json.loads(result["localStorage"]["ff_session"])["access_token"] == "tok_sdk"
+
+
+def test_the_base64_storage_shape_is_adopted_too(tmp_path):
+    """Newer supabase-js writes `base64-<b64>`; both shapes are in the wild."""
+    import base64
+
+    inner = json.dumps({"access_token": "tok_b64", "expires_at": _FRESH_EXP})
+    encoded = "base64-" + base64.b64encode(inner.encode()).decode()
+    result = _run(
+        tmp_path,
+        localStorage={"sb-abcdefgh-auth-token": encoded},
+        me={"features": {"ad_free": True, "batch_ocr": False}},
+    )
+    assert result["hasSession"] is True
+    assert result["slotsHidden"] is True
+
+
+def test_unparseable_sdk_storage_is_not_fatal(tmp_path):
+    """A storage format we don't recognise must degrade to "show ads", not throw
+    on every page load of the site."""
+    result = _run(tmp_path, localStorage={"sb-abcdefgh-auth-token": "{not json"})
+    assert result["hasSession"] is False
+    assert result["adsFilled"] == 2
+
+
 def test_signed_in_without_the_entitlement_sees_ads(tmp_path):
     result = _run(
         tmp_path,

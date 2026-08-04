@@ -157,6 +157,14 @@ app.add_middleware(
     allow_credentials=_CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    # Content-Disposition is not a CORS-safelisted response header, so without
+    # this the app cannot read the filename off a download it fetched itself.
+    # /api/download addresses results by an opaque token on purpose, so the name
+    # the user should actually see exists ONLY in this header — and the app has
+    # to fetch and save the bytes by hand, because a WebView has no download
+    # manager (see mobile/app-assets/src/native-download.js). Without it every
+    # saved file would be called "forgefiles-download".
+    expose_headers=["Content-Disposition"],
 )
 
 # --- Configuration ---

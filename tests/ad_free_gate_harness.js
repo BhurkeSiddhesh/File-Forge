@@ -67,11 +67,19 @@ const context = {
     this.observe = (el) => cb([{ isIntersecting: true, target: el }], this);
     this.unobserve = () => {};
   },
+  // `length` and `key()` are part of the Storage interface and session.js scans
+  // with them to find a session supabase-js persisted under its own key, so the
+  // fake has to offer them too.
   localStorage: {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
     removeItem: (k) => store.delete(k),
+    get length() { return store.size; },
+    key: (i) => Array.from(store.keys())[i] ?? null,
   },
+  atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
+  escape,
+  unescape,
   document: {
     readyState: 'complete',
     addEventListener: (evt, fn) => { (listeners[evt] = listeners[evt] || []).push(fn); },

@@ -103,6 +103,56 @@
     writeJson(AD_FREE_KEY, adFree ? { v: true, exp: Date.now() + AD_FREE_TTL_MS } : null);
   };
 
+  /* ---- One-time adoption of a session the SDK already had ----------------- */
+
+  // The write-through above only sees sign-ins that happen after this file
+  // ships. Anyone who signed in on /checkout before that has a live session
+  // sitting in supabase-js's own storage and no `ff_session` record — and would
+  // keep seeing ads until they happened to visit /checkout again, which is
+  // precisely the "no workaround for the customer" shape of the original bug.
+  //
+  // supabase-js v2 persists under `sb-<project-ref>-auth-token`. The ref is
+  // discovered by scanning for that pattern rather than by fetching the project
+  // URL, so this stays synchronous and the fast path below keeps its no-ad-flash
+  // guarantee. Read once and copied into our own record; after that the
+  // write-through is the only writer.
+  function adoptSupabaseSdkSession() {
+    var raw = null;
+    try {
+      for (var i = 0; i < window.localStorage.length; i++) {
+        var key = window.localStorage.key(i);
+        if (key && /^sb-.+-auth-token$/.test(key)) {
+          raw = window.localStorage.getItem(key);
+          break;
+        }
+      }
+    } catch (e) {
+      return null;  // storage blocked (private-mode Safari, etc.)
+    }
+    if (!raw) return null;
+
+    try {
+      // Newer supabase-js writes `base64-<b64 of the JSON>`; older writes plain
+      // JSON. Both shapes are in the wild on returning visitors.
+      if (raw.indexOf("base64-") === 0) {
+        raw = decodeURIComponent(escape(window.atob(raw.slice(7))));
+      }
+      var session = JSON.parse(raw);
+      // Some versions nest it under `currentSession`.
+      if (session && session.currentSession) session = session.currentSession;
+      if (!session || !session.access_token) return null;
+      var record = {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token || null,
+        expires_at: session.expires_at || 0,
+      };
+      writeJson(SESSION_KEY, record);
+      return record;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /* ---- Bootstrap ---------------------------------------------------------- */
 
   // Pages that run a full Supabase client of their own (the checkout page) set
@@ -112,7 +162,7 @@
   // the kind of thing that logs people out.
   if (window.__ffAuthOwner) return;
 
-  var stored = readJson(SESSION_KEY);
+  var stored = readJson(SESSION_KEY) || adoptSupabaseSdkSession();
 
   // Synchronous, so the gate — which runs on DOMContentLoaded — sees the token
   // on its first pass and a paying customer never gets an ad flash.
