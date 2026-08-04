@@ -365,6 +365,7 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
         for page in doc:
             for img_info in page.get_images(full=True):
                 xref = img_info[0]
+                smask_xref = img_info[1]
                 if xref in xrefs_processed:
                     continue
                 xrefs_processed.add(xref)
@@ -383,9 +384,59 @@ def compress_pdf(input_path: str, output_dir: str, level: str = 'medium', passwo
                         pix = None
                         continue
 
+                    if smask_xref or pix.alpha:
+                        # This image carries transparency (a linked /SMask, or an
+                        # alpha channel merged straight into the pixmap). JPEG has
+                        # no alpha channel, so re-encoding the colour data alone and
+                        # dropping the mask - the previous behaviour - silently
+                        # turns transparent pixels opaque. Verified empirically:
+                        # PyMuPDF stores black under fully-transparent pixels in the
+                        # base image (only the mask hides it), so stripping the
+                        # mask painted solid black where the page background used
+                        # to show through. Recombine colour + mask into RGBA and
+                        # downsample them together so transparency survives, and
+                        # only bother when there's an actual size win on offer.
+                        longest = max(pix.width, pix.height)
+                        if longest <= max_dim:
+                            pix = None
+                            continue
+
+                        if pix.alpha:
+                            mode = "RGBA" if pix.n == 4 else "LA"
+                            rgba_img = PILImage.frombytes(
+                                mode, (pix.width, pix.height), pix.samples
+                            ).convert("RGBA")
+                        else:
+                            base = pix if pix.n == 3 else fitz.Pixmap(fitz.csRGB, pix)
+                            smask_pix = fitz.Pixmap(doc, smask_xref)
+                            if smask_pix.n != 1:
+                                smask_pix = fitz.Pixmap(fitz.csGRAY, smask_pix)
+                            rgb_img = PILImage.frombytes(
+                                "RGB", (base.width, base.height), base.samples
+                            )
+                            alpha_img = PILImage.frombytes(
+                                "L", (smask_pix.width, smask_pix.height), smask_pix.samples
+                            )
+                            smask_pix = None
+                            if alpha_img.size != rgb_img.size:
+                                alpha_img = alpha_img.resize(rgb_img.size, PILImage.LANCZOS)
+                            rgba_img = rgb_img.convert("RGBA")
+                            rgba_img.putalpha(alpha_img)
+                        pix = None
+
+                        factor = max_dim / longest
+                        rgba_img = rgba_img.resize(
+                            (max(1, int(rgba_img.width * factor)),
+                             max(1, int(rgba_img.height * factor))),
+                            PILImage.LANCZOS,
+                        )
+                        new_pix = fitz.Pixmap(
+                            fitz.csRGB, rgba_img.width, rgba_img.height, rgba_img.tobytes(), 1
+                        )
+                        page.replace_image(xref, pixmap=new_pix)
+                        continue
+
                     # Normalise to a plain grayscale/RGB buffer Pillow can read.
-                    if pix.alpha:
-                        pix = fitz.Pixmap(pix, 0)  # drop the alpha channel
                     if pix.n == 1:
                         mode = "L"
                     elif pix.n == 3:
