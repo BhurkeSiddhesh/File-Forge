@@ -57,6 +57,47 @@ class TestConvertToWordStream:
         events = _parse_sse(resp.text)
         assert any(e["event"] == "error" for e in events)
 
+    def test_start_event_carries_a_job_id(self, auth_client, sample_pdf):
+        """job_id lets a client that reconnects after a dropped SSE stream
+        recover the result via GET /api/jobs/{job_id} (issue #95)."""
+        with open(sample_pdf, "rb") as f:
+            resp = auth_client.post(
+                "/api/pdf/convert-to-word-stream",
+                files={"file": ("sample.pdf", f, "application/pdf")},
+                data={"use_ai": "false"},
+            )
+        events = _parse_sse(resp.text)
+        start = events[0]
+        assert start["event"] == "start"
+        assert start["job_id"]
+
+    def test_job_status_recoverable_after_stream_ends(self, auth_client, sample_pdf):
+        """Even though the SSE connection is long closed by the time the test
+        reads the response, the job's outcome must still be fetchable by id --
+        this is what a client polls after a dropped connection instead of
+        losing the result."""
+        with open(sample_pdf, "rb") as f:
+            resp = auth_client.post(
+                "/api/pdf/convert-to-word-stream",
+                files={"file": ("sample.pdf", f, "application/pdf")},
+                data={"use_ai": "false"},
+            )
+        events = _parse_sse(resp.text)
+        job_id = events[0]["job_id"]
+        complete = next(e for e in events if e["event"] == "complete")
+
+        job_resp = auth_client.get(f"/api/jobs/{job_id}")
+        assert job_resp.status_code == 200
+        job = job_resp.json()
+        assert job["status"] == "done"
+        assert job["event"] == complete
+
+    def test_job_status_404_for_unknown_id(self, auth_client):
+        assert auth_client.get("/api/jobs/does-not-exist-1234567890").status_code == 404
+
+    def test_job_status_404_for_malformed_id(self, auth_client):
+        assert auth_client.get("/api/jobs/../../etc/passwd").status_code in (404, 400)
+
     def test_no_auth_required(self, sample_pdf):
         from fastapi.testclient import TestClient
         from main import app

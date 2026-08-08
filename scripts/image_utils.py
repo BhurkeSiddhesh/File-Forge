@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw, ImageFont
 import pillow_heif
 
-from scripts.utils import branded_filename, original_stem
+from scripts.utils import branded_filename, original_stem, try_font
 
 # Register HEIF opener with Pillow
 pillow_heif.register_heif_opener()
@@ -399,10 +399,7 @@ def watermark_image(
 
         # Pick a font size proportional to the smaller dimension.
         font_size = max(20, int(min(w, h) / 20))
-        try:
-            font = ImageFont.truetype("arial.ttf", font_size)
-        except (OSError, IOError):
-            font = ImageFont.load_default()
+        font = try_font(font_size)
 
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)

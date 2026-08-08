@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.utils import ImageReader
 
-from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf
+from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf, try_font
 
 
 # Render slides at 96 DPI (1 EMU = 1/914400 inch -> 1 EMU = 96/914400 px = 1/9525 px).
@@ -36,13 +36,7 @@ def _emu_to_px(emu_value: Optional[int]) -> int:
     return int(emu_value / _EMU_PER_PX)
 
 
-def _try_font(size: int) -> ImageFont.FreeTypeFont:
-    for name in ("arial.ttf", "DejaVuSans.ttf", "Helvetica.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except (OSError, IOError):
-            continue
-    return ImageFont.load_default()
+_try_font = try_font
 
 
 def _render_slide_to_image(slide: Slide, slide_width_emu: Optional[int], slide_height_emu: Optional[int]) -> Image.Image:

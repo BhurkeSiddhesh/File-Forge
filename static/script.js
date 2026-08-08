@@ -508,6 +508,35 @@ function formatElapsed(seconds) {
     return m ? `${m}m ${s}s` : `${s}s`;
 }
 
+// Polls GET /api/jobs/{jobId} until the job resolves (done) or `maxWaitMs`
+// elapses. Recovers a result that finished after the SSE stream that started
+// it dropped (issue #95) — the worker on the server keeps running and
+// records its outcome under jobId regardless of whether anyone is still
+// listening on the stream.
+async function pollJobStatus(jobId, statusText, maxWaitMs = 6 * 60 * 1000) {
+    const deadline = Date.now() + maxWaitMs;
+    let delay = 1500;
+    while (Date.now() < deadline) {
+        if (statusText) statusText.textContent = 'Connection lost — checking whether the conversion finished...';
+        try {
+            const resp = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`));
+            if (resp.ok) {
+                const job = await resp.json();
+                if (job.status === 'done') return job.event;
+            } else if (resp.status === 404) {
+                // Job expired or never existed (e.g. the stream died before the
+                // 'start' event ever reached the client) — nothing to recover.
+                return null;
+            }
+        } catch (e) {
+            // Still offline; keep retrying until maxWaitMs.
+        }
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 1.5, 8000); // backoff, capped at 8s
+    }
+    return null;
+}
+
 async function convertToWordWithProgress(formData, useAI) {
     const statusDisplay = document.getElementById('status-display');
     const statusText = document.getElementById('status-text');
@@ -531,6 +560,22 @@ async function convertToWordWithProgress(formData, useAI) {
         }, 1000);
     }
 
+    let jobId = null;
+
+    const handleEvent = (event) => {
+        if (event.event === 'progress') {
+            const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
+            statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
+        } else if (event.event === 'start') {
+            jobId = event.job_id || jobId;
+            if (useAI) statusText.textContent = 'Analyzing layout with AI...';
+        } else if (event.event === 'complete') {
+            showResult(event.filename, event.message, event.download_token);
+        } else if (event.event === 'error') {
+            alert('Error: ' + event.detail);
+        }
+    };
+
     try {
         const response = await fetch(apiUrl('/api/pdf/convert-to-word-stream'), {
             method: 'POST',
@@ -546,29 +591,40 @@ async function convertToWordWithProgress(formData, useAI) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let streamFailed = false;
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
 
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // keep incomplete chunk in buffer
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // keep incomplete chunk in buffer
 
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const event = JSON.parse(line.slice(6));
-
-                if (event.event === 'progress') {
-                    const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
-                    statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
-                } else if (event.event === 'start') {
-                    if (useAI) statusText.textContent = 'Analyzing layout with AI...';
-                } else if (event.event === 'complete') {
-                    showResult(event.filename, event.message, event.download_token);
-                } else if (event.event === 'error') {
-                    alert('Error: ' + event.detail);
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    handleEvent(JSON.parse(line.slice(6)));
                 }
+            }
+        } catch (streamError) {
+            streamFailed = true;
+        }
+
+        if (streamFailed) {
+            // The connection dropped mid-stream, not the conversion itself —
+            // the server-side job keeps running independently. Recover its
+            // result by job_id instead of telling the user their (possibly
+            // multi-minute) conversion just vanished.
+            if (jobId) {
+                const finalEvent = await pollJobStatus(jobId, statusText);
+                if (finalEvent) {
+                    handleEvent(finalEvent);
+                } else {
+                    alert('Error: Lost connection to the server and the conversion did not complete in time. Please try again.');
+                }
+            } else {
+                alert('Error: Lost connection to the server before the conversion started. Please try again.');
             }
         }
     } catch (error) {
