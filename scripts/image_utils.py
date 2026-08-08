@@ -38,22 +38,22 @@ _EXIF_ORIENTATION = 0x0112
 
 def _preserved_save_kwargs(img: Image.Image) -> dict:
     """
-    Collect the source ICC color profile and EXIF metadata so they survive the
-    conversion to JPEG.
+    Collect the source ICC color profile, EXIF, and XMP metadata so they survive
+    the conversion to JPEG.
 
     HEIC photos from modern phones are frequently authored in a wide-gamut color
     space (e.g. Display P3). If the ICC profile is dropped, viewers fall back to
     interpreting the pixels as sRGB, which visibly shifts colors. Likewise the
-    EXIF block carries capture date, camera make/model, GPS, etc. that users
-    expect to keep.
+    EXIF block carries capture date, camera make/model, GPS, etc., and the XMP
+    packet carries title/rating/keywords/copyright, that users expect to keep.
 
     The image is expected to be orientation-normalized already (``exif_transpose``
     applied), so the EXIF Orientation tag is reset to ``1``: the rotation is baked
     into the pixels, and leaving a non-identity Orientation tag would make a viewer
     rotate the already-correct image a second time.
 
-    Returns a dict of ``Image.save`` keyword args (``icc_profile`` / ``exif``),
-    each key present only when there is real data to write.
+    Returns a dict of ``Image.save`` keyword args (``icc_profile`` / ``exif`` /
+    ``xmp``), each key present only when there is real data to write.
     """
     kwargs: dict = {}
 
@@ -77,6 +77,10 @@ def _preserved_save_kwargs(img: Image.Image) -> dict:
             exif_bytes = b""
         if exif_bytes:
             kwargs["exif"] = exif_bytes
+
+    xmp = img.info.get("xmp")
+    if xmp:
+        kwargs["xmp"] = xmp
 
     return kwargs
 

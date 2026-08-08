@@ -73,9 +73,19 @@ def test_heic_to_jpeg_output_filename(sample_heic, tmp_path):
     assert Path(result).suffix == '.jpg'
 
 
+_TEST_XMP = (
+    b'<?xpacket begin="\xef\xbb\xbf" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+    b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+    b'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+    b'<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+    b'<dc:title>Test Photo Title</dc:title></rdf:Description></rdf:RDF>'
+    b'</x:xmpmeta><?xpacket end="w"?>'
+)
+
+
 @pytest.fixture(scope="session")
 def heic_with_metadata(tmp_path_factory):
-    """A HEIC carrying an ICC color profile and EXIF (orientation + camera + date)."""
+    """A HEIC carrying an ICC color profile, EXIF (orientation + camera + date), and XMP."""
     try:
         import pillow_heif
         from PIL import Image, ImageCms
@@ -95,7 +105,14 @@ def heic_with_metadata(tmp_path_factory):
         for y in range(90):
             for x in range(160):
                 px[x, y] = (x % 256, (y * 2) % 256, (x * y) % 256)
-        img.save(file_path, format="HEIF", icc_profile=icc, exif=exif.tobytes(), quality=95)
+        img.save(
+            file_path,
+            format="HEIF",
+            icc_profile=icc,
+            exif=exif.tobytes(),
+            xmp=_TEST_XMP,
+            quality=95,
+        )
         return {"path": file_path, "icc_len": len(icc)}
     except Exception as e:  # pragma: no cover - env without pillow-heif
         pytest.skip(f"Could not create HEIC with metadata: {e}")
@@ -132,8 +149,22 @@ def test_heic_to_jpeg_preserves_exif_metadata(heic_with_metadata, tmp_path):
     assert exif.get(0x0112, 1) == 1
 
 
+def test_heic_to_jpeg_preserves_xmp_metadata(heic_with_metadata, tmp_path):
+    """XMP (title/rating/keywords/copyright packet) must be carried over, byte-identical."""
+    from PIL import Image
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    result = heic_to_jpeg(str(heic_with_metadata["path"]), str(output_dir))
+
+    with Image.open(result) as j:
+        out_xmp = j.info.get("xmp", b"")
+    assert out_xmp, "XMP metadata was dropped during HEIC->JPEG conversion"
+    assert out_xmp == _TEST_XMP
+
+
 def test_heic_to_jpeg_no_metadata_is_safe(tmp_path):
-    """A HEIC without ICC/EXIF must still convert cleanly (no crash, no empty block)."""
+    """A HEIC without ICC/EXIF/XMP must still convert cleanly (no crash, no empty block)."""
     import pillow_heif
     from PIL import Image
 
@@ -149,3 +180,4 @@ def test_heic_to_jpeg_no_metadata_is_safe(tmp_path):
         assert j.mode == "RGB"
         assert j.size == (48, 32)
         assert not j.info.get("icc_profile")
+        assert not j.info.get("xmp")
