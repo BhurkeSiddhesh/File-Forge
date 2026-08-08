@@ -262,6 +262,141 @@ def test_track_without_a_user_agent_is_still_recorded(event_db, auth_client):
     assert len(_read_funnel(event_db)) == 1
 
 
+# --- referrer: where traffic comes from, host only -------------------------
+
+@pytest.mark.parametrize("referrer,expected", [
+    # The query string is the part of a referring URL that can carry a search
+    # term or an identifier, so only the host is ever kept.
+    ("https://www.google.com/search?q=convert+my+medical+report", "google.com"),
+    ("https://news.ycombinator.com/item?id=123", "news.ycombinator.com"),
+    # 'www.' carries no information and would split one source into two rows.
+    ("https://www.bing.com/", "bing.com"),
+    ("", event_log.REFERRER_DIRECT),
+    (None, event_log.REFERRER_DIRECT),
+    ("not a url", event_log.REFERRER_DIRECT),
+    # Unparseable input becomes (direct) rather than being stored as-is, so the
+    # column can only ever hold a hostname or a sentinel.
+    ("javascript:alert(1)", event_log.REFERRER_DIRECT),
+])
+def test_referrer_host_keeps_only_the_host(referrer, expected):
+    assert event_log.referrer_host(referrer) == expected
+
+
+def test_referrer_host_marks_our_own_pages_internal():
+    """Internal navigation isn't acquisition, and counting it as a source would
+    make the site look like its own biggest referrer."""
+    assert event_log.referrer_host(
+        "https://www.forgefiles.org/pdf-to-word", self_host="www.forgefiles.org"
+    ) == event_log.REFERRER_INTERNAL
+
+
+def test_track_records_the_referrer_host_on_page_views(event_db, auth_client):
+    auth_client.post(
+        "/api/track",
+        json={"event": "page_view", "label": "/pdf-to-word",
+              "ref": "https://www.google.com/search?q=pdf+to+word"},
+    )
+    rows = _read_funnel(event_db)
+    assert len(rows) == 1
+    assert rows[0]["referrer"] == "google.com"
+
+
+def test_track_records_no_referrer_on_later_funnel_steps(event_db, auth_client):
+    """Only page_view answers "where did they come from" — on a tool_open the
+    referrer would just be the page they were already on."""
+    auth_client.post(
+        "/api/track",
+        json={"event": "tool_open", "label": "pdf", "ref": "https://www.google.com/"},
+    )
+    assert _read_funnel(event_db)[0]["referrer"] is None
+
+
+# --- upload size ------------------------------------------------------------
+
+def test_request_bytes_recorded_from_the_request_context(event_db):
+    """Captured once in the middleware rather than at ~40 log_event call sites."""
+    token = event_log.set_request_bytes(4096)
+    try:
+        event_log.log_event("convert", success=True, duration_ms=10)
+    finally:
+        event_log.reset_request_bytes(token)
+    assert read_rows(event_db)[0]["request_bytes"] == 4096
+
+
+def test_request_bytes_is_null_when_unknown(event_db):
+    """A chunked upload sends no Content-Length. NULL is the honest answer —
+    it must not be recorded as a zero-byte file."""
+    event_log.log_event("convert", success=True, duration_ms=10)
+    assert read_rows(event_db)[0]["request_bytes"] is None
+
+
+def test_streaming_conversion_records_the_upload_size(event_db, mock_dirs, auth_client,
+                                                      sample_pdf):
+    """The PDF→Word worker runs on a raw threading.Thread, which does NOT
+    inherit contextvars — so the size has to be captured in the handler and
+    passed down, exactly like country/session_id. These are also the slowest
+    operations on the site, so they're the ones whose size matters most."""
+    with open(sample_pdf, "rb") as fh:
+        resp = auth_client.post(
+            "/api/pdf/convert-to-word-stream",
+            files={"file": ("in.pdf", fh, "application/pdf")},
+        )
+    assert resp.status_code == 200
+    rows = [r for r in read_rows(event_db) if r["operation"].startswith("pdf_to_word")]
+    assert rows and rows[-1]["request_bytes"] > 0
+
+
+def test_api_operation_records_the_upload_size(event_db, mock_dirs, auth_client, sample_pdf):
+    """End-to-end through the middleware: a real upload carries its size."""
+    with open(sample_pdf, "rb") as fh:
+        resp = auth_client.post(
+            "/api/pdf/rotate",
+            files={"file": ("in.pdf", fh, "application/pdf")},
+            data={"angle": "90"},
+        )
+    assert resp.status_code == 200
+    rows = read_rows(event_db)
+    assert rows and rows[-1]["request_bytes"] > 0
+
+
+# --- schema migration -------------------------------------------------------
+
+def test_columns_are_added_to_a_pre_existing_database(tmp_path, monkeypatch):
+    """CREATE TABLE IF NOT EXISTS leaves an existing table alone, so the ALTERs
+    are what actually migrate the production DB. Old rows read back as NULL."""
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        "CREATE TABLE operation_events (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " timestamp TEXT NOT NULL, operation TEXT NOT NULL,"
+        " use_ai INTEGER NOT NULL DEFAULT 0, success INTEGER NOT NULL,"
+        " duration_ms INTEGER NOT NULL, error TEXT, country TEXT, session_id TEXT);"
+        "CREATE TABLE funnel_events (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " timestamp TEXT NOT NULL, event TEXT NOT NULL, label TEXT,"
+        " country TEXT, session_id TEXT);"
+    )
+    conn.execute(
+        "INSERT INTO operation_events (timestamp, operation, success, duration_ms)"
+        " VALUES ('2026-01-01T00:00:00.000+00:00', 'legacy', 1, 10)"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("EVENT_DB_PATH", str(db))
+    event_log.close_connections()
+    event_log._initialized_paths.discard(str(db))
+    event_log.log_event("fresh", success=True, duration_ms=20, request_bytes=999)
+
+    rows = read_rows(db)
+    assert {r["operation"]: r["request_bytes"] for r in rows} == {"legacy": None, "fresh": 999}
+    check = sqlite3.connect(db)
+    try:
+        cols = {r[1] for r in check.execute("PRAGMA table_info(funnel_events)")}
+    finally:
+        check.close()
+    assert "referrer" in cols
+
+
 # ---------------------------------------------------------------------------
 # The write path (issue #17)
 #

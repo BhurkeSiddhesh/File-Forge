@@ -1,5 +1,7 @@
+import contextlib
 import threading
 import logging
+import re
 import uuid
 import pikepdf
 from pathlib import Path
@@ -516,16 +518,168 @@ def _use_multiprocessing() -> bool:
     return _available_cores() >= _MULTIPROCESSING_MIN_CORES
 
 
-def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
-    """Shared pdf2docx conversion core, used by both the standard converter
-    and pdf_to_word_ai's automatic text-layer routing."""
-    from pdf2docx import Converter
+# pdf2docx reports its own per-page progress with `logging.info` on the ROOT
+# logger, in the fixed form "(3/17) Page 3" — twice per document, once while
+# parsing pages and once while writing them. That is the only progress signal
+# it exposes: convert() takes no callback. Parsing it back out of a log record
+# is not elegant, but the alternative is a 6-minute conversion that streams
+# nothing at all, and the SSE endpoint exists precisely to avoid that.
+_PDF2DOCX_PAGE_LOG = re.compile(r"^\((\d+)/(\d+)\)\s+Page\s+\d+")
 
-    multi = _use_multiprocessing()
-    cv = Converter(decrypted_path)
+
+class _Pdf2docxProgress(logging.Handler):
+    """Translate pdf2docx's page logs into progress_callback calls.
+
+    Scoped to the calling thread: this attaches to the root logger, so in a
+    server handling concurrent conversions it would otherwise see every other
+    conversion's pages too and report one request's progress into another's
+    stream. pdf2docx's serial path logs from the thread that called it, so
+    thread identity is the correct filter.
+
+    How many passes are visible depends on the mode, so the caller says which:
+
+    * serial — both the parsing and the writing pass log in this thread. They
+      are folded into one monotonic 0..total count, because reporting each as
+      1..total would send the progress bar back to the start halfway through,
+      which reads as a failure to anyone watching it.
+    * multiprocessing — parsing happens in subprocesses whose logging never
+      reaches this process, so only the writing pass is visible and it maps
+      straight through.
+    """
+
+    def __init__(self, progress_callback, single_pass: bool):
+        super().__init__(level=logging.INFO)
+        self._callback = progress_callback
+        self._single_pass = single_pass
+        self._thread = threading.get_ident()
+        self._seen_first_pass = False
+        self._furthest = 0
+
+    def emit(self, record):
+        # A logging handler that raises would take the conversion down with
+        # it — this is progress reporting, it must never be load-bearing.
+        try:
+            if record.thread != self._thread:
+                return
+            match = _PDF2DOCX_PAGE_LOG.match(record.getMessage())
+            if not match:
+                return
+            done, total = int(match.group(1)), int(match.group(2))
+            if self._single_pass:
+                _safe_progress(self._callback, min(done, total), total)
+                return
+            if done < self._furthest:
+                self._seen_first_pass = True  # counter restarted: second pass
+            self._furthest = done
+            half = total / 2
+            scaled = (half + done / 2) if self._seen_first_pass else (done / 2)
+            _safe_progress(self._callback, min(int(scaled), total), total)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@contextlib.contextmanager
+def _pdf2docx_progress(progress_callback, single_pass: bool):
+    """Attach the progress handler for the duration of a conversion."""
+    if progress_callback is None:
+        yield
+        return
+    handler = _Pdf2docxProgress(progress_callback, single_pass)
+    root = logging.getLogger()
+    # pdf2docx logs at INFO; if the root logger is above that the records are
+    # dropped before any handler sees them, so make sure they get through.
+    previous_level = root.level
+    if previous_level > logging.INFO:
+        root.setLevel(logging.INFO)
+    root.addHandler(handler)
+    try:
+        yield
+    finally:
+        root.removeHandler(handler)
+        if previous_level > logging.INFO:
+            root.setLevel(previous_level)
+
+
+# A missing *system* library surfaces as an ImportError naming a .so file —
+# "libGL.so.1: cannot open shared object file". pdf2docx imports cv2, so a host
+# that never installed the OpenCV runtime libraries fails here rather than at
+# startup, once per conversion, for as long as nobody notices.
+_MISSING_SHARED_LIB = re.compile(r"(lib[\w.+-]*\.so[\w.]*)")
+
+
+class ServerDependencyError(ImportError):
+    """A required component is missing from the *server*, not the user's file.
+
+    Raised instead of letting a raw ImportError reach the user. The two read
+    very differently: "libGL.so.1: cannot open shared object file" invites
+    someone to go and re-save their PDF, which cannot possibly help, while this
+    says the problem is ours and their file was never the issue.
+
+    Subclasses ImportError rather than RuntimeError so it stays exactly what it
+    replaced: callers and tests that treat a missing dependency as an
+    ImportError keep working, and only the message and the HTTP status change.
+    """
+
+
+def _server_dependency_error(feature: str, exc: Exception) -> "ServerDependencyError":
+    """Translate a missing-dependency ImportError, and log it for the operator."""
+    match = _MISSING_SHARED_LIB.search(str(exc))
+    library = match.group(1) if match else None
+    logger.error(
+        "%s is unavailable: a required dependency is missing on this host (%s). "
+        "This is a provisioning gap, not a code bug — see "
+        "docs/fix-libreoffice-libgl-oracle.md for the runbook.",
+        feature, exc,
+    )
+    detail = f" (missing system library {library})" if library else ""
+    return ServerDependencyError(
+        f"{feature} is temporarily unavailable on this server{detail}. "
+        "This is a server configuration problem, not a problem with your file — "
+        "nothing you change about the document will help. Please try again later."
+    )
+
+
+# Once a multiprocessing pass has failed in this process it will keep failing —
+# the causes are environmental (no fork, no /dev/shm, a cgroup CPU budget), not
+# per-document. Remembering it turns "every conversion silently costs two full
+# conversions" into "the first one does".
+_multiprocessing_broken = False
+
+
+def _convert_pdf2docx(decrypted_path: str, output_file: Path,
+                      progress_callback=None) -> None:
+    """Shared pdf2docx conversion core, used by both the standard converter
+    and pdf_to_word_ai's automatic text-layer routing.
+
+    `progress_callback(page_done, total_pages)` is driven from pdf2docx's own
+    page logging. Under multiprocessing only the writing pass is visible (the
+    parsing pass runs in subprocesses), which is the right way round: that mode
+    is the fast one, and the slow serial path — where a user most needs to be
+    told something is still happening — reports both passes.
+    """
+    global _multiprocessing_broken
+    # pdf2docx pulls in cv2, which needs OpenCV's runtime shared libraries. On a
+    # host missing them this is where every PDF→Word conversion dies, and the
+    # raw message names a .so file the user can do nothing about. Both the
+    # import and the construction are covered: which of the two raises depends
+    # on whether the dependency underneath is imported eagerly or lazily.
+    try:
+        from pdf2docx import Converter
+
+        cv = Converter(decrypted_path)
+    except ImportError as exc:
+        raise _server_dependency_error("PDF to Word conversion", exc) from exc
+
+    multi = _use_multiprocessing() and not _multiprocessing_broken
     try:
         try:
-            cv.convert(str(output_file), multi_processing=multi)
+            with _pdf2docx_progress(progress_callback, single_pass=multi):
+                cv.convert(str(output_file), multi_processing=multi)
+        except ImportError as exc:
+            # A lazily-imported dependency can fail here rather than above.
+            # Caught before the retry below so it surfaces on the first attempt
+            # instead of doubling the wait before the same failure.
+            raise _server_dependency_error("PDF to Word conversion", exc) from exc
         except (OSError, RuntimeError, ValueError, AssertionError) as exc:
             # Some environments (e.g. spawn-only Windows workers) can't fork —
             # fall back to a serial pass. Deliberately narrow: this retry costs
@@ -536,10 +690,13 @@ def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
             if not multi:
                 raise
             logger.warning(
-                "pdf2docx multiprocessing pass failed (%s: %s) — retrying serially",
+                "pdf2docx multiprocessing pass failed (%s: %s) — retrying "
+                "serially, and using the serial path directly from now on",
                 type(exc).__name__, exc,
             )
-            cv.convert(str(output_file))
+            _multiprocessing_broken = True
+            with _pdf2docx_progress(progress_callback, single_pass=False):
+                cv.convert(str(output_file))
     finally:
         # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
         # is called. Without this finally block, a failed convert() would leak
@@ -547,15 +704,23 @@ def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
         cv.close()
 
 
-def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
-    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
+def pdf_to_docx(input_path: str, output_dir: str, password: str = None,
+                progress_callback=None) -> str:
+    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based).
+
+    `progress_callback(page_done, total_pages)` mirrors pdf_to_word_ai's, so
+    the streaming endpoint can report progress on this path too. It could not
+    before: the standard converter is the *slower* of the two on long
+    documents, and it was the one streaming nothing between "start" and a
+    result several minutes later.
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
     try:
-        _convert_pdf2docx(decrypted_path, output_file)
+        _convert_pdf2docx(decrypted_path, output_file, progress_callback)
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
@@ -1449,8 +1614,27 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
             if libreoffice_output != output_file:
                 libreoffice_output.replace(output_file)
             return str(output_file)
+        # Reached LibreOffice but it refused the document. Logged, because the
+        # fallback below silently produces a lower-fidelity result and the
+        # reason is otherwise lost.
+        logger.warning(
+            "LibreOffice could not convert %s (exit %s): %s",
+            input_file.name, result.returncode, (result.stderr or "").strip()[:300],
+        )
+    except FileNotFoundError:
+        # LibreOffice isn't installed at all — the state the Oracle VM was found
+        # in on 2026-07-21. Every .doc/.odt/.rtf conversion fails outright and
+        # .docx quietly drops to the low-fidelity path; worth saying loudly
+        # once per conversion rather than swallowing.
+        logger.error(
+            "LibreOffice is not installed on this host, so %s conversions fall back "
+            "to the low-fidelity pure-Python path (and non-.docx input fails "
+            "outright). See docs/fix-libreoffice-libgl-oracle.md.", suffix,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("LibreOffice timed out converting %s", input_file.name)
     except Exception:
-        pass
+        logger.warning("LibreOffice conversion of %s failed", input_file.name, exc_info=True)
 
     # ── Pure-Python fallback (DOCX only) ──────────────────────
     if suffix != ".docx":

@@ -15,6 +15,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # --- Logging Setup ---
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -29,6 +30,7 @@ if not logger.handlers:
 
 from fastapi.concurrency import run_in_threadpool
 from scripts.pdf_utils import (
+    ServerDependencyError,
     remove_pdf_password,
     pdf_to_docx,
     pdf_to_word_ai,
@@ -787,6 +789,19 @@ SESSION_COOKIE_NAME = "ff_sid"
 SESSION_COOKIE_MAX_AGE = 365 * 24 * 3600
 
 
+def _content_length(request: Request) -> Optional[int]:
+    """The request's Content-Length as a non-negative int, or None if absent
+    or malformed (a chunked upload sends no Content-Length at all)."""
+    raw = request.headers.get("content-length")
+    if not raw:
+        return None
+    try:
+        size = int(raw)
+    except ValueError:
+        return None
+    return size if size >= 0 else None
+
+
 @app.middleware("http")
 async def event_context_middleware(request: Request, call_next):
     """Expose CF-IPCountry and an anonymous session id to scripts/event_log.
@@ -804,10 +819,17 @@ async def event_context_middleware(request: Request, call_next):
     if is_new_session:
         session_id = str(uuid.uuid4())
     token = event_log.set_request_context(country, session_id)
+    # How big the upload was. Taken here, once, rather than at each of the ~40
+    # log_event() call sites: every operation runs inside a request, so the
+    # middleware is the one place that sees the size for all of them. It is the
+    # request body, not the file — close enough to answer "are the slow runs
+    # just the big files?", which is the question p95 alone can't.
+    bytes_token = event_log.set_request_bytes(_content_length(request))
     try:
         response = await call_next(request)
     finally:
         event_log.reset_request_context(token)
+        event_log.reset_request_bytes(bytes_token)
     if is_new_session:
         response.set_cookie(
             SESSION_COOKIE_NAME,
@@ -942,6 +964,12 @@ async def api_convert_to_word(
 
         logger.info("Conversion successful: %s", output_path)
         return {"status": "success", "message": message, **download_fields(output_path)}
+    except ServerDependencyError as e:
+        # 503, not the blanket 400 below: the server is missing a component, so
+        # calling it a bad request points the user at their own file and tells
+        # uptime monitoring that everything is fine.
+        logger.exception("Conversion unavailable for %s", safe_filename)
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -973,8 +1001,12 @@ async def api_convert_to_word_stream(
     temp_path = save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     # Captured here because the worker runs on a raw thread, where the
-    # middleware's contextvars don't propagate.
+    # middleware's contextvars don't propagate. The upload size comes along for
+    # the same reason — and it matters most here, since these are the slowest
+    # operations on the site and "was it just a big file?" is the first
+    # question their duration raises.
     ctx_country, ctx_session = event_log.get_request_context()
+    ctx_bytes = event_log.get_request_bytes()
     op_name = "pdf_to_word_ai" if use_ai else "pdf_to_word_standard"
 
     async def event_stream():
@@ -992,13 +1024,16 @@ async def api_convert_to_word_stream(
                         str(temp_path), str(result_dir), password, progress_callback=progress_cb,
                         method_callback=lambda m: ai_method.__setitem__("value", m),
                         use_ai=True, country=ctx_country, session_id=ctx_session,
+                        request_bytes=ctx_bytes,
                     )
                     method = ai_method.get("value")
                     message = _ai_conversion_message(method)
                 else:
                     output_path = event_log.timed_call(
                         op_name, pdf_to_docx, str(temp_path), str(result_dir), password,
+                        progress_callback=progress_cb,
                         country=ctx_country, session_id=ctx_session,
+                        request_bytes=ctx_bytes,
                     )
                     method = "standard"
                     message = "Converted to Word (Standard)"
@@ -2600,10 +2635,17 @@ async def api_track(request: Request):
     file_processed, file_downloaded) into the local event log.
 
     This is the first-party replacement for a third-party analytics beacon: the
-    browser POSTs a tiny JSON body ({event, label}) via navigator.sendBeacon, and
-    the session id + coarse country come from the request-context middleware (this
-    route is under /api/, so the anonymous ff_sid cookie and CF-IPCountry header
-    are already applied). No file names, contents, IPs, or PII are ever stored.
+    browser POSTs a tiny JSON body ({event, label, ref}) via navigator.sendBeacon,
+    and the session id + coarse country come from the request-context middleware
+    (this route is under /api/, so the anonymous ff_sid cookie and CF-IPCountry
+    header are already applied). No file names, contents, IPs, or PII are ever
+    stored.
+
+    `ref` is the browser's document.referrer, and is reduced to a bare host here
+    before anything is written — see event_log.referrer_host(). It has to come
+    from the client: the Referer header on this POST is our own page, not the
+    site the visitor arrived from. Recorded on page_view only, since that is the
+    only event where "where did they come from" is a question with an answer.
 
     Always answers 204: a tracking beacon must never surface an error to the UI,
     and unknown event names are silently ignored inside log_funnel_event().
@@ -2623,8 +2665,17 @@ async def api_track(request: Request):
         event = str(body.get("event") or "")[:40]
         label = body.get("label")
         label = label if isinstance(label, str) else None
+        referrer = None
+        if event == "page_view":
+            raw_ref = body.get("ref")
+            referrer = event_log.referrer_host(
+                raw_ref if isinstance(raw_ref, str) else None,
+                self_host=urlsplit(BASE_URL).hostname,
+            )
         if event:
-            await run_in_threadpool(partial(event_log.log_funnel_event, event, label=label))
+            await run_in_threadpool(
+                partial(event_log.log_funnel_event, event, label=label, referrer=referrer)
+            )
     return Response(status_code=204)
 
 

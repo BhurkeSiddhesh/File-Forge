@@ -10,9 +10,18 @@
 //
 // Event names must match event_log.FUNNEL_EVENTS on the server:
 //   page_view · tool_open · file_processed · file_downloaded
+//
+// `ref` is document.referrer, sent on page_view only and reduced to a bare host
+// server-side (never stored as a full URL). It has to come from here: the
+// Referer header on the beacon itself is our own page, so the server has no
+// other way to see which site sent the visitor.
 function ffTrack(event, label) {
     try {
-        const payload = JSON.stringify({ event: event, label: label || null });
+        const payload = JSON.stringify({
+            event: event,
+            label: label || null,
+            ref: event === 'page_view' ? (document.referrer || '') : undefined,
+        });
         const url = (typeof apiUrl === 'function') ? apiUrl('/api/track') : '/api/track';
         if (navigator && typeof navigator.sendBeacon === 'function') {
             navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
@@ -2869,7 +2878,72 @@ window.ffConsumePendingOp = ffConsumePendingOp;
     }
     ffPendingOp = op.card;
     ffHighlightCard(op.card);
+
+    // ?handoff=1 means the visitor already chose a file on the SEO landing
+    // page and static/seo-upload.js stashed it in IndexedDB. Pick it up and
+    // feed it to this category's file input exactly as if it had been chosen
+    // here, so landing → upload → result is one motion with no second file
+    // picker. Any failure just leaves the normal empty upload box in place.
+    if (params.get('handoff') === '1') {
+        ffClaimHandoff(requestedTool);
+    }
 })();
+
+// Category → the file input a handed-off file belongs in. Mirrors the inputs
+// in index.html; a category missing here simply doesn't accept a handoff.
+const FF_CATEGORY_INPUTS = {
+    pdf: 'file-input',
+    image: 'image-file-input',
+    excel: 'excel-file-input',
+    ppt: 'ppt-file-input',
+    word: 'word-file-input',
+    workflow: 'workflow-file-input',
+};
+
+function ffClaimHandoff(tool) {
+    const inputId = FF_CATEGORY_INPUTS[tool];
+    if (!inputId || !window.indexedDB || typeof DataTransfer === 'undefined') return;
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let db;
+    const req = indexedDB.open('ff_handoff', 1);
+    // The landing page creates the store; if it never ran there is nothing to
+    // claim, so don't create it here just to find it empty.
+    req.onupgradeneeded = () => {
+        try { req.transaction.abort(); } catch (e) { }
+    };
+    req.onerror = () => { };
+    req.onsuccess = () => {
+        db = req.result;
+        if (!db.objectStoreNames.contains('files')) { db.close(); return; }
+        let record;
+        const tx = db.transaction('files', 'readwrite');
+        const store = tx.objectStore('files');
+        const get = store.get('pending');
+        get.onsuccess = () => {
+            record = get.result;
+            // Consumed on read: a stale file resurfacing on a later visit
+            // would silently convert the wrong document.
+            store.delete('pending');
+        };
+        tx.oncomplete = () => {
+            db.close();
+            if (!record || !record.blob) return;
+            try {
+                const file = new File([record.blob], record.name || 'upload',
+                    { type: record.type || record.blob.type || '' });
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch (e) {
+                // Leaves the empty upload box — the pre-handoff behaviour.
+            }
+        };
+        tx.onerror = () => { db.close(); };
+    };
+}
 
 // Theme Toggle Logic
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
