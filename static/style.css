@@ -1067,8 +1067,17 @@ body {
     transition: opacity 0.2s;
 }
 
-.workflow-step-card:hover .remove-step {
+.workflow-step-card:hover .remove-step,
+.workflow-step-card:focus-within .remove-step {
     opacity: 1;
+}
+
+/* No hover on touch devices — a hover-only reveal is permanently invisible
+   there, so show it unconditionally instead of hiding step removal. */
+@media (hover: none) {
+    .workflow-step-card .remove-step {
+        opacity: 1;
+    }
 }
 
 .workflow-step-card .config-btn {
@@ -1399,7 +1408,9 @@ body {
 .tool-card:focus-visible,
 .action-card:focus-visible,
 .drop-zone:focus-visible,
-.step-item:focus-visible {
+.step-item:focus-visible,
+.remove-step:focus-visible,
+.config-btn:focus-visible {
     outline: 2px solid var(--ink);
     outline-offset: 3px;
 }

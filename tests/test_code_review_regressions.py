@@ -31,14 +31,10 @@ def tolerant_client():
 
 
 class TestWorkflowStepValidation:
-    """steps='[]' passes json.loads, then `raise ValueError('No steps provided')`
-    escapes the try block (which only catches json.JSONDecodeError) and becomes
-    an unhandled 500 for a plain client-input mistake."""
+    """steps='[]' and non-list steps JSON (e.g. '0') now validated up front —
+    isinstance(step_list, list) and non-empty are checked before the loop runs,
+    so both 400 rather than escaping as an unhandled 500 (#79)."""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: empty steps list raises uncaught ValueError -> 500; should be 400",
-    )
     def test_empty_steps_list_is_client_error(self, tolerant_client, sample_pdf):
         with open(sample_pdf, "rb") as f:
             r = tolerant_client.post(
@@ -48,10 +44,6 @@ class TestWorkflowStepValidation:
             )
         assert r.status_code == 400
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: non-list steps JSON (e.g. '0') raises uncaught ValueError -> 500; should be 400",
-    )
     def test_non_list_steps_json_is_client_error(self, tolerant_client, sample_pdf):
         with open(sample_pdf, "rb") as f:
             r = tolerant_client.post(

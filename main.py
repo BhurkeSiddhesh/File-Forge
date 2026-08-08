@@ -169,6 +169,10 @@ MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
 MAX_UPLOAD_TOTAL_MB_ENV = os.environ.get("MAX_UPLOAD_TOTAL_MB", "").strip()
 DISABLE_AI = os.environ.get("DISABLE_AI", "0") == "1"
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", "3600"))
+# Bounds how many steps a single /api/workflow/execute request can chain, so a
+# caller can't pair a huge step list with the heavy-tier rate limit to pin the
+# server on one "request".
+MAX_WORKFLOW_STEPS = int(os.environ.get("MAX_WORKFLOW_STEPS", "20"))
 
 # --- Google AdSense (optional, fully env-gated) ---
 # When ADSENSE_CLIENT is unset, every ad placeholder renders empty — zero markup,
@@ -1703,15 +1707,22 @@ async def execute_workflow(
     from fastapi.responses import StreamingResponse
 
     safe_filename = secure_filename(file.filename)
-    logger.info("Workflow started: %s, steps=%s", safe_filename, steps)
 
-    # Parse steps JSON
+    # Validate before logging anything: `steps` is a raw, unbounded client
+    # form field, so nothing about it is safe to write to the log until it's
+    # confirmed to be a bounded list of step objects.
     try:
         step_list = json.loads(steps)
-        if not step_list:
-            raise ValueError("No steps provided")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid steps JSON")
+    if not isinstance(step_list, list) or not step_list:
+        raise HTTPException(status_code=400, detail="steps must be a non-empty list")
+    if len(step_list) > MAX_WORKFLOW_STEPS:
+        raise HTTPException(status_code=400, detail=f"Too many steps (max {MAX_WORKFLOW_STEPS})")
+    if not all(isinstance(s, dict) for s in step_list):
+        raise HTTPException(status_code=400, detail="Each step must be an object")
+
+    logger.info("Workflow started: %s, %d step(s)", safe_filename, len(step_list))
 
     # Saved after the steps parse, so a malformed request never touches disk.
     # The step list decides what the file really has to be, so the intake here
