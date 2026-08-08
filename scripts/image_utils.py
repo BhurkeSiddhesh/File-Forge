@@ -12,6 +12,29 @@ from scripts.utils import branded_filename, original_stem, try_font
 pillow_heif.register_heif_opener()
 
 
+def _flatten_to_rgb(img: Image.Image, background=(255, 255, 255)) -> Image.Image:
+    """
+    Convert `img` to RGB for JPEG output, compositing any transparency onto a
+    solid background first.
+
+    ``Image.convert("RGB")`` does NOT do this: it silently discards the alpha
+    channel and keeps whatever RGB values happen to sit underneath it. Many
+    PNG/WebP encoders zero out (or leave garbage in) the color channels of
+    fully-transparent pixels since they don't matter visually — so a naive
+    convert renders a solid black (or arbitrary palette-color) hole wherever
+    the source image was meant to look empty. Compositing onto `background`
+    first (how browsers and image editors flatten transparency) avoids that.
+    """
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        rgba = img.convert("RGBA")
+        flattened = Image.new("RGB", rgba.size, background)
+        flattened.paste(rgba, mask=rgba.split()[3])
+        return flattened
+    if img.mode != "RGB":
+        return img.convert("RGB")
+    return img
+
+
 def _prepare_image(img: Image.Image) -> Image.Image:
     """
     Prepare image for processing: normalize orientation and convert to RGB.
@@ -25,9 +48,10 @@ def _prepare_image(img: Image.Image) -> Image.Image:
     # Normalize orientation (handle EXIF tags)
     img = ImageOps.exif_transpose(img)
 
-    # Convert RGBA or palette mode to RGB for JPEG compatibility
-    if img.mode in ("RGBA", "P"):
-        img = img.convert("RGB")
+    # Convert RGBA/palette/grayscale-alpha to RGB for JPEG compatibility,
+    # flattening any transparency onto white instead of dropping it.
+    if img.mode != "RGB":
+        img = _flatten_to_rgb(img)
 
     return img
 
@@ -107,9 +131,9 @@ def heic_to_jpeg(input_path: str, output_dir: str, quality: int = 95) -> str:
         # Capture color profile + metadata before the RGB conversion below, which
         # may not carry ``info`` forward on every Pillow version.
         save_kwargs = _preserved_save_kwargs(img)
-        # Convert RGBA / palette / LA to RGB for JPEG compatibility.
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
+        # Convert RGBA / palette / LA to RGB for JPEG compatibility, flattening
+        # any transparency onto white instead of dropping it.
+        img = _flatten_to_rgb(img)
         img.save(output_file, "JPEG", quality=quality, optimize=True, **save_kwargs)
 
     return str(output_file)
@@ -280,8 +304,7 @@ def _save_pil(img: Image.Image, output_file: Path, fmt: str, quality: int = 90) 
     """Save a PIL image in the chosen format with sane defaults."""
     pil_fmt = _FORMAT_PIL[fmt]
     if pil_fmt == "JPEG":
-        if img.mode != "RGB":
-            img = img.convert("RGB")
+        img = _flatten_to_rgb(img)
         img.save(output_file, pil_fmt, quality=quality, optimize=True)
     elif pil_fmt == "PNG":
         img.save(output_file, pil_fmt, optimize=True)
@@ -352,10 +375,9 @@ def convert_image_format(input_path: str, output_dir: str, target_format: str, q
 
     with Image.open(input_file) as img:
         img = ImageOps.exif_transpose(img)
-        # PNG/WebP can keep alpha; JPEG cannot.
-        if target_format in ("jpg", "jpeg") and img.mode in ("RGBA", "LA", "P"):
-            img = img.convert("RGB")
-        elif target_format == "png" and img.mode == "P":
+        # PNG/WebP can keep alpha; JPEG cannot, so _save_pil flattens it onto
+        # white for that target instead of dropping it.
+        if target_format == "png" and img.mode == "P":
             img = img.convert("RGBA")
         _save_pil(img, output_file, target_format, quality=quality)
 
@@ -434,8 +456,6 @@ def watermark_image(
             draw.text(pos, text, font=font, fill=(*rgb, alpha))
 
         composed = Image.alpha_composite(img, overlay)
-        if fmt in ("jpg", "jpeg"):
-            composed = composed.convert("RGB")
         _save_pil(composed, output_file, fmt, quality=quality)
 
     return str(output_file)

@@ -181,3 +181,143 @@ def test_heic_to_jpeg_no_metadata_is_safe(tmp_path):
         assert j.size == (48, 32)
         assert not j.info.get("icc_profile")
         assert not j.info.get("xmp")
+
+
+# ── Alpha flattens to white, not black, when a transparent image is forced to JPEG ──
+#
+# Image.convert("RGB") drops the alpha channel and keeps whatever RGB values sit
+# underneath it. Many PNG/WebP encoders zero those out for fully-transparent
+# pixels, so a naive convert renders a solid black hole where the image should
+# look empty. Every JPEG-output path in image_utils.py must composite onto white
+# first instead.
+
+def _transparent_png(path):
+    """A red square on a fully-transparent background whose RGB channels are
+    black underneath — the exact shape that exposes the naive-convert bug."""
+    from PIL import Image
+
+    img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    px = img.load()
+    for x in range(20, 80):
+        for y in range(20, 80):
+            px[x, y] = (255, 0, 0, 255)
+    img.save(path, "PNG")
+    return path
+
+
+class TestAlphaFlattensToWhite:
+    def test_flatten_to_rgb_helper_composites_on_white(self):
+        from PIL import Image
+        from scripts.image_utils import _flatten_to_rgb
+
+        img = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
+        flattened = _flatten_to_rgb(img)
+        assert flattened.mode == "RGB"
+        assert flattened.getpixel((0, 0)) == (255, 255, 255)
+
+    def test_flatten_to_rgb_is_noop_for_opaque_rgb(self):
+        from PIL import Image
+        from scripts.image_utils import _flatten_to_rgb
+
+        img = Image.new("RGB", (10, 10), (30, 60, 90))
+        assert _flatten_to_rgb(img) is img
+
+    def test_resize_image_transparent_png_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import resize_image
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = resize_image(str(src), str(tmp_path), mode="dimensions", width=50)
+        with Image.open(out) as r:
+            r, g, b = r.getpixel((2, 2))
+        assert (r, g, b) != (0, 0, 0)
+        assert r > 200 and g > 200 and b > 200
+
+    def test_crop_image_transparent_png_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import crop_image
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = crop_image(str(src), str(tmp_path), x=0, y=0, width=100, height=100)
+        with Image.open(out) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_convert_image_format_to_jpg_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import convert_image_format
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = convert_image_format(str(src), str(tmp_path), "jpg")
+        with Image.open(out) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_compress_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
+        """compress_image falls back to jpg for extensions outside jpg/png/webp."""
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        src = tmp_path / "trans.bmp"
+        _transparent_png(src)
+        result = compress_image(str(src), str(tmp_path), quality=80)
+        with Image.open(result["output_path"]) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_watermark_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import watermark_image
+
+        src = tmp_path / "trans.bmp"
+        _transparent_png(src)
+        out = watermark_image(str(src), str(tmp_path), "DRAFT", position="top-left")
+        with Image.open(out) as r:
+            assert r.getpixel((90, 90)) == (255, 255, 255)
+
+    def test_heic_to_jpeg_alpha_flattens_to_white(self, tmp_path):
+        import pillow_heif
+        from PIL import Image
+        from scripts.image_utils import heic_to_jpeg
+
+        pillow_heif.register_heif_opener()
+        img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        px = img.load()
+        for x in range(20, 80):
+            for y in range(20, 80):
+                px[x, y] = (255, 0, 0, 255)
+        src = tmp_path / "trans.heic"
+        img.save(src, format="HEIF", quality=95)
+
+        out = heic_to_jpeg(str(src), str(tmp_path))
+        with Image.open(out) as r:
+            corner = r.getpixel((2, 2))
+        assert corner != (0, 0, 0)
+        assert all(c > 200 for c in corner)
+
+    def test_opaque_jpeg_inputs_unaffected_by_flatten(self, tmp_path):
+        """Zero-regression guard: an already-opaque source must still produce a
+        plain RGB output (no alpha-compositing path is taken) for every
+        affected function."""
+        from PIL import Image
+        from scripts.image_utils import (
+            compress_image, convert_image_format, crop_image,
+            resize_image, rotate_image, watermark_image,
+        )
+
+        src = tmp_path / "opaque.jpg"
+        Image.new("RGB", (100, 100), (30, 60, 90)).save(src, "JPEG", quality=95)
+
+        # Each op gets its own subdir: several of them brand to the same
+        # filename (same input stem + extension), so sharing a directory
+        # would make later calls silently overwrite earlier outputs.
+        ops = {
+            "resize": lambda d: resize_image(str(src), d, mode="percentage", percentage=50),
+            "crop": lambda d: crop_image(str(src), d, x=0, y=0, width=50, height=50),
+            "compress": lambda d: compress_image(str(src), d, quality=80)["output_path"],
+            "convert": lambda d: convert_image_format(str(src), d, "png"),
+            "watermark": lambda d: watermark_image(str(src), d, "X", position="top-left"),
+            "rotate": lambda d: rotate_image(str(src), d, angle=90),
+        }
+        for name, op in ops.items():
+            out_dir = tmp_path / name
+            out_dir.mkdir()
+            with Image.open(op(str(out_dir))) as r:
+                assert r.mode == "RGB"
