@@ -941,6 +941,38 @@ class TestAnnotatePDF:
         result = annotate_pdf(str(simple_pdf), str(out), [self._make_annot("redact")])
         assert Path(result).exists()
 
+    def test_redact_removes_text_and_covers_vector_graphics(self, tmp_path):
+        """A redaction must not just remove text — it must also visually cover any
+        vector graphics (drawn rects/lines) under the box. apply_redactions() on the
+        pinned PyMuPDF<1.24 has no `graphics` param (added 1.23.27) and leaves vector
+        paths in the content stream untouched; without an explicit fill the redacted
+        area was previously left blank, letting anything drawn there show straight
+        through post-redaction."""
+        import fitz
+
+        src = tmp_path / "vector.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=400)
+        page.insert_text((50, 55), "SECRET-TEXT-12345", fontsize=14)
+        page.draw_rect(fitz.Rect(40, 30, 250, 70), color=(1, 0, 0), fill=(1, 0, 0))
+        doc.save(str(src))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        ann = self._make_annot("redact", rect=[35, 25, 260, 75])
+        result = annotate_pdf(str(src), str(out), [ann])
+
+        doc2 = fitz.open(result)
+        page2 = doc2[0]
+        assert "SECRET-TEXT-12345" not in page2.get_text()
+        pix = page2.get_pixmap()
+        # Center and edge of the redacted rect must render black, not the red
+        # vector rect that was drawn underneath.
+        assert pix.pixel(140, 50) == (0, 0, 0)
+        assert pix.pixel(40, 30) == (0, 0, 0)
+        doc2.close()
+
     def test_multiple_annotations(self, simple_pdf, tmp_path):
         out = tmp_path / "out"
         out.mkdir()

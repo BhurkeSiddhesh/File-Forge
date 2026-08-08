@@ -2401,7 +2401,13 @@ def annotate_pdf(
             elif ann_type == "text":
                 page.insert_textbox(rect, content, fontname="helv", fontsize=11, color=(0, 0, 0))
             elif ann_type == "redact":
-                page.add_redact_annot(rect)
+                # `fill=(0, 0, 0)` is load-bearing: apply_redactions() on the pinned
+                # PyMuPDF<1.24 (no `graphics` param yet — added 1.23.27) strips text and
+                # blanks overlapping raster images, but leaves vector content (drawn
+                # rects/lines, form-field borders) under the rect fully visible with no
+                # fill. The black box covers that gap at the render/extraction level even
+                # though the underlying vector path stays in the content stream.
+                page.add_redact_annot(rect, fill=(0, 0, 0))
                 page.apply_redactions()
 
         doc.save(str(output_file), garbage=3, deflate=True)
