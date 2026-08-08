@@ -1773,10 +1773,20 @@ def extract_text_from_pdf(
 ) -> dict:
     """Extract all text content from a PDF to a .txt file.
 
+    Any page whose native text layer is genuinely empty (scanned/image-only)
+    is rasterized and OCR'd via the configured backend, so this - unlike a
+    plain text-layer read - actually delivers on "batch OCR" for the premium
+    tier (see batch_ocr.py) instead of silently skipping scanned pages. Pages
+    that already have native text (however little) keep it as-is; OCR is
+    never used to "improve" text that's already there, and the OCR engine is
+    only loaded when at least one page is genuinely empty.
+
     Args:
         input_path: Path to input PDF.
         output_dir: Directory to save the text file.
-        preserve_layout: If True, use 'blocks' layout; otherwise plain text.
+        preserve_layout: If True, use 'blocks' layout for natively-extracted
+            pages; otherwise plain text. OCR'd pages always use the OCR
+            engine's recognized line order regardless of this flag.
         password: PDF password if encrypted.
 
     Returns:
@@ -1789,18 +1799,33 @@ def extract_text_from_pdf(
 
     try:
         doc = fitz.open(decrypted_path)
-        all_text = []
         page_count = len(doc)
 
-        for page_num, page in enumerate(doc, start=1):
+        native_page_text = []
+        for page in doc:
             if preserve_layout:
-                text = page.get_text("blocks")
-                page_text = "\n".join(b[4].strip() for b in text if b[4].strip())
+                blocks = page.get_text("blocks")
+                text = "\n".join(b[4].strip() for b in blocks if b[4].strip())
             else:
-                page_text = page.get_text().strip()
+                text = page.get_text().strip()
+            native_page_text.append(text)
+
+        engine = None
+        if any(not text for text in native_page_text):
+            from scripts.ocr_engine import get_ocr_engine
+            engine = get_ocr_engine()
+
+        all_text = []
+        for i, page in enumerate(doc):
+            page_text = native_page_text[i]
+
+            if not page_text and engine is not None:
+                img = _render_page_bgr(page)
+                items = engine.recognize(img)
+                page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
 
             if page_text:
-                all_text.append(f"--- Page {page_num} ---\n{page_text}")
+                all_text.append(f"--- Page {i + 1} ---\n{page_text}")
 
         doc.close()
 

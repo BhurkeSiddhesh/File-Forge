@@ -6,7 +6,7 @@ from docx import Document
 from reportlab.pdfgen import canvas
 from scripts.pdf_utils import (
     remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text,
-    _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
+    extract_text_from_pdf, _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
 )
 import scripts.pdf_utils as pdf_utils_module
 import scripts.ocr_engine as ocr_engine
@@ -417,4 +417,91 @@ def test_pdf_to_word_ai_hybrid_routes_ocr_only_to_scanned_pages(tmp_path, monkey
     doc = Document(output_path)
     text = "\n".join(p.text for p in doc.paragraphs)
     assert "This page already has plenty of real embedded text content." in text
+
+
+# ---------------------------------------------------------------------------
+# extract_text_from_pdf: OCR fallback for scanned pages
+#
+# Regression coverage for a real bug: extract_text_from_pdf (the function
+# behind both the free /api/pdf/extract-text endpoint and the premium
+# "batch OCR" job in batch_ocr.py) never invoked OCR at all - a scanned PDF
+# just produced "(No text found in document)", silently failing the one
+# thing a paid "batch OCR" feature is supposed to do.
+# ---------------------------------------------------------------------------
+
+def test_extract_text_from_pdf_skips_ocr_for_text_pdf(text_rich_pdf, tmp_path, monkeypatch):
+    """A fully text-based PDF never touches the OCR engine."""
+    def _fail(*args, **kwargs):
+        raise AssertionError("OCR engine should not be loaded for a text-based PDF")
+
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", _fail)
+
+    result = extract_text_from_pdf(str(text_rich_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert "Senior Analytics Consultant" in text
+
+
+def test_extract_text_from_pdf_ocrs_scanned_pdf(scanned_like_pdf, tmp_path, monkeypatch):
+    """A scanned/image-only PDF is routed through the configured OCR engine
+    instead of producing an empty/placeholder result."""
+    from unittest.mock import MagicMock
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Recognized scanned text", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+
+    assert fake_engine.recognize.call_count == 1
+    assert "Recognized scanned text" in text
+    assert "No text found" not in text
+
+
+def test_extract_text_from_pdf_hybrid_ocrs_only_scanned_pages(tmp_path, monkeypatch):
+    """A mixed PDF (one text page, one scanned page) extracts the text page
+    natively and OCRs only the scanned page."""
+    from PIL import Image
+    from unittest.mock import MagicMock
+
+    d = tmp_path / "mixed_src"
+    d.mkdir()
+    file_path = d / "mixed.pdf"
+
+    c = canvas.Canvas(str(file_path))
+    c.drawString(72, 750, "This page already has plenty of real embedded text content.")
+    c.showPage()
+    img_path = d / "page.png"
+    Image.new("RGB", (200, 200), color="white").save(img_path)
+    c.drawImage(str(img_path), 0, 0, width=200, height=200)
+    c.showPage()
+    c.save()
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Scanned line", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    result = extract_text_from_pdf(str(file_path), str(output_dir))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+
+    assert fake_engine.recognize.call_count == 1
+    assert "This page already has plenty of real embedded text content." in text
     assert "Scanned line" in text
+
+
+def test_extract_text_from_pdf_scanned_pdf_no_ocr_engine_stays_placeholder(scanned_like_pdf, tmp_path, monkeypatch):
+    """When AI/OCR is unavailable (e.g. DISABLE_AI=1), a scanned PDF still
+    degrades gracefully to the placeholder instead of raising."""
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: None)
+
+    result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert "No text found" in text
