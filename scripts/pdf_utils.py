@@ -1948,12 +1948,14 @@ def add_page_numbers(
             else:
                 y = y_top
 
+            label_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
+
             if "left" in position:
                 x = margin
             elif "right" in position:
-                x = rect.width - margin - font_size * len(label) * 0.5
+                x = rect.width - margin - label_width
             else:  # center
-                x = rect.width / 2 - font_size * len(label) * 0.25
+                x = rect.width / 2 - label_width / 2
 
             page.insert_text(
                 fitz.Point(x, y),

@@ -698,6 +698,66 @@ class TestAddPageNumbers:
         result = add_page_numbers(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
         assert Path(result).exists()
 
+    def test_right_position_uses_exact_text_width(self, multi_page_pdf, tmp_path):
+        """Right-aligned labels must sit flush with the margin using real glyph
+        widths (fitz.get_text_length), not a per-character heuristic that
+        drifts further off with every extra digit/font-size point."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        margin = 20
+        font_size = 12
+        # start_number chosen so labels span 1-4 digits across the 4-page fixture.
+        result = add_page_numbers(
+            str(multi_page_pdf), str(out), position="bottom-right",
+            start_number=999, font_size=font_size,
+        )
+        doc = fitz.open(result)
+        try:
+            for i, page in enumerate(doc):
+                label = str(999 + i)
+                expected_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
+                expected_x = page.rect.width - margin - expected_width
+                spans = [
+                    span for block in page.get_text("dict")["blocks"]
+                    for line in block.get("lines", [])
+                    for span in line["spans"]
+                    if span["text"].strip() == label
+                ]
+                assert spans, f"page {i}: label {label!r} not found"
+                actual_x = spans[0]["bbox"][0]
+                assert abs(actual_x - expected_x) < 1.0, (
+                    f"page {i}: label {label!r} x={actual_x} expected~={expected_x}"
+                )
+        finally:
+            doc.close()
+
+    def test_center_position_is_symmetric(self, simple_pdf, tmp_path):
+        """Center-aligned label's left/right whitespace margins must match
+        within a point, using the real text width rather than a heuristic."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = add_page_numbers(str(simple_pdf), str(out), position="bottom-center")
+        doc = fitz.open(result)
+        try:
+            page = doc[0]
+            spans = [
+                span for block in page.get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+                if span["text"].strip() == "1"
+            ]
+            assert spans
+            bbox = spans[0]["bbox"]
+            left_gap = bbox[0]
+            right_gap = page.rect.width - bbox[2]
+            assert abs(left_gap - right_gap) < 1.0
+        finally:
+            doc.close()
+
 
 # ──────────────────────────────────────────────
 # Feature #61: Repair PDF
