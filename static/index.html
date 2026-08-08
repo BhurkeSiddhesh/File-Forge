@@ -1396,7 +1396,13 @@
     </main>
 
     <script src="/static/config.js?v=20260718"></script>
-    <script src="/static/script.js?v=20260623"></script>
+    <!-- On-device processing. Must precede script.js: these register the local
+         handlers that ffProcess() dispatches to, and define ffProcess itself.
+         Small (~30 KB total) — pdf-lib is fetched on demand, not from here. -->
+    <script src="/static/local/ff-local.js?v=20260802"></script>
+    <script src="/static/local/ops-image.js?v=20260802"></script>
+    <script src="/static/local/ops-pdf.js?v=20260802"></script>
+    <script src="/static/script.js?v=20260802"></script>
     {{CONSENT_BANNER}}
 </body>
 

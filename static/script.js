@@ -31,19 +31,75 @@ window.ffTrack = ffTrack;
 // send their own page_view via a tiny inline beacon.
 try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 
+// Every tool posts through this rather than calling fetch() directly, so that
+// on-device handlers (static/local/) get first refusal. The fallback matters:
+// if those scripts failed to load, this is exactly the request the tool would
+// have made anyway, so a missing local layer costs nothing instead of breaking
+// half the tools with "ffProcess is not defined".
+const ffProcess = window.ffProcess
+    || ((path, formData) => fetch(apiUrl(path), { method: 'POST', body: formData }));
+
+// Tracks which local result each download anchor is currently holding, so the
+// previous one can be released when the anchor is repointed.
+const ffHeldLocalTokens = new WeakMap();
+
 // `token` is the opaque per-result download key returned as `download_token`.
 // It is deliberately not the display filename: output names are deterministic
 // ("resume_forgefiles.org.pdf" for every "resume.pdf"), so addressing results
 // by name let anyone guess their way to a stranger's document.
-function updateDownloadLink(element, token) {
+//
+// Results processed on-device (static/local/) carry a local token instead and
+// never existed on the server. `ffLocal.resolve()` returns null for a server
+// token, which is what lets one function serve both.
+function updateDownloadLink(element, token, filename) {
     if (!element) return;
-    const url = apiUrl(`/api/download/${encodeURIComponent(token)}`);
-    element.href = url;
+
+    // Each section reuses a single anchor for every result it produces. The one
+    // it pointed at before is now unreachable, so release it — without this,
+    // every blob a visitor generates stays pinned for the life of the page.
+    const held = ffHeldLocalTokens.get(element);
+    if (held && held !== token && window.ffLocal) window.ffLocal.release(held);
+    ffHeldLocalTokens.delete(element);
+
+    const local = window.ffLocal ? window.ffLocal.resolve(token) : null;
 
     // A result is ready for download — the successful end of the processing
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
     ffTrack('file_processed', ffFunnelLabel());
+
+    if (local) {
+        ffHeldLocalTokens.set(element, token);
+        element.href = local.url;
+        // A blob URL carries no Content-Disposition, so without this the
+        // browser saves the result under its opaque URL id instead of a name.
+        element.setAttribute('download', filename || local.filename);
+
+        element.onclick = async (e) => {
+            ffTrack('file_downloaded', ffFunnelLabel());
+            // Inside the app there is no download manager to hand a blob URL
+            // to; write the bytes out and offer the system share sheet. On the
+            // web (and in a build without the plugins) this is a no-op and the
+            // anchor's own download takes over.
+            try {
+                if (await window.ffLocal.nativeShare(local.blob, local.filename)) {
+                    e.preventDefault();
+                    return false;
+                }
+            } catch (error) {
+                console.error('Native save failed, falling back to the link:', error);
+            }
+            return true;
+        };
+        return;
+    }
+
+    // Clear any `download` a previous local result left behind, or this
+    // server download would be saved under that result's filename.
+    element.removeAttribute('download');
+
+    const url = apiUrl(`/api/download/${encodeURIComponent(token)}`);
+    element.href = url;
 
     element.onclick = async (e) => {
         // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
@@ -642,10 +698,10 @@ async function processAction(url, text, formData = null) {
     }
 
     try {
-        const response = await fetch(apiUrl(url), {
-            method: 'POST',
-            body: formData
-        });
+        // Runs on-device when this tool has a local handler, otherwise posts to
+        // the backend exactly as before — either way a Response comes back, so
+        // everything below is unchanged. See static/local/ff-local.js.
+        const response = await ffProcess(url, formData);
 
         if (response.ok) {
             const data = await response.json();
@@ -688,7 +744,7 @@ function showResult(filename, message, token) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, token);
+    updateDownloadLink(downloadLink, token, filename);
 }
 
 function showCompressResult(data) {
@@ -867,10 +923,7 @@ async function processImageAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(apiUrl(url), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess(url, formData);
 
         if (response.ok) {
             const data = await response.json();
@@ -899,7 +952,7 @@ function showImageResult(filename, message, token) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, token);
+    updateDownloadLink(downloadLink, token, filename);
 }
 
 // --- Image Resize & Crop Functions ---
@@ -1133,10 +1186,7 @@ async function resizeImage() {
     statusText.innerText = "Resizing image...";
 
     try {
-        const response = await fetch(apiUrl('/api/image/resize'), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess('/api/image/resize', formData);
 
         const data = await response.json();
 
@@ -1144,7 +1194,7 @@ async function resizeImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${data.message}: ${data.filename}`;
-            updateDownloadLink(downloadLink, data.download_token);
+            updateDownloadLink(downloadLink, data.download_token, data.filename);
             downloadLink.innerText = `Download ${data.filename}`;
         } else {
             throw new Error(data.detail || 'Resize failed');
@@ -1184,10 +1234,7 @@ async function cropImage() {
     statusText.innerText = "Cropping image...";
 
     try {
-        const response = await fetch(apiUrl('/api/image/crop'), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess('/api/image/crop', formData);
 
         const respData = await response.json();
 
@@ -1195,7 +1242,7 @@ async function cropImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${respData.message}: ${respData.filename}`;
-            updateDownloadLink(downloadLink, respData.download_token);
+            updateDownloadLink(downloadLink, respData.download_token, respData.filename);
             downloadLink.innerText = `Download ${respData.filename}`;
         } else {
             throw new Error(respData.detail || 'Crop failed');
@@ -2467,9 +2514,13 @@ document.getElementById('process-page-numbers-btn')?.addEventListener('click', (
     const fd = new FormData();
     fd.append('file', selectedFile);
     fd.append('position', position);
-    fd.append('format', format);
-    fd.append('start', start);
-    fd.append('skip', skip);
+    // fmt / start_number / skip_first are the names the endpoint declares.
+    // Sent as format/start/skip they were dropped, so the numbering format,
+    // start number and skip-first controls did nothing — every document got
+    // decimal numbers from 1 on every page.
+    fd.append('fmt', format);
+    fd.append('start_number', start);
+    fd.append('skip_first', skip);
     processAction('/api/pdf/add-page-numbers', 'Adding page numbers...', fd);
 });
 
@@ -2507,7 +2558,9 @@ document.getElementById('process-create-pdf-btn')?.addEventListener('click', () 
     const mode = document.querySelector('input[name="create-pdf-mode"]:checked')?.value || 'text';
     const pagesize = document.getElementById('create-pdf-pagesize').value;
     const fd = new FormData();
-    fd.append('pagesize', pagesize);
+    // Same mismatch as image-to-pdf: the endpoints declare page_size and
+    // num_pages, so "Letter" and the page count were both being dropped.
+    fd.append('page_size', pagesize);
     if (mode === 'text') {
         const content = document.getElementById('create-pdf-content').value;
         const title = document.getElementById('create-pdf-title').value;
@@ -2517,7 +2570,7 @@ document.getElementById('process-create-pdf-btn')?.addEventListener('click', () 
         processAction('/api/pdf/create-from-text', 'Creating PDF from text...', fd);
     } else {
         const pages = document.getElementById('create-pdf-pages').value;
-        fd.append('pages', pages);
+        fd.append('num_pages', pages);
         processAction('/api/pdf/create-blank', 'Creating blank PDF...', fd);
     }
 });
@@ -2685,9 +2738,14 @@ document.getElementById('process-image-to-pdf-btn')?.addEventListener('click', (
     const pagesize = document.getElementById('image-to-pdf-pagesize').value;
     const fit = document.getElementById('image-to-pdf-fit').value;
     const fd = new FormData();
-    fd.append('file', selectedImageFile);
-    fd.append('pagesize', pagesize);
-    fd.append('fit', fit);
+    // Every name here has to be the one /api/image/to-pdf actually declares.
+    // None of them were: the file went as `file` against a required `files`,
+    // so this tool answered 422 on every click and had never worked at all,
+    // and pagesize/fit were ignored on top of that. Left alone, the on-device
+    // path would quietly start working while the server path stayed broken.
+    fd.append('files', selectedImageFile);
+    fd.append('page_size', pagesize);
+    fd.append('fit_mode', fit);
     processImageAction('/api/image/to-pdf', 'Converting image to PDF...', fd);
 });
 
