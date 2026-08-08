@@ -98,13 +98,33 @@ def get_paddle_engine():
     return _PADDLE_ENGINE
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
-    """Removes password from PDF and saves to output_dir."""
+    """Remove password protection / restrictions from a PDF and save to output_dir.
+
+    Owner-restricted PDFs carry permission restrictions (no copy/print/edit) but
+    no open password, so they open with an *empty* password. When the supplied
+    password is rejected we therefore retry once with an empty password before
+    giving up: this strips owner-only restrictions even when the caller passes a
+    wrong or irrelevant password, matching how mainstream "Unlock PDF" tools
+    (iLovePDF, Smallpdf, PDF24) behave. A PDF that genuinely has an *open*
+    (user) password still fails on a wrong password, because the empty-password
+    retry cannot open it either — so this never produces a false unlock.
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
-    
-    with pikepdf.open(input_file, password=password) as pdf:
+
+    try:
+        pdf = pikepdf.open(input_file, password=password)
+    except pikepdf.PasswordError:
+        # Fall back to an empty password: succeeds only for owner-restricted
+        # PDFs (no open password). Re-raise the original error otherwise.
+        try:
+            pdf = pikepdf.open(input_file, password="")
+        except pikepdf.PasswordError:
+            raise
+
+    with pdf:
         pdf.save(output_file)
-    
+
     return str(output_file)
 
 def _parse_page_selection(pages: str, total_pages: int) -> List[int]:

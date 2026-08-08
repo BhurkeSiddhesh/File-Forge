@@ -90,9 +90,70 @@ def test_extract_pdf_text_blank_pdf_without_ocr_raises(tmp_path):
 
 
 def test_remove_pdf_password_wrong_password(locked_pdf, tmp_path):
-    """Wrong password raises an error."""
+    """Wrong password on an open-password PDF raises an error (no false unlock)."""
     with pytest.raises(Exception):
         remove_pdf_password(str(locked_pdf["path"]), "wrong_password", str(tmp_path))
+
+
+def _make_owner_restricted_pdf(sample_pdf, dest):
+    """An owner-restricted PDF: permission restrictions but NO open/user password,
+    so it opens with an empty password (the common 'Unlock PDF' case)."""
+    with pikepdf.open(sample_pdf) as pdf:
+        pdf.save(
+            dest,
+            encryption=pikepdf.Encryption(
+                user="",  # ggignore  — no open password
+                owner="owner-secret",  # ggignore
+                allow=pikepdf.Permissions(extract=False, modify_other=False, print_highres=False),
+            ),
+        )
+    return dest
+
+
+def _pdf_text(path):
+    doc = fitz.open(str(path))
+    try:
+        return "".join(page.get_text() for page in doc)
+    finally:
+        doc.close()
+
+
+def test_remove_pdf_password_owner_restricted_with_wrong_password(sample_pdf, tmp_path):
+    """Owner-restricted PDFs (no open password) unlock even when the caller passes
+    a wrong/irrelevant password, matching mainstream Unlock PDF tools. Content must
+    be preserved and the output must be fully decrypted."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted.pdf")
+    baseline_text = _pdf_text(sample_pdf)
+
+    out = Path(remove_pdf_password(str(src), "a-guess-that-is-wrong", str(tmp_path)))
+
+    assert out.exists()
+    with pikepdf.open(out) as pdf:  # opens with no password → truly unlocked
+        assert not pdf.is_encrypted
+    # Extracted content is byte/hash-identical to the source (zero fidelity loss).
+    assert _pdf_text(out) == baseline_text
+
+
+def test_remove_pdf_password_owner_restricted_removes_restrictions(sample_pdf, tmp_path):
+    """After unlocking, the owner-level permission restrictions are gone."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted2.pdf")
+
+    out = Path(remove_pdf_password(str(src), "", str(tmp_path)))
+
+    with pikepdf.open(out) as pdf:
+        assert not pdf.is_encrypted
+        # A non-encrypted PDF imposes no permission restrictions.
+        assert pdf.allow.extract and pdf.allow.print_highres
+
+
+def test_remove_pdf_password_owner_restricted_with_owner_password(sample_pdf, tmp_path):
+    """Supplying the correct owner password also unlocks (first-try path)."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted3.pdf")
+
+    out = Path(remove_pdf_password(str(src), "owner-secret", str(tmp_path)))  # ggignore
+
+    with pikepdf.open(out) as pdf:
+        assert not pdf.is_encrypted
 
 
 def test_pdf_to_docx_with_password(locked_pdf, tmp_path):
