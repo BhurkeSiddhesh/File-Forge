@@ -82,6 +82,11 @@ def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
     input_file = Path(input_path)
     binary = shutil.which("libreoffice") or shutil.which("soffice")
     if binary is None:
+        logger.error(
+            "LibreOffice is not installed on this host, so %s conversion falls back "
+            "to the low-fidelity pure-Python path. See docs/fix-libreoffice-libgl-oracle.md.",
+            input_file.suffix.lower(),
+        )
         return None
 
     profile_dir = tempfile.mkdtemp(prefix="ff_lo_profile_")

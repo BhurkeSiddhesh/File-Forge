@@ -380,6 +380,47 @@ class TestWordToPDF:
             header = f.read(5)
         assert header == b"%PDF-"
 
+    def test_fallback_when_libreoffice_absent(self, sample_docx, tmp_path, monkeypatch):
+        """Pure-Python fallback must still produce a valid, non-empty PDF at the
+        branded path when LibreOffice is unavailable — zero-regression guarantee,
+        same pattern already proven for excel_to_pdf/ppt_to_pdf."""
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", lambda *a, **k: None)
+        out = Path(word_to_pdf(str(sample_docx), str(tmp_path)))
+        assert out.exists() and out.stat().st_size > 0
+        with open(out, "rb") as f:
+            assert f.read(5) == b"%PDF-"
+
+    def test_non_docx_fallback_unsupported_when_libreoffice_absent(self, tmp_path, monkeypatch):
+        """.doc/.odt/.rtf have no pure-Python fallback — must still raise clearly
+        (unaffected by the LibreOffice call-path consolidation)."""
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", lambda *a, **k: None)
+        fake = tmp_path / "file.odt"
+        fake.write_text("not a real odt")
+        out = tmp_path / "out"
+        out.mkdir()
+        with pytest.raises(RuntimeError, match="Pure-Python fallback only supports .docx"):
+            word_to_pdf(str(fake), str(out))
+
+    def test_uses_shared_libreoffice_helper_with_isolated_profile(self, sample_docx, tmp_path, monkeypatch):
+        """word_to_pdf must go through the shared scripts.utils.libreoffice_to_pdf
+        helper (isolated per-call -env:UserInstallation profile dir) rather than
+        shelling out directly, so it doesn't contend on the shared LibreOffice
+        profile lock with a concurrent excel_to_pdf/ppt_to_pdf conversion."""
+        calls = []
+
+        def _fake_libreoffice_to_pdf(input_path, output_dir, timeout=120):
+            calls.append((input_path, output_dir))
+            produced = Path(output_dir) / f"{Path(input_path).stem}.pdf"
+            produced.write_bytes(b"%PDF-1.4\n%%EOF")
+            return produced
+
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", _fake_libreoffice_to_pdf)
+        out = tmp_path / "out"
+        out.mkdir()
+        result = Path(word_to_pdf(str(sample_docx), str(out)))
+        assert calls == [(str(sample_docx), str(out))]
+        assert result.exists() and result.name.endswith("_forgefiles.org.pdf")
+
 
 # ──────────────────────────────────────────────
 # Feature #56: PDF to Excel

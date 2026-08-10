@@ -8,7 +8,7 @@ from pathlib import Path
 import os
 from typing import List, Optional
 
-from scripts.utils import branded_filename, original_stem
+from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf
 
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
@@ -1591,8 +1591,6 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
     Returns:
         Path to the converted PDF.
     """
-    import subprocess
-
     input_file = Path(input_path)
     suffix = input_file.suffix.lower()
     if suffix not in (".docx", ".doc", ".odt", ".rtf"):
@@ -1600,41 +1598,14 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
 
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
-    # ── Try LibreOffice first ──────────────────────────────────
-    try:
-        result = subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
-             "--outdir", str(output_dir), str(input_file)],
-            capture_output=True, text=True, timeout=120,
-        )
-        # LibreOffice writes "<input stem>.pdf" itself; rename to our branded
-        # name rather than checking for a path it never produces.
-        libreoffice_output = Path(output_dir) / f"{input_file.stem}.pdf"
-        if result.returncode == 0 and libreoffice_output.exists():
-            if libreoffice_output != output_file:
-                libreoffice_output.replace(output_file)
-            return str(output_file)
-        # Reached LibreOffice but it refused the document. Logged, because the
-        # fallback below silently produces a lower-fidelity result and the
-        # reason is otherwise lost.
-        logger.warning(
-            "LibreOffice could not convert %s (exit %s): %s",
-            input_file.name, result.returncode, (result.stderr or "").strip()[:300],
-        )
-    except FileNotFoundError:
-        # LibreOffice isn't installed at all — the state the Oracle VM was found
-        # in on 2026-07-21. Every .doc/.odt/.rtf conversion fails outright and
-        # .docx quietly drops to the low-fidelity path; worth saying loudly
-        # once per conversion rather than swallowing.
-        logger.error(
-            "LibreOffice is not installed on this host, so %s conversions fall back "
-            "to the low-fidelity pure-Python path (and non-.docx input fails "
-            "outright). See docs/fix-libreoffice-libgl-oracle.md.", suffix,
-        )
-    except subprocess.TimeoutExpired:
-        logger.warning("LibreOffice timed out converting %s", input_file.name)
-    except Exception:
-        logger.warning("LibreOffice conversion of %s failed", input_file.name, exc_info=True)
+    # ── Try LibreOffice first (shared helper: isolated per-call profile dir,
+    # so this doesn't contend on the shared ~/.config/libreoffice lock with a
+    # concurrent excel_to_pdf/ppt_to_pdf/word_to_pdf conversion) ───────────
+    produced = libreoffice_to_pdf(input_path, output_dir)
+    if produced is not None:
+        if produced != output_file:
+            produced.replace(output_file)
+        return str(output_file)
 
     # ── Pure-Python fallback (DOCX only) ──────────────────────
     if suffix != ".docx":
