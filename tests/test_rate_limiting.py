@@ -429,7 +429,7 @@ class TestLimiterStateIsBounded:
         limiter = SlidingWindowRateLimiter(window_seconds=60, max_keys=3)
         for key in ("a:light", "b:light", "c:light"):
             limiter.check(key, 5)
-        time.sleep(0.001)
+        time.sleep(0.02)
         limiter.check("a:light", 5)      # a is now the most recent
         limiter.check("d:light", 5)      # forces one eviction
 
