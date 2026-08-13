@@ -425,9 +425,11 @@ class TestLimiterStateIsBounded:
         assert len(limiter._hits) <= 50
 
     def test_eviction_prefers_the_least_recently_seen(self):
+        import time
         limiter = SlidingWindowRateLimiter(window_seconds=60, max_keys=3)
         for key in ("a:light", "b:light", "c:light"):
             limiter.check(key, 5)
+        time.sleep(0.001)
         limiter.check("a:light", 5)      # a is now the most recent
         limiter.check("d:light", 5)      # forces one eviction
 
