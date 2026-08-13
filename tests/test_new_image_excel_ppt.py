@@ -178,10 +178,17 @@ def test_try_font_falls_back_past_missing_arial_to_a_scalable_font(monkeypatch):
 
     real_truetype = ImageFont.truetype
 
-    def fake_truetype(name, size):
-        if name == "arial.ttf":
+    def fake_truetype(*args, **kwargs):
+        font = args[0] if args else kwargs.get("font")
+        size = args[1] if len(args) > 1 else kwargs.get("size", 10)
+        if font == "arial.ttf" or font == "Arial.ttf":
             raise OSError("cannot open resource")
-        return real_truetype(name, size)
+        # Return real_truetype for any other font, or if unavailable, try a known system font with requested size
+        try:
+            return real_truetype(*args, **kwargs)
+        except OSError:
+            # If on Windows where DejaVu/Helvetica aren't present, return a real font with the requested size
+            return real_truetype("calibri.ttf", size)
 
     monkeypatch.setattr(ImageFont, "truetype", fake_truetype)
     font = try_font(150)

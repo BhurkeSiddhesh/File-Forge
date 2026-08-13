@@ -47,6 +47,7 @@ from scripts.pdf_utils import (
     word_to_pptx,
     pdf_to_excel,
     pdf_to_pptx,
+    pdf_to_epub,
     extract_text_from_pdf,
     organize_pdf,
     add_page_numbers,
@@ -120,18 +121,22 @@ app = FastAPI(
 # --- CORS ---
 # The web frontend is served same-origin (no CORS needed there), but the
 # Capacitor mobile app loads its assets from capacitor://localhost (iOS) and
-# http://localhost (Android) and calls this API cross-origin. Allow those
+# https://localhost (Android) and calls this API cross-origin. Allow those
 # origins plus any explicitly configured web origins (comma-separated in
 # CORS_EXTRA_ORIGINS, e.g. the production site domain).
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-# Only the two origins Capacitor actually loads from. "https://localhost" was
-# in this list and is used by neither platform — and since these entries are
-# port-less they match only :443/:80, so it never served local development
-# either. Dropping it removes one more origin that any process able to bind the
-# victim's port 443 could have spoken from.
+# The origins Capacitor actually loads from. "https" is Capacitor's default
+# androidScheme (since Capacitor 4; this repo is on @capacitor/android ^8.5.0)
+# and mobile/capacitor.config.ts sets no `server` block, so the shipped Android
+# WebView origin is https://localhost — dropping it took the whole Android app
+# offline. "http://localhost" is the Capacitor 3 default, kept for older
+# installs. Both are port-less, so they match only :443/:80 and never served
+# local development; the spoofing concern applies to them equally, which is why
+# allow_credentials is off below rather than the origin being removed.
 _CORS_ORIGINS = [
     "capacitor://localhost",
+    "https://localhost",
     "http://localhost",
 ]
 _CORS_ORIGINS += [
@@ -155,6 +160,14 @@ app.add_middleware(
     allow_credentials=_CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    # Content-Disposition is not a CORS-safelisted response header, so without
+    # this the app cannot read the filename off a download it fetched itself.
+    # /api/download addresses results by an opaque token on purpose, so the name
+    # the user should actually see exists ONLY in this header — and the app has
+    # to fetch and save the bytes by hand, because a WebView has no download
+    # manager (see mobile/app-assets/src/native-download.js). Without it every
+    # saved file would be called "forgefiles-download".
+    expose_headers=["Content-Disposition"],
 )
 
 # --- Configuration ---
@@ -196,12 +209,22 @@ def _build_adsense_head() -> str:
     # Ad-free gate (build-prompt task 4.5): before filling, we make a best-effort
     # call to the backend-controlled GET /api/me and skip ads entirely (hiding the
     # reserved .ad-slot boxes) when features.ad_free is true. The public app only
-    # ever reads features.ad_free — never entitlement internals. The session token
-    # comes from window.__ffSession (populated by the auth layer once login is
-    # wired); with no token — the current free-launch default, payments off — the
-    # gate resolves to "show ads", so behaviour is identical to before.
+    # ever reads features.ad_free — never entitlement internals.
+    #
+    # The session token comes from window.__ffSession, which static/session.js
+    # populates from the record the auth layer writes on sign-in. That file used
+    # not to exist: the global was read here and set nowhere, so every "Ad-Free
+    # Forever" purchase resolved to "show ads" forever. It is loaded here rather
+    # than from the page templates because {{ADSENSE_HEAD}} is the one token every
+    # page carries, and because it must run before this script's DOMContentLoaded
+    # init() — a customer should never see an ad flash before the gate resolves.
+    # It is also only needed where ads exist, which is exactly where this renders.
+    #
+    # With no session — the free-launch default, payments off — the gate resolves
+    # to "show ads", so behaviour is identical to before.
     return (
         '<link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>\n'
+        '    <script src="/static/session.js?v=20260802"></script>\n'
         '    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}'
         "gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',"
         "ad_personalization:'denied',analytics_storage:'denied',wait_for_update:500});</script>\n"
@@ -213,11 +236,17 @@ def _build_adsense_head() -> str:
         "el.setAttribute('data-lazy-filled','1');}catch(e){}}"
         "function hideSlots(){var s=document.querySelectorAll('.ad-slot');"
         'for(var i=0;i<s.length;i++){s[i].style.display=\'none\';}}'
-        'function adFree(cb){var t=(window.__ffSession&&window.__ffSession.access_token);'
+        'function adFree(cb){'
+        # A cached positive answers synchronously: an expired access token must
+        # not put ads back in front of someone who bought a lifetime removal.
+        'if(window.__ffAdFreeHint&&window.__ffAdFreeHint()===true){cb(true);return;}'
+        'var t=(window.__ffSession&&window.__ffSession.access_token);'
         'if(!t){cb(false);return;}'
-        "fetch('/api/me',{headers:{Authorization:'Bearer '+t}})"
+        "var u=(window.apiUrl?window.apiUrl('/api/me'):'/api/me');"
+        "fetch(u,{headers:{Authorization:'Bearer '+t}})"
         '.then(function(r){return r.ok?r.json():null;})'
-        '.then(function(d){cb(!!(d&&d.features&&d.features.ad_free));})'
+        '.then(function(d){var af=!!(d&&d.features&&d.features.ad_free);'
+        'if(window.__ffCacheAdFree)window.__ffCacheAdFree(af);cb(af);})'
         '.catch(function(){cb(false);});}'
         "function runFill(){if(!granted())return;"
         "var ads=document.querySelectorAll('ins.adsbygoogle:not([data-lazy-filled])');"
@@ -2075,6 +2104,11 @@ async def execute_workflow(
                     output_path = await run_in_threadpool(pdf_to_pptx, str(current_file), str(result_dir), dpi, password)
                     current_file = Path(output_path)
 
+                elif step_type == 'pdf_to_epub':
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(pdf_to_epub, str(current_file), str(result_dir), password)
+                    current_file = Path(output_path)
+
                 elif step_type == 'extract_text':
                     preserve = config.get('preserve_layout', False)
                     password = config.get('password') or None
@@ -2373,6 +2407,37 @@ async def api_pdf_to_pptx(
             run_in_threadpool(pdf_to_pptx, str(temp_path), str(result_dir), dpi, password or None),
         )
         return {"status": "success", "message": "PDF converted to PowerPoint", **download_fields(output_path)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/to-epub")
+async def api_pdf_to_epub(
+    file: UploadFile = File(...),
+    password: str = Form(None),
+):
+    """Convert a PDF into a reflowable EPUB ebook."""
+    safe_filename = secure_filename(file.filename)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
+    try:
+        output_path = await event_log.timed(
+            "pdf_to_epub",
+            run_in_threadpool(pdf_to_epub, str(temp_path), str(result_dir), password or None),
+        )
+        return {"status": "success", "message": "PDF converted to EPUB", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:

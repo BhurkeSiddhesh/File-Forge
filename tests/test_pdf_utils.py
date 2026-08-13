@@ -7,6 +7,7 @@ from reportlab.pdfgen import canvas
 from scripts.pdf_utils import (
     remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text,
     extract_text_from_pdf, _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
+    pdf_to_epub,
 )
 import scripts.pdf_utils as pdf_utils_module
 import scripts.ocr_engine as ocr_engine
@@ -505,3 +506,25 @@ def test_extract_text_from_pdf_scanned_pdf_no_ocr_engine_stays_placeholder(scann
     result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
     text = Path(result["output_path"]).read_text(encoding="utf-8")
     assert "No text found" in text
+
+
+def test_pdf_to_epub_ocrs_scanned_pdf(scanned_like_pdf, tmp_path, monkeypatch):
+    """A scanned/image-only PDF is routed through the configured OCR engine
+    so its chapter carries real recognized text instead of the placeholder."""
+    from unittest.mock import MagicMock
+    from ebooklib import epub
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Recognized scanned text", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    result = pdf_to_epub(str(scanned_like_pdf), str(tmp_path))
+    book = epub.read_epub(result)
+    all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+    assert fake_engine.recognize.call_count == 1
+    assert b"Recognized scanned text" in all_content
+    assert b"No text found" not in all_content

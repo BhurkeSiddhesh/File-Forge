@@ -1,4 +1,5 @@
 import contextlib
+import html
 import threading
 import logging
 import re
@@ -29,6 +30,10 @@ try:
 except ImportError:
     Composer = None
     Document_docx = None
+try:
+    from ebooklib import epub
+except ImportError:
+    epub = None
 import shutil
 
 
@@ -1719,9 +1724,17 @@ def _extract_borderless_tables(page) -> list:
     Called only for pages where the "lines" pass found nothing, so it never
     alters an already-detected table. Returns a list of cleaned row-lists
     (fully-empty spacer rows trimmed). To avoid mangling ordinary prose into a
-    spurious table, only genuine grids (>= 2 columns and >= 2 non-empty rows)
-    are returned; anything else yields ``[]`` so the page still falls through to
-    the raw-text fallback sheet exactly as before.
+    spurious table, only genuine grids (>= 2 columns and >= 2 non-empty rows,
+    with most rows actually filling most columns) are returned; anything else
+    yields ``[]`` so the page still falls through to the raw-text fallback
+    sheet exactly as before.
+
+    The fill-consistency check exists because the "text" strategy invents a
+    column boundary at every recurring word-start x-coordinate, so a page of
+    ordinary paragraphs (e.g. a resume) can score >= 2 columns and >= 2 rows
+    while each "row" only fills a handful of its columns at ragged, unrelated
+    positions — unlike a real table, where each row fills essentially all of
+    its columns.
     """
     try:
         found = page.find_tables(
@@ -1734,7 +1747,8 @@ def _extract_borderless_tables(page) -> list:
 
     accepted = []
     for table in getattr(found, "tables", []) or []:
-        if getattr(table, "col_count", 0) < 2:
+        col_count = getattr(table, "col_count", 0)
+        if col_count < 2:
             continue
         rows = [
             [("" if cell is None else cell) for cell in row]
@@ -1742,6 +1756,12 @@ def _extract_borderless_tables(page) -> list:
             if any(cell is not None and str(cell).strip() != "" for cell in row)
         ]
         if len(rows) < 2:
+            continue
+        near_full_rows = sum(
+            1 for row in rows
+            if sum(1 for cell in row if str(cell).strip() != "") >= col_count - 1
+        )
+        if near_full_rows / len(rows) < 0.7:
             continue
         accepted.append(rows)
     return accepted
@@ -1991,6 +2011,184 @@ def extract_text_from_pdf(
             Path(decrypted_path).unlink(missing_ok=True)
 
     return {"output_path": str(output_file), "page_count": page_count}
+
+
+# ──────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ──────────────────────────────────────────────
+
+_SPAN_FLAG_ITALIC = 1 << 1
+_SPAN_FLAG_BOLD = 1 << 4
+
+
+def _span_style(span: dict) -> tuple:
+    """Return (bold, italic) for a get_text('dict') span.
+
+    PyMuPDF's font-flag bits are the primary signal; the font name is
+    checked too since some PDF producers omit reliable flags but always
+    embed a "Bold"/"Italic" subset font name.
+    """
+    flags = span.get("flags", 0)
+    font = (span.get("font") or "").lower()
+    bold = bool(flags & _SPAN_FLAG_BOLD) or "bold" in font
+    italic = bool(flags & _SPAN_FLAG_ITALIC) or "italic" in font or "oblique" in font
+    return bold, italic
+
+
+def _href_for_point(point: "fitz.Point", links: list) -> Optional[str]:
+    """Return the URI of the link annotation whose clickable rect contains
+    `point`, if any."""
+    for link in links:
+        if link.get("kind") != fitz.LINK_URI:
+            continue
+        uri = link.get("uri")
+        rect = link.get("from")
+        if uri and rect is not None and rect.contains(point):
+            return uri
+    return None
+
+
+def _page_html_paragraphs(page) -> list:
+    """Render a page's native text as HTML paragraphs, preserving bold/italic
+    runs and hyperlink annotations (dropped entirely by a plain get_text()
+    dump). One <p> per detected line, matching the line granularity a plain
+    text extraction would produce.
+
+    Matches links per character (via get_text("rawdict")'s char-level
+    boxes), not per span/line, because a link's clickable rect commonly
+    covers only part of a same-font text run (e.g. "Visit our site:
+    example.com" is one span, but only "example.com" is linked) — matching
+    at span granularity would either miss the link or wrongly link
+    surrounding text.
+    """
+    links = page.get_links()
+    paragraphs = []
+    for block in page.get_text("rawdict").get("blocks", []):
+        if block.get("type") != 0:  # 0 = text block
+            continue
+        for line in block.get("lines", []):
+            runs = []  # list of [text, bold, italic, href]
+            for span in line.get("spans", []):
+                bold, italic = _span_style(span)
+                for ch in span.get("chars", []):
+                    c = ch.get("c", "")
+                    if not c:
+                        continue
+                    bbox = ch.get("bbox")
+                    center = fitz.Point((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+                    href = _href_for_point(center, links)
+                    if runs and runs[-1][1:] == [bold, italic, href]:
+                        runs[-1][0] += c
+                    else:
+                        runs.append([c, bold, italic, href])
+
+            line_html = ""
+            for text, bold, italic, href in runs:
+                escaped = html.escape(text)
+                if bold:
+                    escaped = f"<b>{escaped}</b>"
+                if italic:
+                    escaped = f"<i>{escaped}</i>"
+                if href:
+                    escaped = f'<a href="{html.escape(href, quote=True)}">{escaped}</a>'
+                line_html += escaped
+            line_html = line_html.strip()
+            if line_html:
+                paragraphs.append(line_html)
+    return paragraphs
+
+
+def pdf_to_epub(
+    input_path: str,
+    output_dir: str,
+    password: str = None,
+) -> str:
+    """Convert a PDF into a reflowable EPUB ebook, one chapter per page.
+
+    Native-text pages keep their bold/italic runs and hyperlink annotations
+    (see _page_html_paragraphs); only pages with no text at all
+    (scanned/image-only) are rasterized and OCR'd — that path is necessarily
+    plain text, since a raster scan carries no font/link metadata to recover.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the EPUB file.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the generated .epub file.
+    """
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / branded_filename(input_file, "epub")
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+
+        native_page_text = [page.get_text().strip() for page in doc]
+
+        engine = None
+        if any(not text for text in native_page_text):
+            from scripts.ocr_engine import get_ocr_engine
+            engine = get_ocr_engine()
+
+        title = (doc.metadata.get("title") or "").strip() or input_file.stem
+
+        book = epub.EpubBook()
+        book.set_identifier(f"forgefiles-{uuid.uuid4()}")
+        book.set_title(title)
+        book.set_language("en")
+
+        chapters = []
+        for i, page in enumerate(doc):
+            page_text = native_page_text[i]
+            ocr_used = False
+
+            if not page_text and engine is not None:
+                img = _render_page_bgr(page)
+                items = engine.recognize(img)
+                page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
+                ocr_used = True
+
+            if not page_text:
+                continue
+
+            if ocr_used:
+                paragraphs = "".join(
+                    f"<p>{html.escape(line)}</p>" for line in page_text.split("\n") if line.strip()
+                )
+            else:
+                paragraphs = "".join(f"<p>{p}</p>" for p in _page_html_paragraphs(page))
+
+            chapter = epub.EpubHtml(
+                title=f"Page {i + 1}",
+                file_name=f"page_{i + 1}.xhtml",
+                lang="en",
+            )
+            chapter.content = f"<h1>Page {i + 1}</h1>{paragraphs}"
+            book.add_item(chapter)
+            chapters.append(chapter)
+
+        doc.close()
+
+        if not chapters:
+            chapter = epub.EpubHtml(title="Page 1", file_name="page_1.xhtml", lang="en")
+            chapter.content = "<h1>Page 1</h1><p>(No text found in document)</p>"
+            book.add_item(chapter)
+            chapters.append(chapter)
+
+        book.toc = tuple(chapters)
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        book.spine = ["nav"] + chapters
+
+        epub.write_epub(str(output_file), book)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
 
 
 # ──────────────────────────────────────────────

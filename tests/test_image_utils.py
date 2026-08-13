@@ -321,3 +321,113 @@ class TestAlphaFlattensToWhite:
             out_dir.mkdir()
             with Image.open(op(str(out_dir))) as r:
                 assert r.mode == "RGB"
+
+
+# ── ICC color profile survives every image operation, not just HEIC->JPEG ──
+#
+# Wide-gamut (Display P3 / Adobe RGB) JPEGs and PNGs carry an embedded ICC
+# profile. Pillow's JPEG and WebP encoders only write it if it's passed
+# explicitly to save() — they don't fall back to img.info like the PNG
+# encoder does — so any function that re-encodes to JPEG/WebP without
+# forwarding it silently strips the profile, and viewers then reinterpret the
+# pixels as sRGB: a visible color shift, not just missing metadata.
+
+def _icc_bytes():
+    from PIL import ImageCms
+
+    return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+
+def _icc_tagged_jpeg(path, icc):
+    from PIL import Image
+
+    Image.new("RGB", (100, 100), (200, 50, 50)).save(
+        path, "JPEG", icc_profile=icc, quality=95
+    )
+    return path
+
+
+class TestIccProfilePreserved:
+    def test_rotate_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import rotate_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = rotate_image(str(src), str(tmp_path), angle=90)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_compress_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = compress_image(str(src), str(tmp_path), quality=80)["output_path"]
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_convert_image_format_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import convert_image_format
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        # Each target format gets its own dir: branded filenames collide otherwise.
+        for target in ("jpg", "png", "webp"):
+            out_dir = tmp_path / f"conv_{target}"
+            out_dir.mkdir()
+            out = convert_image_format(str(src), str(out_dir), target)
+            with Image.open(out) as r:
+                assert r.info.get("icc_profile") == icc, f"dropped for target={target}"
+
+    def test_watermark_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import watermark_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = watermark_image(str(src), str(tmp_path), "DRAFT")
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_resize_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import resize_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = resize_image(str(src), str(tmp_path), mode="dimensions", width=50)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_crop_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import crop_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = crop_image(str(src), str(tmp_path), x=0, y=0, width=50, height=50)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_no_icc_source_is_safe(self, tmp_path):
+        """A source with no ICC profile must still convert cleanly (no crash, no bogus key)."""
+        from PIL import Image
+        from scripts.image_utils import rotate_image, compress_image
+
+        src = tmp_path / "plain.jpg"
+        Image.new("RGB", (60, 40), (10, 20, 30)).save(src, "JPEG", quality=90)
+
+        r_dir, c_dir = tmp_path / "r", tmp_path / "c"
+        r_dir.mkdir()
+        c_dir.mkdir()
+
+        out1 = rotate_image(str(src), str(r_dir), angle=90)
+        with Image.open(out1) as r:
+            assert not r.info.get("icc_profile")
+
+        out2 = compress_image(str(src), str(c_dir), quality=80)["output_path"]
+        with Image.open(out2) as r:
+            assert not r.info.get("icc_profile")

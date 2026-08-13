@@ -294,6 +294,44 @@ class TestPDFToPPTX:
 
 
 # ──────────────────────────────────────────────────────────────
+# POST /api/pdf/to-epub
+# ──────────────────────────────────────────────────────────────
+
+class TestPDFToEpub:
+    def test_success(self):
+        client = _make_client()
+        pdf_bytes = _make_simple_pdf()
+        resp = client.post(
+            "/api/pdf/to-epub",
+            headers=AUTH_HEADERS,
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "success"
+        assert "filename" in resp.json()
+
+    def test_returns_epub_filename(self):
+        client = _make_client()
+        pdf_bytes = _make_simple_pdf()
+        resp = client.post(
+            "/api/pdf/to-epub",
+            headers=AUTH_HEADERS,
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["filename"].endswith(".epub")
+
+    def test_415_invalid_file_type(self):
+        client = _make_client()
+        resp = client.post(
+            "/api/pdf/to-epub",
+            headers=AUTH_HEADERS,
+            files={"file": ("test.txt", b"plain text", "text/plain")},
+        )
+        assert resp.status_code == 415
+
+
+# ──────────────────────────────────────────────────────────────
 # POST /api/pdf/extract-text
 # ──────────────────────────────────────────────────────────────
 
