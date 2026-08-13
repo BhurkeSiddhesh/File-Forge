@@ -52,7 +52,7 @@ class TestPdf2docxMultiprocessing:
         would turn the worker pool on exactly where it doesn't pay."""
         module = self._module()
         monkeypatch.setattr(module.os, "cpu_count", lambda: 32)
-        monkeypatch.setattr(module.os, "sched_getaffinity", lambda pid: {0})
+        monkeypatch.setattr(module.os, "sched_getaffinity", lambda pid: {0}, raising=False)
         assert module._available_cores() == 1
 
     def test_core_count_falls_back_where_affinity_is_unavailable(self, monkeypatch):

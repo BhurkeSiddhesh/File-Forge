@@ -49,6 +49,18 @@ def test_api_workflow_pdf_to_pptx_step(sample_pdf, mock_dirs, auth_client):
     assert "_forgefiles.org.pptx" in response.text
 
 
+def test_api_workflow_pdf_to_epub_step(sample_pdf, mock_dirs, auth_client):
+    steps = json.dumps([{"type": "pdf_to_epub", "config": {}, "label": "PDF to EPUB"}])
+
+    with open(sample_pdf, "rb") as f:
+        files = {"file": (sample_pdf.name, f, "application/pdf")}
+        response = auth_client.post("/api/workflow/execute", files=files, data={"steps": steps})
+
+    assert response.status_code == 200
+    assert "complete" in response.text
+    assert "_forgefiles.org.epub" in response.text
+
+
 def test_api_workflow_rotate_pdf_step(multi_page_pdf, mock_dirs, auth_client):
     steps = json.dumps([{"type": "rotate_pdf", "config": {"angle": 90}, "label": "Rotate PDF"}])
 

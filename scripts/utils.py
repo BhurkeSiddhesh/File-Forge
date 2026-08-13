@@ -41,6 +41,23 @@ def branded_filename(input_path, ext: str) -> str:
     """Build the public download filename: '<original name>_forgefiles.org.<ext>'."""
     return f"{original_stem(input_path)}_forgefiles.org.{ext.lstrip('.')}"
 
+def try_font(size: int):
+    """Load a scalable TrueType font at ``size``, falling back across fonts likely
+    to exist on the deploy target before giving up.
+
+    ``arial.ttf`` is a Windows font almost never present on Linux; without a
+    fallback chain, ``ImageFont.load_default()`` silently returns a tiny fixed-size
+    bitmap font that ignores ``size`` entirely.
+    """
+    from PIL import ImageFont
+
+    for name in ("arial.ttf", "DejaVuSans.ttf", "Helvetica.ttf"):
+        try:
+            return ImageFont.truetype(name, size)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default()
+
 def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
     """Convert an office document to PDF using headless LibreOffice.
 
@@ -65,6 +82,11 @@ def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
     input_file = Path(input_path)
     binary = shutil.which("libreoffice") or shutil.which("soffice")
     if binary is None:
+        logger.error(
+            "LibreOffice is not installed on this host, so %s conversion falls back "
+            "to the low-fidelity pure-Python path. See docs/fix-libreoffice-libgl-oracle.md.",
+            input_file.suffix.lower(),
+        )
         return None
 
     profile_dir = tempfile.mkdtemp(prefix="ff_lo_profile_")

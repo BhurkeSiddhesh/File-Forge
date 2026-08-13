@@ -40,15 +40,67 @@ CF_ANALYTICS = "{{CF_ANALYTICS}}"
 # load script.js). Posts a single anonymous page_view to /api/track — the same
 # first-party funnel endpoint the home app uses. No file data, cookies-only the
 # anonymous ff_sid the server sets. Best-effort and silent on any failure.
+#
+# `ref` is document.referrer, which the server reduces to a bare host before
+# storing (never a full URL). These landing pages are the ones search traffic
+# actually arrives on, so this is where the acquisition signal lives.
 FUNNEL_BEACON = (
     "<script>(function(){try{"
-    "var p=JSON.stringify({event:'page_view',label:location.pathname||'/'});"
+    "var p=JSON.stringify({event:'page_view',label:location.pathname||'/',"
+    "ref:document.referrer||''});"
     "var u='/api/track';"
     "if(navigator.sendBeacon){navigator.sendBeacon(u,new Blob([p],{type:'application/json'}));}"
     "else{fetch(u,{method:'POST',body:p,keepalive:true,"
     "headers:{'Content-Type':'application/json'},credentials:'same-origin'});}"
     "}catch(e){}})();</script>"
 )
+
+# What each category's file picker should offer, mirroring the corresponding
+# input in static/index.html. Only a filter on the picker dialog — the server
+# validates the actual upload, so a loose value here can't let anything through.
+_CATEGORY_ACCEPT = {
+    "pdf": ".pdf",
+    "image": "image/*,.heic,.heif",
+    "excel": ".xlsx,.xls,.csv",
+    "ppt": ".pptx",
+    "word": ".docx,.doc",
+}
+
+# Categories whose tools collect several files themselves (merge, etc). Handing
+# one file over would be misleading about what the tool needs, so these keep
+# the plain link.
+_MULTI_FILE_SLUGS = ("merge-pdf", "merge-excel", "merge-ppt")
+
+
+def _upload_box(slug: str, page: dict) -> str:
+    """The landing page's primary action: an upload box, not a link to one.
+
+    A visitor who searched "pdf to word" and landed here previously had to
+    click through to the app and wait for a full page load before the first
+    upload box existed. 89% of landing sessions never opened a tool at all.
+    The file chosen here is carried into the app by static/seo-upload.js, so
+    nobody is asked for it twice.
+
+    The link is still rendered inside the box: it is what the box degrades to
+    with JavaScript disabled, and it stays the whole target for the merge
+    tools, which need several files rather than the one this collects.
+    """
+    tool = page["tool"]
+    target = f"/?tool={tool}&amp;op={slug}"
+    cta = html.escape(page["cta"])
+    if slug in _MULTI_FILE_SLUGS or tool not in _CATEGORY_ACCEPT:
+        return f'        <p><a class="cta" href="{target}">{cta}</a></p>'
+    accept = _CATEGORY_ACCEPT[tool]
+    return f"""        <div class="upload-cta" data-ff-upload data-ff-target="/?tool={tool}&amp;op={slug}">
+            <label class="upload-cta-label">
+                <input type="file" accept="{accept}" hidden>
+                <span class="cta">{cta}</span>
+            </label>
+            <p class="upload-cta-hint">or drop a file here &middot; free, no signup,
+                files deleted automatically</p>
+            <noscript><p><a class="cta" href="{target}">{cta}</a></p></noscript>
+        </div>"""
+
 
 # category -> (deep-link tool param, human label)
 CATEGORIES = {
@@ -421,6 +473,30 @@ TOOL_PAGES: Dict[str, dict] = {
             ("Is it free?", "Yes, no signup, no watermark, and the <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">code is open source</a>."),
         ],
         "related": ["pdf-to-jpg", "powerpoint-to-pdf", "pdf-to-word", "pdf-to-excel", "compress-pdf"],
+    },
+    "pdf-to-epub": {
+        "title": "PDF to EPUB: Convert PDF to Ebook Free | Forge Files",
+        "meta": "Convert a PDF into a reflowable EPUB ebook online, free. Scanned pages are OCR'd automatically. No signup, no watermarks, open source, files auto-deleted.",
+        "h1": "PDF to EPUB: Convert PDF to a Reflowable Ebook",
+        "lede": "Reading a PDF on a phone or e-reader means constant pinch-zooming. Convert it into a reflowable EPUB instead, so the text adapts to any screen size and font setting.",
+        "tool": "pdf", "app": "PDF to EPUB", "cta": "Convert PDF to EPUB, free",
+        "how": "How to convert PDF to EPUB",
+        "steps": [
+            "Upload your PDF (drag &amp; drop or browse).",
+            "Choose <strong>PDF → EPUB</strong>.",
+            "Download the .epub file. Your upload is deleted from our server automatically.",
+        ],
+        "benefits": [
+            "<strong>Reflowable text:</strong> the ebook adapts to any screen size and font, unlike a fixed PDF page.",
+            "<strong>Scanned pages included:</strong> pages with no text layer are OCR'd automatically instead of coming out blank.",
+            "<strong>Free &amp; verifiably private:</strong> deleted after download, <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">open source</a>, no signup.",
+        ],
+        "faqs": [
+            ("Will scanned PDFs work?", "Yes, any page without a real text layer is rasterized and run through OCR, so scanned books still produce readable chapters."),
+            ("Does it keep the original page layout?", "No, EPUB is a reflowable format: text is extracted page by page into chapters so it can adapt to any screen. For a page-image-perfect copy, use <a href=\"/pdf-to-powerpoint\">PDF to PowerPoint</a> instead."),
+            ("Is it free?", "Yes, no signup, no watermark, and the <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">code is open source</a>."),
+        ],
+        "related": ["pdf-to-word", "pdf-to-text", "pdf-to-excel", "pdf-to-powerpoint", "compress-pdf"],
     },
     "sign-pdf": {
         "title": "Sign PDF: Add a Signature to a PDF Free | Forge Files",
@@ -1033,7 +1109,7 @@ def render_tool_page(slug: str) -> str:
         <h1>{page['h1']}</h1>
         <p class="lede">{page['lede']}</p>
 
-        <p><a class="cta" href="/?tool={page['tool']}&amp;op={slug}">{page['cta']}</a></p>
+{_upload_box(slug, page)}
 
         {ADS_SLOT}
 
@@ -1065,6 +1141,7 @@ def render_tool_page(slug: str) -> str:
     </main>
     {CONSENT_BANNER}
     {FUNNEL_BEACON}
+    <script src="/static/seo-upload.js?v={ASSET_V}" defer></script>
 </body>
 
 </html>

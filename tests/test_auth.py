@@ -192,8 +192,15 @@ def test_consent_banner_and_ads_are_consent_gated_when_adsense_on():
 def test_ad_free_gate_hides_slots_from_backend_feature_when_adsense_on():
     """task 4.5: before filling ads the head script consults GET /api/me and hides
     the reserved .ad-slot boxes when features.ad_free is true — reading only the
-    backend feature flag, never entitlement internals. With no session token the
-    gate resolves to "show ads" (free-launch default), so behaviour is unchanged."""
+    backend feature flag, never entitlement internals.
+
+    Shape only. This used to be the *whole* of the gate's coverage, and asserting
+    that the string "__ffSession" appears in the head passed happily throughout
+    the period when nothing in the repo ever assigned that global and every
+    ad-free customer saw ads anyway (#52). The behavioural coverage — does a
+    session reach the gate, do the slots actually get hidden — lives in
+    test_ad_free_gate.py, which runs the real scripts against a DOM.
+    """
     import main
 
     saved = main.ADSENSE_CLIENT
@@ -206,7 +213,7 @@ def test_ad_free_gate_hides_slots_from_backend_feature_when_adsense_on():
     # Reads the backend-controlled feature (not raw entitlement rows).
     assert "__ffSession" in head and "/api/me" in head
     assert "features.ad_free" in head and "hideSlots" in head
-    # No session token → callback(false) → ads still show (free-launch default).
+    # No session and no cached answer → callback(false) → ads still show.
     assert "cb(false)" in head
     # The gate runs before the lazy fill: ad-free hides slots and returns early.
     assert "if(af){hideSlots();return;}runFill();" in head

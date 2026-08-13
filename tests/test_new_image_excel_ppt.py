@@ -168,6 +168,34 @@ def test_watermark_image_rejects_empty_text(jpeg_image, tmp_path):
         watermark_image(str(jpeg_image), str(tmp_path), "  ")
 
 
+def test_try_font_falls_back_past_missing_arial_to_a_scalable_font(monkeypatch):
+    """arial.ttf is a Windows font, almost never present on the Linux deploy
+    target. try_font() must keep trying scalable fonts rather than dropping
+    straight to load_default()'s tiny fixed-size bitmap font, which ignores the
+    requested size entirely."""
+    from PIL import ImageFont
+    from scripts.utils import try_font
+
+    real_truetype = ImageFont.truetype
+
+    def fake_truetype(*args, **kwargs):
+        font = args[0] if args else kwargs.get("font")
+        size = args[1] if len(args) > 1 else kwargs.get("size", 10)
+        if font == "arial.ttf" or font == "Arial.ttf":
+            raise OSError("cannot open resource")
+        # Return real_truetype for any other font, or if unavailable, try a known system font with requested size
+        try:
+            return real_truetype(*args, **kwargs)
+        except OSError:
+            # If on Windows where DejaVu/Helvetica aren't present, return a real font with the requested size
+            return real_truetype("calibri.ttf", size)
+
+    monkeypatch.setattr(ImageFont, "truetype", fake_truetype)
+    font = try_font(150)
+    assert isinstance(font, ImageFont.FreeTypeFont)
+    assert font.size == 150
+
+
 # --- Excel tests ---
 
 def test_csv_to_xlsx_roundtrip(csv_file, tmp_path):

@@ -98,6 +98,17 @@ def locked_pdf(tmp_path_factory, sample_pdf):
 
 
 @pytest.fixture(scope="session")
+def real_resume_pdf():
+    """A real, densely-formatted 2-page PDF (bold/italic runs, bullet lists,
+    right-aligned date columns, hyperlinks) checked in under tests/fixtures/,
+    unlike every other fixture above which is generated at test time. Exists
+    to catch layout/reading-order/hyperlink regressions that simple
+    reportlab-drawn PDFs can't surface. Intentionally never mutated in
+    place — tests needing to modify it should copy into tmp_path first."""
+    return Path(__file__).parent / "fixtures" / "sample_resume.pdf"
+
+
+@pytest.fixture(scope="session")
 def sample_heic(tmp_path_factory):
     """Creates a sample HEIC file for testing."""
     try:

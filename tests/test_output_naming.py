@@ -133,6 +133,7 @@ def test_api_compress_pdf_returns_branded_filename(auth_client, sample_pdf):
 # ──────────────────────────────────────────────────────────────
 
 def test_save_upload_keeps_the_original_name_recoverable(tmp_path, monkeypatch):
+    import asyncio
     import main
 
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
@@ -144,7 +145,7 @@ def test_save_upload_keeps_the_original_name_recoverable(tmp_path, monkeypatch):
             import io
             self.file = io.BytesIO(b"%PDF-1.4 dummy")
 
-    dest = main.save_upload(_Upload(), main.PDF_EXTENSIONS)
+    dest = asyncio.run(main.save_upload(_Upload(), main.PDF_EXTENSIONS))
 
     assert original_stem(dest) == "Bank Statement"
     assert branded_filename(dest, "pdf") == "Bank Statement_forgefiles.org.pdf"

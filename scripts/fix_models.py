@@ -51,6 +51,25 @@ MODELS = {
     }
 }
 
+def _safe_extract(tar, dest_dir):
+    """Extract only regular files/dirs that resolve inside dest_dir.
+
+    Guards against CVE-2007-4559: an unfiltered `extractall()` follows a
+    member's path verbatim, so a tar containing e.g. "../../.ssh/authorized_keys"
+    (or an absolute path) writes outside dest_dir. Symlink/hardlink/device
+    members are rejected outright rather than resolved, since their target can
+    point anywhere regardless of what their own path says.
+    """
+    dest_resolved = dest_dir.resolve()
+    for member in tar.getmembers():
+        if not (member.isfile() or member.isdir()):
+            raise ValueError(f"Refusing to extract non-regular member: {member.name}")
+        member_path = (dest_dir / member.name).resolve()
+        if member_path != dest_resolved and dest_resolved not in member_path.parents:
+            raise ValueError(f"Refusing to extract outside destination: {member.name}")
+    tar.extractall(path=dest_dir)
+
+
 def download_and_extract(model_key, info):
     print(f"Processing {model_key} model...")
     dest_dir = info["dir"]
@@ -70,17 +89,16 @@ def download_and_extract(model_key, info):
     
     print(f"  Downloading {url}...")
     try:
-        # verify=False to bypass SSL issues if they occur
-        response = requests.get(url, stream=True, verify=False)
+        response = requests.get(url, stream=True, timeout=60)
         response.raise_for_status()
         with open(tar_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         print("  Download complete.")
-        
+
         print("  Extracting...")
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=dest_dir)
+            _safe_extract(tar, dest_dir)
         print("  Extraction complete.")
         
         # Cleanup tar
@@ -136,9 +154,6 @@ def convert_to_onnx(model_dir):
         print(f"  STDERR: {e.stderr}")
 
 if __name__ == "__main__":
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    
     for key, info in MODELS.items():
         model_dir = download_and_extract(key, info)
         convert_to_onnx(model_dir)

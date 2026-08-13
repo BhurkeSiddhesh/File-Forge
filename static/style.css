@@ -1067,8 +1067,17 @@ body {
     transition: opacity 0.2s;
 }
 
-.workflow-step-card:hover .remove-step {
+.workflow-step-card:hover .remove-step,
+.workflow-step-card:focus-within .remove-step {
     opacity: 1;
+}
+
+/* No hover on touch devices — a hover-only reveal is permanently invisible
+   there, so show it unconditionally instead of hiding step removal. */
+@media (hover: none) {
+    .workflow-step-card .remove-step {
+        opacity: 1;
+    }
 }
 
 .workflow-step-card .config-btn {
@@ -1399,7 +1408,9 @@ body {
 .tool-card:focus-visible,
 .action-card:focus-visible,
 .drop-zone:focus-visible,
-.step-item:focus-visible {
+.step-item:focus-visible,
+.remove-step:focus-visible,
+.config-btn:focus-visible {
     outline: 2px solid var(--ink);
     outline-offset: 3px;
 }
@@ -1609,6 +1620,46 @@ body.seo-page {
 
 .page-wrap .cta:hover {
     background: var(--primary-hover);
+}
+
+/* Upload box on the SEO landing pages — the page's primary action. It replaced
+   a bare link to the app, which meant the first upload box a visitor saw was
+   one full page load away. */
+.upload-cta {
+    margin: 1.25rem 0 1.75rem;
+    padding: 1.5rem 1.25rem;
+    border: 2px dashed var(--hairline);
+    border-radius: var(--r-lg, 16px);
+    text-align: center;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.upload-cta.is-dragover {
+    border-color: var(--primary, var(--ink));
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.upload-cta.is-busy {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.upload-cta-label {
+    display: inline-block;
+    cursor: pointer;
+}
+
+/* The label's inner .cta is a span, so it needs the focus ring the anchor got
+   for free — the file input itself is hidden. */
+.upload-cta-label input:focus-visible+.cta {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+}
+
+.upload-cta-hint {
+    margin: 0.75rem 0 0;
+    font-size: 0.9rem;
+    color: var(--mute);
 }
 
 .page-footer {
