@@ -29,10 +29,30 @@ def _flatten_to_rgb(img: Image.Image, background=(255, 255, 255)) -> Image.Image
         rgba = img.convert("RGBA")
         flattened = Image.new("RGB", rgba.size, background)
         flattened.paste(rgba, mask=rgba.split()[3])
+        # Image.new() starts with an empty .info; carry the source's forward
+        # (ICC profile in particular) so callers downstream of this function
+        # can still see it, matching every other transform in this module.
+        flattened.info = img.info.copy()
         return flattened
     if img.mode != "RGB":
         return img.convert("RGB")
     return img
+
+
+def _icc_profile_kwargs(img: Image.Image) -> dict:
+    """
+    Return an ``Image.save`` ``icc_profile`` kwarg when the source carries a
+    color profile.
+
+    Wide-gamut (Display P3 / Adobe RGB) photos carry an embedded ICC profile;
+    if a save drops it, viewers fall back to interpreting the pixels as sRGB,
+    which visibly shifts colors. PNG's own encoder happens to forward
+    ``img.info["icc_profile"]`` on its own when the output format doesn't
+    change, but JPEG and WebP don't, and every function below can change the
+    output format — so the profile has to be threaded through explicitly.
+    """
+    icc = img.info.get("icc_profile")
+    return {"icc_profile": icc} if icc else {}
 
 
 def _prepare_image(img: Image.Image) -> Image.Image:
@@ -164,12 +184,13 @@ def resize_image(input_path: str, output_dir: str, mode: str,
     
     with Image.open(input_file) as img:
         img = _prepare_image(img)
+        icc_kwargs = _icc_profile_kwargs(img)
         original_width, original_height = img.size
 
         if mode == 'dimensions':
             if not width and not height:
                 raise ValueError("Width or height must be provided for dimensions mode.")
-            
+
             # Calculate missing dimension if only one is provided to maintain aspect ratio
             if width and not height:
                 ratio = width / original_width
@@ -182,52 +203,52 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             else:
                 new_width = width
                 new_height = height
-            
+
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            img.save(output_file, "JPEG", quality=quality, optimize=True)
+            img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
 
         elif mode == 'percentage':
             if not percentage:
                 raise ValueError("Percentage must be provided for percentage mode.")
-            
+
             scale = percentage / 100.0
             new_width = int(original_width * scale)
             new_height = int(original_height * scale)
-            
+
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            img.save(output_file, "JPEG", quality=quality, optimize=True)
+            img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
 
         elif mode == 'target_size':
             if not target_size_kb:
                 raise ValueError("Target size must be provided for target_size mode.")
-            
+
             target_bytes = target_size_kb * 1024
-            
+
             # Optimized approach using binary search for quality
             # This reduces file writes from 10+ to 3-5
             import io
-            
+
             # First, try with optimize flag and high quality
-            img.save(output_file, "JPEG", quality=95, optimize=True)
+            img.save(output_file, "JPEG", quality=95, optimize=True, **icc_kwargs)
             current_size = output_file.stat().st_size
-            
+
             if current_size <= target_bytes:
                 # Already under target with high quality
                 return str(output_file)
-            
+
             # Binary search for optimal quality (between 30 and 95)
             min_quality = 30
             max_quality = 95
             best_quality = min_quality
-            
+
             while min_quality <= max_quality:
                 mid_quality = (min_quality + max_quality) // 2
-                
+
                 # Test quality in memory first (faster than disk I/O)
                 buffer = io.BytesIO()
-                img.save(buffer, "JPEG", quality=mid_quality, optimize=True)
+                img.save(buffer, "JPEG", quality=mid_quality, optimize=True, **icc_kwargs)
                 test_size = buffer.tell()
-                
+
                 if test_size <= target_bytes:
                     # This quality works, try higher
                     best_quality = mid_quality
@@ -235,10 +256,10 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                 else:
                     # Too large, try lower quality
                     max_quality = mid_quality - 1
-            
+
             # Save with best quality found
-            img.save(output_file, "JPEG", quality=best_quality, optimize=True)
-            
+            img.save(output_file, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
+
             # If still too large, progressively resize dimensions
             if output_file.stat().st_size > target_bytes:
                 scale_factor = 0.9
@@ -246,12 +267,12 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                     current_width, current_height = img.size
                     new_width = int(current_width * scale_factor)
                     new_height = int(current_height * scale_factor)
-                    
+
                     if new_width < 10 or new_height < 10:
                         break  # Stop if image gets too small
-                    
+
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    img.save(output_file, "JPEG", quality=best_quality, optimize=True)
+                    img.save(output_file, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
 
         else:
             raise ValueError(f"Unknown resize mode: {mode}")
@@ -282,16 +303,17 @@ def crop_image(input_path: str, output_dir: str,
     
     with Image.open(input_file) as img:
         img = _prepare_image(img)
-            
+        icc_kwargs = _icc_profile_kwargs(img)
+
         # Ensure crop box is within bounds
         img_width, img_height = img.size
         x = max(0, x)
         y = max(0, y)
         right = min(img_width, x + width)
         lower = min(img_height, y + height)
-        
+
         cropped_img = img.crop((x, y, right, lower))
-        cropped_img.save(output_file, "JPEG", quality=quality, optimize=True)
+        cropped_img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
 
     return str(output_file)
 
@@ -303,13 +325,14 @@ _FORMAT_PIL = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}
 def _save_pil(img: Image.Image, output_file: Path, fmt: str, quality: int = 90) -> None:
     """Save a PIL image in the chosen format with sane defaults."""
     pil_fmt = _FORMAT_PIL[fmt]
+    icc_kwargs = _icc_profile_kwargs(img)
     if pil_fmt == "JPEG":
         img = _flatten_to_rgb(img)
-        img.save(output_file, pil_fmt, quality=quality, optimize=True)
+        img.save(output_file, pil_fmt, quality=quality, optimize=True, **icc_kwargs)
     elif pil_fmt == "PNG":
-        img.save(output_file, pil_fmt, optimize=True)
+        img.save(output_file, pil_fmt, optimize=True, **icc_kwargs)
     else:  # WEBP
-        img.save(output_file, pil_fmt, quality=quality, method=6)
+        img.save(output_file, pil_fmt, quality=quality, method=6, **icc_kwargs)
 
 
 def rotate_image(input_path: str, output_dir: str, angle: float, quality: int = 95) -> str:
