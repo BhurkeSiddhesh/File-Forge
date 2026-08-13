@@ -698,6 +698,66 @@ class TestAddPageNumbers:
         result = add_page_numbers(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
         assert Path(result).exists()
 
+    def test_right_position_uses_exact_text_width(self, multi_page_pdf, tmp_path):
+        """Right-aligned labels must sit flush with the margin using real glyph
+        widths (fitz.get_text_length), not a per-character heuristic that
+        drifts further off with every extra digit/font-size point."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        margin = 20
+        font_size = 12
+        # start_number chosen so labels span 1-4 digits across the 4-page fixture.
+        result = add_page_numbers(
+            str(multi_page_pdf), str(out), position="bottom-right",
+            start_number=999, font_size=font_size,
+        )
+        doc = fitz.open(result)
+        try:
+            for i, page in enumerate(doc):
+                label = str(999 + i)
+                expected_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
+                expected_x = page.rect.width - margin - expected_width
+                spans = [
+                    span for block in page.get_text("dict")["blocks"]
+                    for line in block.get("lines", [])
+                    for span in line["spans"]
+                    if span["text"].strip() == label
+                ]
+                assert spans, f"page {i}: label {label!r} not found"
+                actual_x = spans[0]["bbox"][0]
+                assert abs(actual_x - expected_x) < 1.0, (
+                    f"page {i}: label {label!r} x={actual_x} expected~={expected_x}"
+                )
+        finally:
+            doc.close()
+
+    def test_center_position_is_symmetric(self, simple_pdf, tmp_path):
+        """Center-aligned label's left/right whitespace margins must match
+        within a point, using the real text width rather than a heuristic."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = add_page_numbers(str(simple_pdf), str(out), position="bottom-center")
+        doc = fitz.open(result)
+        try:
+            page = doc[0]
+            spans = [
+                span for block in page.get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+                if span["text"].strip() == "1"
+            ]
+            assert spans
+            bbox = spans[0]["bbox"]
+            left_gap = bbox[0]
+            right_gap = page.rect.width - bbox[2]
+            assert abs(left_gap - right_gap) < 1.0
+        finally:
+            doc.close()
+
 
 # ──────────────────────────────────────────────
 # Feature #61: Repair PDF
@@ -880,6 +940,38 @@ class TestAnnotatePDF:
         out.mkdir()
         result = annotate_pdf(str(simple_pdf), str(out), [self._make_annot("redact")])
         assert Path(result).exists()
+
+    def test_redact_removes_text_and_covers_vector_graphics(self, tmp_path):
+        """A redaction must not just remove text — it must also visually cover any
+        vector graphics (drawn rects/lines) under the box. apply_redactions() on the
+        pinned PyMuPDF<1.24 has no `graphics` param (added 1.23.27) and leaves vector
+        paths in the content stream untouched; without an explicit fill the redacted
+        area was previously left blank, letting anything drawn there show straight
+        through post-redaction."""
+        import fitz
+
+        src = tmp_path / "vector.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=400)
+        page.insert_text((50, 55), "SECRET-TEXT-12345", fontsize=14)
+        page.draw_rect(fitz.Rect(40, 30, 250, 70), color=(1, 0, 0), fill=(1, 0, 0))
+        doc.save(str(src))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        ann = self._make_annot("redact", rect=[35, 25, 260, 75])
+        result = annotate_pdf(str(src), str(out), [ann])
+
+        doc2 = fitz.open(result)
+        page2 = doc2[0]
+        assert "SECRET-TEXT-12345" not in page2.get_text()
+        pix = page2.get_pixmap()
+        # Center and edge of the redacted rect must render black, not the red
+        # vector rect that was drawn underneath.
+        assert pix.pixel(140, 50) == (0, 0, 0)
+        assert pix.pixel(40, 30) == (0, 0, 0)
+        doc2.close()
 
     def test_multiple_annotations(self, simple_pdf, tmp_path):
         out = tmp_path / "out"

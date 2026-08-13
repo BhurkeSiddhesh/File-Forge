@@ -168,6 +168,27 @@ def test_watermark_image_rejects_empty_text(jpeg_image, tmp_path):
         watermark_image(str(jpeg_image), str(tmp_path), "  ")
 
 
+def test_try_font_falls_back_past_missing_arial_to_a_scalable_font(monkeypatch):
+    """arial.ttf is a Windows font, almost never present on the Linux deploy
+    target. try_font() must keep trying scalable fonts rather than dropping
+    straight to load_default()'s tiny fixed-size bitmap font, which ignores the
+    requested size entirely."""
+    from PIL import ImageFont
+    from scripts.utils import try_font
+
+    real_truetype = ImageFont.truetype
+
+    def fake_truetype(name, size):
+        if name == "arial.ttf":
+            raise OSError("cannot open resource")
+        return real_truetype(name, size)
+
+    monkeypatch.setattr(ImageFont, "truetype", fake_truetype)
+    font = try_font(150)
+    assert isinstance(font, ImageFont.FreeTypeFont)
+    assert font.size == 150
+
+
 # --- Excel tests ---
 
 def test_csv_to_xlsx_roundtrip(csv_file, tmp_path):

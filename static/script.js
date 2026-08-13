@@ -10,9 +10,18 @@
 //
 // Event names must match event_log.FUNNEL_EVENTS on the server:
 //   page_view · tool_open · file_processed · file_downloaded
+//
+// `ref` is document.referrer, sent on page_view only and reduced to a bare host
+// server-side (never stored as a full URL). It has to come from here: the
+// Referer header on the beacon itself is our own page, so the server has no
+// other way to see which site sent the visitor.
 function ffTrack(event, label) {
     try {
-        const payload = JSON.stringify({ event: event, label: label || null });
+        const payload = JSON.stringify({
+            event: event,
+            label: label || null,
+            ref: event === 'page_view' ? (document.referrer || '') : undefined,
+        });
         const url = (typeof apiUrl === 'function') ? apiUrl('/api/track') : '/api/track';
         if (navigator && typeof navigator.sendBeacon === 'function') {
             navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
@@ -31,19 +40,75 @@ window.ffTrack = ffTrack;
 // send their own page_view via a tiny inline beacon.
 try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 
+// Every tool posts through this rather than calling fetch() directly, so that
+// on-device handlers (static/local/) get first refusal. The fallback matters:
+// if those scripts failed to load, this is exactly the request the tool would
+// have made anyway, so a missing local layer costs nothing instead of breaking
+// half the tools with "ffProcess is not defined".
+const ffProcess = window.ffProcess
+    || ((path, formData) => fetch(apiUrl(path), { method: 'POST', body: formData }));
+
+// Tracks which local result each download anchor is currently holding, so the
+// previous one can be released when the anchor is repointed.
+const ffHeldLocalTokens = new WeakMap();
+
 // `token` is the opaque per-result download key returned as `download_token`.
 // It is deliberately not the display filename: output names are deterministic
 // ("resume_forgefiles.org.pdf" for every "resume.pdf"), so addressing results
 // by name let anyone guess their way to a stranger's document.
-function updateDownloadLink(element, token) {
+//
+// Results processed on-device (static/local/) carry a local token instead and
+// never existed on the server. `ffLocal.resolve()` returns null for a server
+// token, which is what lets one function serve both.
+function updateDownloadLink(element, token, filename) {
     if (!element) return;
-    const url = apiUrl(`/api/download/${encodeURIComponent(token)}`);
-    element.href = url;
+
+    // Each section reuses a single anchor for every result it produces. The one
+    // it pointed at before is now unreachable, so release it — without this,
+    // every blob a visitor generates stays pinned for the life of the page.
+    const held = ffHeldLocalTokens.get(element);
+    if (held && held !== token && window.ffLocal) window.ffLocal.release(held);
+    ffHeldLocalTokens.delete(element);
+
+    const local = window.ffLocal ? window.ffLocal.resolve(token) : null;
 
     // A result is ready for download — the successful end of the processing
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
     ffTrack('file_processed', ffFunnelLabel());
+
+    if (local) {
+        ffHeldLocalTokens.set(element, token);
+        element.href = local.url;
+        // A blob URL carries no Content-Disposition, so without this the
+        // browser saves the result under its opaque URL id instead of a name.
+        element.setAttribute('download', filename || local.filename);
+
+        element.onclick = async (e) => {
+            ffTrack('file_downloaded', ffFunnelLabel());
+            // Inside the app there is no download manager to hand a blob URL
+            // to; write the bytes out and offer the system share sheet. On the
+            // web (and in a build without the plugins) this is a no-op and the
+            // anchor's own download takes over.
+            try {
+                if (await window.ffLocal.nativeShare(local.blob, local.filename)) {
+                    e.preventDefault();
+                    return false;
+                }
+            } catch (error) {
+                console.error('Native save failed, falling back to the link:', error);
+            }
+            return true;
+        };
+        return;
+    }
+
+    // Clear any `download` a previous local result left behind, or this
+    // server download would be saved under that result's filename.
+    element.removeAttribute('download');
+
+    const url = apiUrl(`/api/download/${encodeURIComponent(token)}`);
+    element.href = url;
 
     element.onclick = async (e) => {
         // We intercept left-clicks to provide a friendly 404 alert if the file is gone.
@@ -447,6 +512,35 @@ function formatElapsed(seconds) {
     return m ? `${m}m ${s}s` : `${s}s`;
 }
 
+// Polls GET /api/jobs/{jobId} until the job resolves (done) or `maxWaitMs`
+// elapses. Recovers a result that finished after the SSE stream that started
+// it dropped (issue #95) — the worker on the server keeps running and
+// records its outcome under jobId regardless of whether anyone is still
+// listening on the stream.
+async function pollJobStatus(jobId, statusText, maxWaitMs = 6 * 60 * 1000) {
+    const deadline = Date.now() + maxWaitMs;
+    let delay = 1500;
+    while (Date.now() < deadline) {
+        if (statusText) statusText.textContent = 'Connection lost — checking whether the conversion finished...';
+        try {
+            const resp = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`));
+            if (resp.ok) {
+                const job = await resp.json();
+                if (job.status === 'done') return job.event;
+            } else if (resp.status === 404) {
+                // Job expired or never existed (e.g. the stream died before the
+                // 'start' event ever reached the client) — nothing to recover.
+                return null;
+            }
+        } catch (e) {
+            // Still offline; keep retrying until maxWaitMs.
+        }
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 1.5, 8000); // backoff, capped at 8s
+    }
+    return null;
+}
+
 async function convertToWordWithProgress(formData, useAI) {
     const statusDisplay = document.getElementById('status-display');
     const statusText = document.getElementById('status-text');
@@ -470,6 +564,22 @@ async function convertToWordWithProgress(formData, useAI) {
         }, 1000);
     }
 
+    let jobId = null;
+
+    const handleEvent = (event) => {
+        if (event.event === 'progress') {
+            const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
+            statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
+        } else if (event.event === 'start') {
+            jobId = event.job_id || jobId;
+            if (useAI) statusText.textContent = 'Analyzing layout with AI...';
+        } else if (event.event === 'complete') {
+            showResult(event.filename, event.message, event.download_token);
+        } else if (event.event === 'error') {
+            alert('Error: ' + event.detail);
+        }
+    };
+
     try {
         const response = await fetch(apiUrl('/api/pdf/convert-to-word-stream'), {
             method: 'POST',
@@ -485,29 +595,40 @@ async function convertToWordWithProgress(formData, useAI) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let streamFailed = false;
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
 
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // keep incomplete chunk in buffer
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // keep incomplete chunk in buffer
 
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const event = JSON.parse(line.slice(6));
-
-                if (event.event === 'progress') {
-                    const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
-                    statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
-                } else if (event.event === 'start') {
-                    if (useAI) statusText.textContent = 'Analyzing layout with AI...';
-                } else if (event.event === 'complete') {
-                    showResult(event.filename, event.message, event.download_token);
-                } else if (event.event === 'error') {
-                    alert('Error: ' + event.detail);
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    handleEvent(JSON.parse(line.slice(6)));
                 }
+            }
+        } catch (streamError) {
+            streamFailed = true;
+        }
+
+        if (streamFailed) {
+            // The connection dropped mid-stream, not the conversion itself —
+            // the server-side job keeps running independently. Recover its
+            // result by job_id instead of telling the user their (possibly
+            // multi-minute) conversion just vanished.
+            if (jobId) {
+                const finalEvent = await pollJobStatus(jobId, statusText);
+                if (finalEvent) {
+                    handleEvent(finalEvent);
+                } else {
+                    alert('Error: Lost connection to the server and the conversion did not complete in time. Please try again.');
+                }
+            } else {
+                alert('Error: Lost connection to the server before the conversion started. Please try again.');
             }
         }
     } catch (error) {
@@ -646,10 +767,10 @@ async function processAction(url, text, formData = null) {
     }
 
     try {
-        const response = await fetch(apiUrl(url), {
-            method: 'POST',
-            body: formData
-        });
+        // Runs on-device when this tool has a local handler, otherwise posts to
+        // the backend exactly as before — either way a Response comes back, so
+        // everything below is unchanged. See static/local/ff-local.js.
+        const response = await ffProcess(url, formData);
 
         if (response.ok) {
             const data = await response.json();
@@ -692,7 +813,7 @@ function showResult(filename, message, token) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, token);
+    updateDownloadLink(downloadLink, token, filename);
 }
 
 function showCompressResult(data) {
@@ -871,10 +992,7 @@ async function processImageAction(url, text, formData) {
     resultDisplay.classList.add('hidden');
 
     try {
-        const response = await fetch(apiUrl(url), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess(url, formData);
 
         if (response.ok) {
             const data = await response.json();
@@ -903,7 +1021,7 @@ function showImageResult(filename, message, token) {
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
-    updateDownloadLink(downloadLink, token);
+    updateDownloadLink(downloadLink, token, filename);
 }
 
 // --- Image Resize & Crop Functions ---
@@ -1137,10 +1255,7 @@ async function resizeImage() {
     statusText.innerText = "Resizing image...";
 
     try {
-        const response = await fetch(apiUrl('/api/image/resize'), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess('/api/image/resize', formData);
 
         const data = await response.json();
 
@@ -1148,7 +1263,7 @@ async function resizeImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${data.message}: ${data.filename}`;
-            updateDownloadLink(downloadLink, data.download_token);
+            updateDownloadLink(downloadLink, data.download_token, data.filename);
             downloadLink.innerText = `Download ${data.filename}`;
         } else {
             throw new Error(data.detail || 'Resize failed');
@@ -1188,10 +1303,7 @@ async function cropImage() {
     statusText.innerText = "Cropping image...";
 
     try {
-        const response = await fetch(apiUrl('/api/image/crop'), {
-            method: 'POST',
-            body: formData
-        });
+        const response = await ffProcess('/api/image/crop', formData);
 
         const respData = await response.json();
 
@@ -1199,7 +1311,7 @@ async function cropImage() {
             statusDisplay.classList.add('hidden');
             resultDisplay.classList.remove('hidden');
             resultMessage.innerText = `${respData.message}: ${respData.filename}`;
-            updateDownloadLink(downloadLink, respData.download_token);
+            updateDownloadLink(downloadLink, respData.download_token, respData.filename);
             downloadLink.innerText = `Download ${respData.filename}`;
         } else {
             throw new Error(respData.detail || 'Crop failed');
@@ -2471,9 +2583,13 @@ document.getElementById('process-page-numbers-btn')?.addEventListener('click', (
     const fd = new FormData();
     fd.append('file', selectedFile);
     fd.append('position', position);
-    fd.append('format', format);
-    fd.append('start', start);
-    fd.append('skip', skip);
+    // fmt / start_number / skip_first are the names the endpoint declares.
+    // Sent as format/start/skip they were dropped, so the numbering format,
+    // start number and skip-first controls did nothing — every document got
+    // decimal numbers from 1 on every page.
+    fd.append('fmt', format);
+    fd.append('start_number', start);
+    fd.append('skip_first', skip);
     processAction('/api/pdf/add-page-numbers', 'Adding page numbers...', fd);
 });
 
@@ -2511,7 +2627,9 @@ document.getElementById('process-create-pdf-btn')?.addEventListener('click', () 
     const mode = document.querySelector('input[name="create-pdf-mode"]:checked')?.value || 'text';
     const pagesize = document.getElementById('create-pdf-pagesize').value;
     const fd = new FormData();
-    fd.append('pagesize', pagesize);
+    // Same mismatch as image-to-pdf: the endpoints declare page_size and
+    // num_pages, so "Letter" and the page count were both being dropped.
+    fd.append('page_size', pagesize);
     if (mode === 'text') {
         const content = document.getElementById('create-pdf-content').value;
         const title = document.getElementById('create-pdf-title').value;
@@ -2521,7 +2639,7 @@ document.getElementById('process-create-pdf-btn')?.addEventListener('click', () 
         processAction('/api/pdf/create-from-text', 'Creating PDF from text...', fd);
     } else {
         const pages = document.getElementById('create-pdf-pages').value;
-        fd.append('pages', pages);
+        fd.append('num_pages', pages);
         processAction('/api/pdf/create-blank', 'Creating blank PDF...', fd);
     }
 });
@@ -2689,9 +2807,14 @@ document.getElementById('process-image-to-pdf-btn')?.addEventListener('click', (
     const pagesize = document.getElementById('image-to-pdf-pagesize').value;
     const fit = document.getElementById('image-to-pdf-fit').value;
     const fd = new FormData();
-    fd.append('file', selectedImageFile);
-    fd.append('pagesize', pagesize);
-    fd.append('fit', fit);
+    // Every name here has to be the one /api/image/to-pdf actually declares.
+    // None of them were: the file went as `file` against a required `files`,
+    // so this tool answered 422 on every click and had never worked at all,
+    // and pagesize/fit were ignored on top of that. Left alone, the on-device
+    // path would quietly start working while the server path stayed broken.
+    fd.append('files', selectedImageFile);
+    fd.append('page_size', pagesize);
+    fd.append('fit_mode', fit);
     processImageAction('/api/image/to-pdf', 'Converting image to PDF...', fd);
 });
 
@@ -2815,7 +2938,72 @@ window.ffConsumePendingOp = ffConsumePendingOp;
     }
     ffPendingOp = op.card;
     ffHighlightCard(op.card);
+
+    // ?handoff=1 means the visitor already chose a file on the SEO landing
+    // page and static/seo-upload.js stashed it in IndexedDB. Pick it up and
+    // feed it to this category's file input exactly as if it had been chosen
+    // here, so landing → upload → result is one motion with no second file
+    // picker. Any failure just leaves the normal empty upload box in place.
+    if (params.get('handoff') === '1') {
+        ffClaimHandoff(requestedTool);
+    }
 })();
+
+// Category → the file input a handed-off file belongs in. Mirrors the inputs
+// in index.html; a category missing here simply doesn't accept a handoff.
+const FF_CATEGORY_INPUTS = {
+    pdf: 'file-input',
+    image: 'image-file-input',
+    excel: 'excel-file-input',
+    ppt: 'ppt-file-input',
+    word: 'word-file-input',
+    workflow: 'workflow-file-input',
+};
+
+function ffClaimHandoff(tool) {
+    const inputId = FF_CATEGORY_INPUTS[tool];
+    if (!inputId || !window.indexedDB || typeof DataTransfer === 'undefined') return;
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let db;
+    const req = indexedDB.open('ff_handoff', 1);
+    // The landing page creates the store; if it never ran there is nothing to
+    // claim, so don't create it here just to find it empty.
+    req.onupgradeneeded = () => {
+        try { req.transaction.abort(); } catch (e) { }
+    };
+    req.onerror = () => { };
+    req.onsuccess = () => {
+        db = req.result;
+        if (!db.objectStoreNames.contains('files')) { db.close(); return; }
+        let record;
+        const tx = db.transaction('files', 'readwrite');
+        const store = tx.objectStore('files');
+        const get = store.get('pending');
+        get.onsuccess = () => {
+            record = get.result;
+            // Consumed on read: a stale file resurfacing on a later visit
+            // would silently convert the wrong document.
+            store.delete('pending');
+        };
+        tx.oncomplete = () => {
+            db.close();
+            if (!record || !record.blob) return;
+            try {
+                const file = new File([record.blob], record.name || 'upload',
+                    { type: record.type || record.blob.type || '' });
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch (e) {
+                // Leaves the empty upload box — the pre-handoff behaviour.
+            }
+        };
+        tx.onerror = () => { db.close(); };
+    };
+}
 
 // Theme Toggle Logic
 const themeToggleBtn = document.getElementById('theme-toggle-btn');

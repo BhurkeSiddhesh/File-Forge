@@ -24,6 +24,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Optional, Tuple
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("file_forge.event_log")
 
@@ -39,7 +40,13 @@ CREATE TABLE IF NOT EXISTS operation_events (
     duration_ms INTEGER NOT NULL,
     error       TEXT,
     country     TEXT,
-    session_id  TEXT
+    session_id  TEXT,
+    -- Size of the request body that carried the input file(s), from the
+    -- Content-Length header. A close upper bound on the input size (it also
+    -- counts multipart boundaries and the other form fields), never the file's
+    -- name or contents. NULL when the size wasn't known — non-upload
+    -- operations, and every row written before this column existed.
+    request_bytes INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_operation_events_ts ON operation_events (timestamp);
 CREATE INDEX IF NOT EXISTS idx_operation_events_op_ts ON operation_events (operation, timestamp);
@@ -55,12 +62,29 @@ CREATE TABLE IF NOT EXISTS funnel_events (
     event       TEXT    NOT NULL,
     label       TEXT,
     country     TEXT,
-    session_id  TEXT
+    session_id  TEXT,
+    -- Where the visitor came from, as a bare host ('google.com') or one of the
+    -- fixed sentinels below. Never a full referring URL — a URL can carry the
+    -- search query, and a query string is the one part of a referrer that can
+    -- identify a person. NULL on every non-page_view row and on every row
+    -- written before this column existed.
+    referrer    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_funnel_events_ts ON funnel_events (timestamp);
 CREATE INDEX IF NOT EXISTS idx_funnel_events_ev_ts ON funnel_events (event, timestamp);
 CREATE INDEX IF NOT EXISTS idx_funnel_events_sess ON funnel_events (session_id);
 """
+
+# Columns added after the tables above first shipped. CREATE TABLE IF NOT EXISTS
+# leaves an existing table alone, so a database created before a column was
+# added never gets it from _SCHEMA — these ALTERs are what actually migrate the
+# production DB. Adding a nullable column is instant in SQLite (metadata-only)
+# and old rows read back as NULL, which is exactly what "we didn't record this
+# back then" should look like.
+_ADDED_COLUMNS = (
+    ("operation_events", "request_bytes", "INTEGER"),
+    ("funnel_events", "referrer", "TEXT"),
+)
 
 # The only funnel events we store. Anything else a client POSTs is ignored, so
 # the table can't be polluted by arbitrary event names. Order matters: it's the
@@ -80,6 +104,13 @@ _request_context: contextvars.ContextVar = contextvars.ContextVar(
     "ff_event_context", default=None
 )
 
+# Upload size for the current request, kept in its own contextvar rather than
+# widened into the tuple above: several call sites unpack that tuple as a pair,
+# and a metric is not worth breaking them for.
+_request_bytes: contextvars.ContextVar = contextvars.ContextVar(
+    "ff_event_request_bytes", default=None
+)
+
 
 def set_request_context(country: Optional[str], session_id: Optional[str]):
     return _request_context.set((country, session_id))
@@ -91,6 +122,19 @@ def reset_request_context(token) -> None:
 
 def get_request_context() -> Tuple[Optional[str], Optional[str]]:
     return _request_context.get() or (None, None)
+
+
+def set_request_bytes(size: Optional[int]):
+    """Record how large the current request body is, for the events it produces."""
+    return _request_bytes.set(size)
+
+
+def reset_request_bytes(token) -> None:
+    _request_bytes.reset(token)
+
+
+def get_request_bytes() -> Optional[int]:
+    return _request_bytes.get()
 
 
 def _db_path() -> Path:
@@ -109,10 +153,25 @@ def _ensure_schema(path: Path) -> None:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            _migrate_columns(conn)
             conn.commit()
         finally:
             conn.close()
         _initialized_paths.add(key)
+
+
+def _migrate_columns(conn: sqlite3.Connection) -> None:
+    """Add any column in _ADDED_COLUMNS that this database doesn't have yet."""
+    for table, column, decl in _ADDED_COLUMNS:
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column in existing:
+            continue
+        # Never fatal: an unmigrated column only costs us one metric, whereas a
+        # raising _ensure_schema would take the whole app down at startup.
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.OperationalError:
+            logger.warning("Could not add %s.%s to the event log", table, column, exc_info=True)
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -235,6 +294,7 @@ def log_event(
     error=None,
     country: Optional[str] = None,
     session_id: Optional[str] = None,
+    request_bytes: Optional[int] = None,
 ) -> None:
     """Record one operation event. Never raises."""
     ctx_country, ctx_session = get_request_context()
@@ -242,10 +302,13 @@ def log_event(
         country = ctx_country
     if session_id is None:
         session_id = ctx_session
+    if request_bytes is None:
+        request_bytes = get_request_bytes()
     _write(
         "INSERT INTO operation_events"
-        " (timestamp, operation, use_ai, success, duration_ms, error, country, session_id)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " (timestamp, operation, use_ai, success, duration_ms, error, country,"
+        "  session_id, request_bytes)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             operation,
@@ -255,6 +318,7 @@ def log_event(
             sanitize_error(error),
             country,
             session_id,
+            request_bytes,
         ),
         f"operation event for {operation}",
     )
@@ -304,9 +368,14 @@ def timed_call(
     use_ai: bool = False,
     country: Optional[str] = None,
     session_id: Optional[str] = None,
+    request_bytes: Optional[int] = None,
     **kwargs,
 ):
-    """Synchronous counterpart of timed() for sync call sites and worker threads."""
+    """Synchronous counterpart of timed() for sync call sites and worker threads.
+
+    Raw worker threads don't inherit contextvars, so callers there pass
+    country/session_id/request_bytes explicitly — same reason for all three.
+    """
     started = time.perf_counter()
     try:
         result = fn(*args, **kwargs)
@@ -319,6 +388,7 @@ def timed_call(
             error=exc,
             country=country,
             session_id=session_id,
+            request_bytes=request_bytes,
         )
         raise
     log_event(
@@ -328,8 +398,48 @@ def timed_call(
         use_ai=use_ai,
         country=country,
         session_id=session_id,
+        request_bytes=request_bytes,
     )
     return result
+
+
+# Sentinels stored in place of a host. `(direct)` is a page view with no
+# referrer at all: someone who typed the URL, opened a bookmark, or arrived from
+# an app or client that strips it.
+REFERRER_DIRECT = "(direct)"
+# ...and a page view referred by our own site, i.e. internal navigation. Kept
+# distinct from (direct) so it can be excluded from acquisition numbers instead
+# of quietly inflating them.
+REFERRER_INTERNAL = "(internal)"
+_HOST_MAX = 100
+_HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+$")
+
+
+def referrer_host(referrer: Optional[str], self_host: Optional[str] = None) -> str:
+    """Reduce a referring URL to a bare lowercase host, or a sentinel.
+
+    Only the host survives — never the path or query string. A referring URL's
+    query is the part that can carry a search term or an identifier, and none of
+    it is needed to answer the question this metric exists for ("which sites
+    send us traffic"). Anything unparseable is treated as no referrer rather
+    than stored as-is, so the column can only ever hold a hostname or a
+    sentinel.
+    """
+    if not referrer:
+        return REFERRER_DIRECT
+    try:
+        host = urlsplit(str(referrer).strip()).hostname or ""
+    except ValueError:
+        return REFERRER_DIRECT
+    host = host.lower().lstrip(".")[:_HOST_MAX]
+    if not host or not _HOST_RE.match(host):
+        return REFERRER_DIRECT
+    if self_host:
+        self_host = self_host.lower()
+        if host == self_host or host.endswith("." + self_host):
+            return REFERRER_INTERNAL
+    # 'www.' carries no information and would split google.com into two rows.
+    return host[4:] if host.startswith("www.") else host
 
 
 def log_funnel_event(
@@ -338,8 +448,12 @@ def log_funnel_event(
     label: Optional[str] = None,
     country: Optional[str] = None,
     session_id: Optional[str] = None,
+    referrer: Optional[str] = None,
 ) -> bool:
     """Record one navigation/funnel event. Never raises.
+
+    `referrer` must already be reduced to a host by referrer_host() — this
+    function stores it verbatim.
 
     Returns True if the event was accepted (a known funnel stage) and a write was
     attempted, False if the event name is unknown and was ignored.
@@ -353,15 +467,19 @@ def log_funnel_event(
         session_id = ctx_session
     if label is not None:
         label = str(label)[:_LABEL_MAX]
+    if referrer is not None:
+        referrer = str(referrer)[:_HOST_MAX]
     _write(
-        "INSERT INTO funnel_events (timestamp, event, label, country, session_id)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO funnel_events"
+        " (timestamp, event, label, country, session_id, referrer)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
         (
             datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             event,
             label,
             country,
             session_id,
+            referrer,
         ),
         f"funnel event {event}",
     )

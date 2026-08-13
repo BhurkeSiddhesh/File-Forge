@@ -15,6 +15,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # --- Logging Setup ---
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -29,6 +30,7 @@ if not logger.handlers:
 
 from fastapi.concurrency import run_in_threadpool
 from scripts.pdf_utils import (
+    ServerDependencyError,
     remove_pdf_password,
     pdf_to_docx,
     pdf_to_word_ai,
@@ -181,6 +183,10 @@ MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
 MAX_UPLOAD_TOTAL_MB_ENV = os.environ.get("MAX_UPLOAD_TOTAL_MB", "").strip()
 DISABLE_AI = os.environ.get("DISABLE_AI", "0") == "1"
 FILE_TTL_SECONDS = int(os.environ.get("FILE_TTL_SECONDS", "3600"))
+# Bounds how many steps a single /api/workflow/execute request can chain, so a
+# caller can't pair a huge step list with the heavy-tier rate limit to pin the
+# server on one "request".
+MAX_WORKFLOW_STEPS = int(os.environ.get("MAX_WORKFLOW_STEPS", "20"))
 
 # --- Google AdSense (optional, fully env-gated) ---
 # When ADSENSE_CLIENT is unset, every ad placeholder renders empty — zero markup,
@@ -515,23 +521,28 @@ def _stream_to_disk(file: UploadFile, dest: Path, budget: int, limit_mb: int) ->
     return written
 
 
-def save_upload(file: UploadFile, allowed: Optional[set] = None) -> Path:
+async def save_upload(file: UploadFile, allowed: Optional[set] = None) -> Path:
     """Save one upload under a unique name, size- and extension-checked.
 
     Call this *before* the handler's try/except: an HTTPException raised here is
     a 413/415 that must reach the client, and most handlers funnel every
     in-try exception into a 400.
+
+    The chunked disk write runs in the threadpool (via run_in_threadpool) so a
+    large upload doesn't block the event loop for every other in-flight request
+    for the duration of the write.
     """
     dest = _upload_dest(file, ALLOWED_EXTENSIONS if allowed is None else allowed)
-    _stream_to_disk(file, dest, MAX_UPLOAD_MB * 1024 * 1024, MAX_UPLOAD_MB)
+    await run_in_threadpool(_stream_to_disk, file, dest, MAX_UPLOAD_MB * 1024 * 1024, MAX_UPLOAD_MB)
     return dest
 
 
-def save_uploads(files: List[UploadFile], allowed: Optional[set] = None) -> List[Path]:
+async def save_uploads(files: List[UploadFile], allowed: Optional[set] = None) -> List[Path]:
     """Save a batch of uploads under a single shared size budget.
 
     Everything written so far is removed before the 413/415 propagates, so a
-    rejected batch leaves nothing behind for the sweeper to find.
+    rejected batch leaves nothing behind for the sweeper to find. Each file's
+    disk write runs in the threadpool, same as save_upload().
     """
     allowed = ALLOWED_EXTENSIONS if allowed is None else allowed
     limit_mb = _total_upload_budget_mb()
@@ -540,7 +551,7 @@ def save_uploads(files: List[UploadFile], allowed: Optional[set] = None) -> List
     try:
         for f in files:
             dest = _upload_dest(f, allowed)
-            remaining -= _stream_to_disk(f, dest, remaining, limit_mb)
+            remaining -= await run_in_threadpool(_stream_to_disk, f, dest, remaining, limit_mb)
             saved.append(dest)
     except Exception:
         for p in saved:
@@ -629,6 +640,12 @@ class DownloadRegistry:
     worker could not serve another worker's files even with a shared map. Going
     multi-worker means shared *storage*, not just shared state — see the note on
     SlidingWindowRateLimiter, which has the same constraint.
+
+    A restart of *this* worker is a different problem: the in-memory map is
+    gone, but new_result_dir() names every result directory after its own
+    token, so the file is still findable on disk under OUTPUT_DIR/<token>.
+    resolve() falls back to that lookup on a cache miss instead of telling a
+    user their just-finished conversion "no longer exists".
     """
 
     def __init__(self):
@@ -642,18 +659,48 @@ class DownloadRegistry:
             self._entries[token] = (path, session_id, time.monotonic())
         return token
 
+    def _recover_from_disk(self, token: str):
+        """Reconstruct an entry for a token that isn't in memory, by checking
+        whether OUTPUT_DIR/<token> still holds the one file a completed
+        result directory always ends up with.
+
+        Session ownership can't be recovered this way, so a recovered entry
+        has owner=None -- resolve() only enforces DOWNLOAD_BIND_SESSION when
+        an owner is known, so this doesn't defeat that check, it just doesn't
+        survive a restart (the token itself is still unguessable).
+        """
+        result_dir = OUTPUT_DIR / token
+        try:
+            result_dir.resolve().relative_to(OUTPUT_DIR.resolve())
+        except (ValueError, OSError):
+            return None
+        if not result_dir.is_dir():
+            return None
+        files = [p for p in result_dir.iterdir() if p.is_file()]
+        if len(files) != 1:
+            return None
+        path = files[0]
+        age_seconds = max(0.0, time.time() - path.stat().st_mtime)
+        created = time.monotonic() - age_seconds
+        return (path, None, created)
+
     def resolve(self, token: str, session_id):
         """Return the registered path, or None if unknown/expired/not yours."""
         with self._lock:
             entry = self._entries.get(token)
+        if entry is None:
+            entry = self._recover_from_disk(token)
             if entry is None:
                 return None
-            path, owner, created = entry
-            # Entries expire with the files themselves, so a token can never
-            # outlive its result and point at a directory reused later.
-            if time.monotonic() - created > FILE_TTL_SECONDS:
-                del self._entries[token]
-                return None
+            with self._lock:
+                entry = self._entries.setdefault(token, entry)
+        path, owner, created = entry
+        # Entries expire with the files themselves, so a token can never
+        # outlive its result and point at a directory reused later.
+        if time.monotonic() - created > FILE_TTL_SECONDS:
+            with self._lock:
+                self._entries.pop(token, None)
+            return None
         if DOWNLOAD_BIND_SESSION and owner is not None and owner != session_id:
             return None
         return path
@@ -668,6 +715,64 @@ class DownloadRegistry:
 
 
 app.state.downloads = DownloadRegistry()
+
+
+class JobRegistry:
+    """Tracks the terminal outcome of a background SSE job by a stable job_id,
+    independent of whether the SSE connection that started it is still open.
+
+    api_convert_to_word_stream's worker keeps running on its own thread even
+    after the client's SSE connection drops (a network blip, a backgrounded
+    tab) — it finishes the conversion and puts the 'complete' event on a queue
+    nobody is reading anymore. A client that reconnects (or falls back to
+    polling after a stream read fails) can recover the result here by job_id
+    instead of losing a multi-minute AI conversion to a dropped connection.
+    """
+
+    def __init__(self):
+        self._entries = {}
+        self._lock = threading.Lock()
+
+    def create(self) -> str:
+        job_id = secrets.token_urlsafe(_DOWNLOAD_TOKEN_BYTES)
+        with self._lock:
+            self._entries[job_id] = {"status": "pending", "created": time.monotonic()}
+        return job_id
+
+    def set_result(self, job_id: str, event: dict) -> None:
+        """Record the job's terminal SSE event (a 'complete' or 'error' payload)."""
+        with self._lock:
+            created = self._entries.get(job_id, {}).get("created", time.monotonic())
+            self._entries[job_id] = {"status": "done", "event": event, "created": created}
+
+    def get(self, job_id: str):
+        with self._lock:
+            entry = self._entries.get(job_id)
+            if entry is None:
+                return None
+            if time.monotonic() - entry["created"] > FILE_TTL_SECONDS:
+                del self._entries[job_id]
+                return None
+            return dict(entry)
+
+
+app.state.jobs = JobRegistry()
+
+
+@app.get("/api/jobs/{job_id}")
+async def api_job_status(job_id: str):
+    """Poll the outcome of a background SSE job (issue #95).
+
+    A client whose SSE stream dropped mid-conversion calls this after it
+    reconnects, or after retries are exhausted, to find out whether the job
+    actually finished while it was disconnected.
+    """
+    if not _DOWNLOAD_TOKEN_RE.match(job_id):
+        raise HTTPException(status_code=404, detail="Unknown job")
+    entry = app.state.jobs.get(job_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    return entry
 
 
 def new_result_dir() -> Path:
@@ -811,6 +916,19 @@ SESSION_COOKIE_NAME = "ff_sid"
 SESSION_COOKIE_MAX_AGE = 365 * 24 * 3600
 
 
+def _content_length(request: Request) -> Optional[int]:
+    """The request's Content-Length as a non-negative int, or None if absent
+    or malformed (a chunked upload sends no Content-Length at all)."""
+    raw = request.headers.get("content-length")
+    if not raw:
+        return None
+    try:
+        size = int(raw)
+    except ValueError:
+        return None
+    return size if size >= 0 else None
+
+
 @app.middleware("http")
 async def event_context_middleware(request: Request, call_next):
     """Expose CF-IPCountry and an anonymous session id to scripts/event_log.
@@ -828,10 +946,17 @@ async def event_context_middleware(request: Request, call_next):
     if is_new_session:
         session_id = str(uuid.uuid4())
     token = event_log.set_request_context(country, session_id)
+    # How big the upload was. Taken here, once, rather than at each of the ~40
+    # log_event() call sites: every operation runs inside a request, so the
+    # middleware is the one place that sees the size for all of them. It is the
+    # request body, not the file — close enough to answer "are the slow runs
+    # just the big files?", which is the question p95 alone can't.
+    bytes_token = event_log.set_request_bytes(_content_length(request))
     try:
         response = await call_next(request)
     finally:
         event_log.reset_request_context(token)
+        event_log.reset_request_bytes(bytes_token)
     if is_new_session:
         response.set_cookie(
             SESSION_COOKIE_NAME,
@@ -902,11 +1027,12 @@ async def api_remove_password(
     file: UploadFile = File(...),
     password: str = Form(...)
 ):
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
-        output_path = event_log.timed_call(
-            "pdf_unlock", remove_pdf_password, str(temp_path), password, str(result_dir)
+        output_path = await event_log.timed(
+            "pdf_unlock",
+            run_in_threadpool(remove_pdf_password, str(temp_path), password, str(result_dir)),
         )
         return {"status": "success", "message": "Password removed", **download_fields(output_path)}
     except Exception as e:
@@ -941,7 +1067,7 @@ async def api_convert_to_word(
 ):
     # Sanitize filename and add UUID prefix
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Converting: %s, use_ai=%s, password=%s", safe_filename, use_ai, '***' if password else 'None')
     try:
@@ -951,9 +1077,12 @@ async def api_convert_to_word(
             # @jules: This can be very slow for large PDFs.
             # We should probably implement a progress bar or background task with polling.
             ai_method = {}
-            output_path = event_log.timed_call(
-                "pdf_to_word_ai", pdf_to_word_ai, str(temp_path), str(result_dir), password,
-                method_callback=lambda m: ai_method.__setitem__("value", m),
+            output_path = await event_log.timed(
+                "pdf_to_word_ai",
+                run_in_threadpool(
+                    pdf_to_word_ai, str(temp_path), str(result_dir), password,
+                    method_callback=lambda m: ai_method.__setitem__("value", m),
+                ),
                 use_ai=True,
             )
             message = _ai_conversion_message(ai_method.get("value"))
@@ -966,6 +1095,12 @@ async def api_convert_to_word(
 
         logger.info("Conversion successful: %s", output_path)
         return {"status": "success", "message": message, **download_fields(output_path)}
+    except ServerDependencyError as e:
+        # 503, not the blanket 400 below: the server is missing a component, so
+        # calling it a bad request points the user at their own file and tells
+        # uptime monitoring that everything is fine.
+        logger.exception("Conversion unavailable for %s", safe_filename)
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Conversion failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
@@ -994,12 +1129,21 @@ async def api_convert_to_word_stream(
     from fastapi.responses import StreamingResponse
 
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     # Captured here because the worker runs on a raw thread, where the
-    # middleware's contextvars don't propagate.
+    # middleware's contextvars don't propagate. The upload size comes along for
+    # the same reason — and it matters most here, since these are the slowest
+    # operations on the site and "was it just a big file?" is the first
+    # question their duration raises.
     ctx_country, ctx_session = event_log.get_request_context()
+    ctx_bytes = event_log.get_request_bytes()
     op_name = "pdf_to_word_ai" if use_ai else "pdf_to_word_standard"
+    # The worker thread below outlives a dropped SSE connection (issue #95):
+    # a job_id lets a reconnecting/polling client recover the result via
+    # GET /api/jobs/{job_id} even though the 'complete' event it's about to
+    # put on `events` was never read by anyone.
+    job_id = app.state.jobs.create()
 
     async def event_stream():
         events = queue_mod.Queue()
@@ -1016,29 +1160,36 @@ async def api_convert_to_word_stream(
                         str(temp_path), str(result_dir), password, progress_callback=progress_cb,
                         method_callback=lambda m: ai_method.__setitem__("value", m),
                         use_ai=True, country=ctx_country, session_id=ctx_session,
+                        request_bytes=ctx_bytes,
                     )
                     method = ai_method.get("value")
                     message = _ai_conversion_message(method)
                 else:
                     output_path = event_log.timed_call(
                         op_name, pdf_to_docx, str(temp_path), str(result_dir), password,
+                        progress_callback=progress_cb,
                         country=ctx_country, session_id=ctx_session,
+                        request_bytes=ctx_bytes,
                     )
                     method = "standard"
                     message = "Converted to Word (Standard)"
-                events.put({
+                complete_event = {
                     "event": "complete",
                     "message": message,
                     "method": method,
                     **download_fields(output_path, ctx_session),
-                })
+                }
+                app.state.jobs.set_result(job_id, complete_event)
+                events.put(complete_event)
             except Exception as e:
                 logger.exception("Streaming conversion failed for %s", safe_filename)
-                events.put({"event": "error", "detail": event_log.scrub_paths(str(e))})
+                error_event = {"event": "error", "detail": event_log.scrub_paths(str(e))}
+                app.state.jobs.set_result(job_id, error_event)
+                events.put(error_event)
             finally:
                 events.put(None)  # sentinel: stream finished
 
-        yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename})}\n\n"
+        yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename, 'job_id': job_id})}\n\n"
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
         try:
@@ -1072,7 +1223,7 @@ async def api_extract_pages(
     password: str = Form(None),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Extracting pages: %s, pages='%s', password=%s", safe_filename, pages, '***' if password else 'None')
     try:
@@ -1102,7 +1253,7 @@ async def api_compress_pdf(
 ):
     """Compress PDF by optimizing structure and resampling large images."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Compressing: %s, level=%s, password=%s", safe_filename, level, '***' if password else 'None')
     try:
@@ -1142,7 +1293,7 @@ async def api_merge_pdfs(
 
     # Outside the try: a 413/415 from here must reach the client, and the
     # handler below funnels every in-try exception into a 400.
-    temp_paths = save_uploads(files, PDF_EXTENSIONS)
+    temp_paths = await save_uploads(files, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         pwd_list = None
@@ -1178,7 +1329,7 @@ async def api_add_watermark(
 ):
     """Stamp a text watermark on every page."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1210,7 +1361,7 @@ async def api_rotate_pdf(
 ):
     """Rotate PDF pages by specified angle (90, 180, 270 degrees)."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1242,7 +1393,7 @@ async def api_pdf_to_images(
 ):
     """Render every page to an image and return a zip."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -1289,7 +1440,7 @@ async def api_sign_pdf(
     safe_pdf = secure_filename(file.filename)
     # Two files, two allowlists — and one shared budget, so a signature image
     # can't be used to smuggle a second MAX_UPLOAD_MB past the cap.
-    pdf_path, sig_path = save_uploads(
+    pdf_path, sig_path = await save_uploads(
         [file, signature], PDF_EXTENSIONS | IMAGE_EXTENSIONS
     )
     try:
@@ -1323,12 +1474,13 @@ async def api_heic_to_jpeg(
     validate_quality(quality)
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Converting HEIC: %s, quality=%d", safe_filename, quality)
     try:
-        output_path = event_log.timed_call(
-            "heic_to_jpeg", heic_to_jpeg, str(temp_path), str(result_dir), quality
+        output_path = await event_log.timed(
+            "heic_to_jpeg",
+            run_in_threadpool(heic_to_jpeg, str(temp_path), str(result_dir), quality),
         )
         return {"status": "success", "message": "Converted to JPEG", **download_fields(output_path)}
     except Exception as e:
@@ -1360,21 +1512,23 @@ async def api_resize_image(
     validate_range("target_size_kb", target_size_kb, 1)
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Resizing image: %s, mode=%s", safe_filename, mode)
     try:
         from scripts.image_utils import resize_image
-        output_path = event_log.timed_call(
+        output_path = await event_log.timed(
             "resize",
-            resize_image,
-            str(temp_path),
-            str(result_dir),
-            mode,
-            width=width,
-            height=height,
-            percentage=percentage,
-            target_size_kb=target_size_kb
+            run_in_threadpool(
+                resize_image,
+                str(temp_path),
+                str(result_dir),
+                mode,
+                width=width,
+                height=height,
+                percentage=percentage,
+                target_size_kb=target_size_kb
+            ),
         )
         return {"status": "success", "message": "Image Resized", **download_fields(output_path)}
     except Exception as e:
@@ -1403,17 +1557,19 @@ async def api_crop_image(
     validate_range("height", height, 1)
     # Sanitize filename to prevent path traversal
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     logger.debug("Cropping image: %s, x=%d, y=%d, w=%d, h=%d", safe_filename, x, y, width, height)
     try:
         from scripts.image_utils import crop_image
-        output_path = event_log.timed_call(
+        output_path = await event_log.timed(
             "crop",
-            crop_image,
-            str(temp_path),
-            str(result_dir),
-            x=x, y=y, width=width, height=height
+            run_in_threadpool(
+                crop_image,
+                str(temp_path),
+                str(result_dir),
+                x=x, y=y, width=width, height=height
+            ),
         )
         return {"status": "success", "message": "Image Cropped", **download_fields(output_path)}
     except Exception as e:
@@ -1435,7 +1591,7 @@ async def api_rotate_image(
 ):
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1461,7 +1617,7 @@ async def api_compress_image(
 ):
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -1495,7 +1651,7 @@ async def api_convert_image(
 ):
     validate_quality(quality)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1524,7 +1680,7 @@ async def api_watermark_image(
 ):
     validate_range("opacity", opacity, 0.0, 1.0)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, IMAGE_EXTENSIONS)
+    temp_path = await save_upload(file, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1550,7 +1706,7 @@ async def api_excel_to_pdf(
     file: UploadFile = File(...),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    temp_path = await save_upload(file, EXCEL_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1574,7 +1730,7 @@ async def api_csv_to_xlsx(
     delimiter: str = Form(","),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    temp_path = await save_upload(file, EXCEL_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1598,7 +1754,7 @@ async def api_xlsx_to_csv(
     sheet: str = Form(None),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, EXCEL_EXTENSIONS)
+    temp_path = await save_upload(file, EXCEL_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1622,7 +1778,7 @@ async def api_merge_excel(
 ):
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two Excel files to merge.")
-    temp_paths = save_uploads(files, EXCEL_EXTENSIONS)
+    temp_paths = await save_uploads(files, EXCEL_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1649,7 +1805,7 @@ async def api_ppt_to_pdf(
     file: UploadFile = File(...),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PPT_EXTENSIONS)
+    temp_path = await save_upload(file, PPT_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1673,7 +1829,7 @@ async def api_ppt_to_images(
     fmt: str = Form("png"),
 ):
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PPT_EXTENSIONS)
+    temp_path = await save_upload(file, PPT_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -1702,7 +1858,7 @@ async def api_merge_pptx(
 ):
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="Provide at least two PPTX files to merge.")
-    temp_paths = save_uploads(files, PPT_EXTENSIONS)
+    temp_paths = await save_uploads(files, PPT_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -1731,20 +1887,27 @@ async def execute_workflow(
     from fastapi.responses import StreamingResponse
 
     safe_filename = secure_filename(file.filename)
-    logger.info("Workflow started: %s, steps=%s", safe_filename, steps)
 
-    # Parse steps JSON
+    # Validate before logging anything: `steps` is a raw, unbounded client
+    # form field, so nothing about it is safe to write to the log until it's
+    # confirmed to be a bounded list of step objects.
     try:
         step_list = json.loads(steps)
-        if not step_list:
-            raise ValueError("No steps provided")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid steps JSON")
+    if not isinstance(step_list, list) or not step_list:
+        raise HTTPException(status_code=400, detail="steps must be a non-empty list")
+    if len(step_list) > MAX_WORKFLOW_STEPS:
+        raise HTTPException(status_code=400, detail=f"Too many steps (max {MAX_WORKFLOW_STEPS})")
+    if not all(isinstance(s, dict) for s in step_list):
+        raise HTTPException(status_code=400, detail="Each step must be an object")
+
+    logger.info("Workflow started: %s, %d step(s)", safe_filename, len(step_list))
 
     # Saved after the steps parse, so a malformed request never touches disk.
     # The step list decides what the file really has to be, so the intake here
     # takes the union allowlist rather than one tool family's.
-    temp_path = save_upload(file, ALLOWED_EXTENSIONS)
+    temp_path = await save_upload(file, ALLOWED_EXTENSIONS)
     # One directory for the whole chain: every step's output and every renamed
     # intermediate lands here, and only the final file is ever registered for
     # download, so the intermediates are unreachable rather than merely unlinked.
@@ -2066,7 +2229,7 @@ async def api_protect_pdf(
 ):
     """Add password protection and permissions to a PDF."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2102,7 +2265,7 @@ async def api_images_to_pdf(
 ):
     """Convert one or more images into a single PDF."""
     validate_range("margin_pt", margin_pt, 0, 200)
-    temp_paths = save_uploads(files, IMAGE_EXTENSIONS)
+    temp_paths = await save_uploads(files, IMAGE_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2135,7 +2298,7 @@ async def api_word_to_pdf(
 ):
     """Convert a Word document (DOCX/DOC) to PDF."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, WORD_EXTENSIONS)
+    temp_path = await save_upload(file, WORD_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2162,7 +2325,7 @@ async def api_word_to_pptx(
     """Convert a Word document (DOCX/DOC) to a PowerPoint presentation."""
     validate_range("dpi", dpi, 30, 600)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, WORD_EXTENSIONS)
+    temp_path = await save_upload(file, WORD_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2192,7 +2355,7 @@ async def api_pdf_to_excel(
 ):
     """Extract tables from a PDF and convert to Excel."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -2230,7 +2393,7 @@ async def api_pdf_to_pptx(
     """Convert PDF pages to a PowerPoint presentation."""
     validate_range("dpi", dpi, 30, 600)
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2262,7 +2425,7 @@ async def api_extract_text(
 ):
     """Extract all text content from a PDF to a .txt file."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -2302,7 +2465,7 @@ async def api_organize_pdf(
     """Reorder, delete, or duplicate PDF pages. page_order is comma-separated 1-based page numbers."""
     import json as _json
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         # Parse page_order: accepts "1,3,2" or "[1,3,2]"
@@ -2345,7 +2508,7 @@ async def api_add_page_numbers(
 ):
     """Insert page numbers onto each PDF page."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2378,7 +2541,7 @@ async def api_repair_pdf(
 ):
     """Attempt to recover/repair a corrupted PDF."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         result = await event_log.timed(
@@ -2462,7 +2625,7 @@ async def api_annotate_pdf(
     annotations is a JSON array of annotation objects."""
     import json as _json
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         ann_list = _json.loads(annotations)
@@ -2503,7 +2666,7 @@ async def api_edit_pdf_metadata(
 ):
     """Edit PDF metadata (title, author, subject, keywords, creator)."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     result_dir = new_result_dir()
     try:
         output_path = await event_log.timed(
@@ -2533,7 +2696,7 @@ async def api_read_pdf_metadata(
 ):
     """Read metadata from a PDF without modifying it."""
     safe_filename = secure_filename(file.filename)
-    temp_path = save_upload(file, PDF_EXTENSIONS)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
     try:
         metadata = await event_log.timed(
             "pdf_read_metadata", run_in_threadpool(get_pdf_metadata, str(temp_path), password or None)
@@ -2617,10 +2780,17 @@ async def api_track(request: Request):
     file_processed, file_downloaded) into the local event log.
 
     This is the first-party replacement for a third-party analytics beacon: the
-    browser POSTs a tiny JSON body ({event, label}) via navigator.sendBeacon, and
-    the session id + coarse country come from the request-context middleware (this
-    route is under /api/, so the anonymous ff_sid cookie and CF-IPCountry header
-    are already applied). No file names, contents, IPs, or PII are ever stored.
+    browser POSTs a tiny JSON body ({event, label, ref}) via navigator.sendBeacon,
+    and the session id + coarse country come from the request-context middleware
+    (this route is under /api/, so the anonymous ff_sid cookie and CF-IPCountry
+    header are already applied). No file names, contents, IPs, or PII are ever
+    stored.
+
+    `ref` is the browser's document.referrer, and is reduced to a bare host here
+    before anything is written — see event_log.referrer_host(). It has to come
+    from the client: the Referer header on this POST is our own page, not the
+    site the visitor arrived from. Recorded on page_view only, since that is the
+    only event where "where did they come from" is a question with an answer.
 
     Always answers 204: a tracking beacon must never surface an error to the UI,
     and unknown event names are silently ignored inside log_funnel_event().
@@ -2640,8 +2810,17 @@ async def api_track(request: Request):
         event = str(body.get("event") or "")[:40]
         label = body.get("label")
         label = label if isinstance(label, str) else None
+        referrer = None
+        if event == "page_view":
+            raw_ref = body.get("ref")
+            referrer = event_log.referrer_host(
+                raw_ref if isinstance(raw_ref, str) else None,
+                self_host=urlsplit(BASE_URL).hostname,
+            )
         if event:
-            await run_in_threadpool(partial(event_log.log_funnel_event, event, label=label))
+            await run_in_threadpool(
+                partial(event_log.log_funnel_event, event, label=label, referrer=referrer)
+            )
     return Response(status_code=204)
 
 
