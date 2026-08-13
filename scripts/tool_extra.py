@@ -269,6 +269,21 @@ EXTRA: Dict[str, str] = {
             <li>Want images of each page instead? <a href="/pdf-to-jpg">PDF to JPG</a>.</li>
         </ul>""",
 
+    "pdf-to-epub": """
+        <h2>Get a reflowable ebook from a PDF</h2>
+        <p>PDF to EPUB extracts the text of each page and repackages it as chapters in a
+            standard <code>.epub</code> file, so the content reflows to fit any screen
+            size or font setting instead of staying locked to the PDF's fixed page
+            layout. Pages that are actually scanned images (no embedded text layer) are
+            run through OCR automatically, so scanned books still produce readable
+            chapters instead of blank ones.</p>
+        <h2>Related conversions</h2>
+        <ul>
+            <li>Want to keep editing the document itself? <a href="/pdf-to-word">PDF to Word</a>.</li>
+            <li>Just need the plain text? <a href="/pdf-to-text">PDF to text</a>.</li>
+            <li>Want the exact page layout preserved instead of reflowed text? <a href="/pdf-to-powerpoint">PDF to PowerPoint</a>.</li>
+        </ul>""",
+
     "sign-pdf": """
         <h2>Add your signature to a document</h2>
         <p>Sign PDF lets you place a signature image onto any page and position it exactly

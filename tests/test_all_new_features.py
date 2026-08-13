@@ -24,6 +24,7 @@ from scripts.pdf_utils import (
     word_to_pdf,
     pdf_to_excel,
     pdf_to_pptx,
+    pdf_to_epub,
     extract_text_from_pdf,
     organize_pdf,
     add_page_numbers,
@@ -380,6 +381,47 @@ class TestWordToPDF:
             header = f.read(5)
         assert header == b"%PDF-"
 
+    def test_fallback_when_libreoffice_absent(self, sample_docx, tmp_path, monkeypatch):
+        """Pure-Python fallback must still produce a valid, non-empty PDF at the
+        branded path when LibreOffice is unavailable — zero-regression guarantee,
+        same pattern already proven for excel_to_pdf/ppt_to_pdf."""
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", lambda *a, **k: None)
+        out = Path(word_to_pdf(str(sample_docx), str(tmp_path)))
+        assert out.exists() and out.stat().st_size > 0
+        with open(out, "rb") as f:
+            assert f.read(5) == b"%PDF-"
+
+    def test_non_docx_fallback_unsupported_when_libreoffice_absent(self, tmp_path, monkeypatch):
+        """.doc/.odt/.rtf have no pure-Python fallback — must still raise clearly
+        (unaffected by the LibreOffice call-path consolidation)."""
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", lambda *a, **k: None)
+        fake = tmp_path / "file.odt"
+        fake.write_text("not a real odt")
+        out = tmp_path / "out"
+        out.mkdir()
+        with pytest.raises(RuntimeError, match="Pure-Python fallback only supports .docx"):
+            word_to_pdf(str(fake), str(out))
+
+    def test_uses_shared_libreoffice_helper_with_isolated_profile(self, sample_docx, tmp_path, monkeypatch):
+        """word_to_pdf must go through the shared scripts.utils.libreoffice_to_pdf
+        helper (isolated per-call -env:UserInstallation profile dir) rather than
+        shelling out directly, so it doesn't contend on the shared LibreOffice
+        profile lock with a concurrent excel_to_pdf/ppt_to_pdf conversion."""
+        calls = []
+
+        def _fake_libreoffice_to_pdf(input_path, output_dir, timeout=120):
+            calls.append((input_path, output_dir))
+            produced = Path(output_dir) / f"{Path(input_path).stem}.pdf"
+            produced.write_bytes(b"%PDF-1.4\n%%EOF")
+            return produced
+
+        monkeypatch.setattr("scripts.pdf_utils.libreoffice_to_pdf", _fake_libreoffice_to_pdf)
+        out = tmp_path / "out"
+        out.mkdir()
+        result = Path(word_to_pdf(str(sample_docx), str(out)))
+        assert calls == [(str(sample_docx), str(out))]
+        assert result.exists() and result.name.endswith("_forgefiles.org.pdf")
+
 
 # ──────────────────────────────────────────────
 # Feature #56: PDF to Excel
@@ -517,6 +559,114 @@ class TestPDFToPPTX:
         out.mkdir()
         result = pdf_to_pptx(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
         assert Path(result).exists()
+
+
+# ──────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ──────────────────────────────────────────────
+
+class TestPDFToEpub:
+    def test_creates_epub_file(self, simple_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(simple_pdf), str(out))
+        assert Path(result).exists()
+        assert result.endswith(".epub")
+        assert Path(result).stem == f"{simple_pdf.stem}_forgefiles.org"
+
+    def test_chapter_count_matches_pages(self, multi_page_pdf, tmp_path):
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(multi_page_pdf), str(out))
+        book = epub.read_epub(result)
+        chapters = [item for item in book.get_items_of_type(9) if item.file_name.startswith("page_")]
+        assert len(chapters) == 4
+
+    def test_extracted_text_appears_in_a_chapter(self, text_rich_pdf, tmp_path):
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(text_rich_pdf), str(out))
+        book = epub.read_epub(result)
+        all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+        assert b"Jordan Rivera" in all_content
+
+    def test_with_locked_pdf(self, locked_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
+        assert Path(result).exists()
+
+    def test_locked_pdf_without_password_raises(self, locked_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        with pytest.raises(ValueError):
+            pdf_to_epub(str(locked_pdf["path"]), str(out))
+
+    def test_scanned_pdf_falls_back_to_placeholder_without_ocr(self, scanned_like_pdf, tmp_path, monkeypatch):
+        """When AI/OCR is unavailable, a scanned PDF still degrades gracefully
+        to a placeholder chapter instead of raising."""
+        import scripts.ocr_engine as ocr_engine
+        monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: None)
+
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(scanned_like_pdf), str(out))
+        book = epub.read_epub(result)
+        all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+        assert b"No text found" in all_content
+
+    def test_preserves_bold_and_italic(self, tmp_path):
+        import fitz
+        from ebooklib import epub
+
+        pdf_path = tmp_path / "styled.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        bold_font = fitz.Font("hebo")  # Helvetica-Bold
+        italic_font = fitz.Font("heit")  # Helvetica-Italic
+        page.insert_font(fontname="F0", fontbuffer=bold_font.buffer)
+        page.insert_font(fontname="F1", fontbuffer=italic_font.buffer)
+        page.insert_text((72, 100), "Bold Heading", fontsize=14, fontname="F0")
+        page.insert_text((72, 130), "Italic emphasis", fontsize=12, fontname="F1")
+        page.insert_text((72, 160), "Plain text", fontsize=12)
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+        assert b"<b>Bold Heading</b>" in content
+        assert b"<i>Italic emphasis</i>" in content
+        assert b"<p>Plain text</p>" in content
+
+    def test_preserves_hyperlinks(self, tmp_path):
+        import fitz
+        from ebooklib import epub
+
+        pdf_path = tmp_path / "linked.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 100), "Visit our site: Example Site", fontsize=12)
+        link_rect = page.search_for("Example Site")[0]
+        page.insert_link({"kind": fitz.LINK_URI, "from": link_rect, "uri": "https://example.com"})
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+        assert b'<a href="https://example.com">Example Site</a>' in content
+        # Only the linked substring is wrapped — the rest of the line stays plain.
+        assert b"Visit our site: <a" in content
 
 
 # ──────────────────────────────────────────────
@@ -697,6 +847,66 @@ class TestAddPageNumbers:
         out.mkdir()
         result = add_page_numbers(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
         assert Path(result).exists()
+
+    def test_right_position_uses_exact_text_width(self, multi_page_pdf, tmp_path):
+        """Right-aligned labels must sit flush with the margin using real glyph
+        widths (fitz.get_text_length), not a per-character heuristic that
+        drifts further off with every extra digit/font-size point."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        margin = 20
+        font_size = 12
+        # start_number chosen so labels span 1-4 digits across the 4-page fixture.
+        result = add_page_numbers(
+            str(multi_page_pdf), str(out), position="bottom-right",
+            start_number=999, font_size=font_size,
+        )
+        doc = fitz.open(result)
+        try:
+            for i, page in enumerate(doc):
+                label = str(999 + i)
+                expected_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
+                expected_x = page.rect.width - margin - expected_width
+                spans = [
+                    span for block in page.get_text("dict")["blocks"]
+                    for line in block.get("lines", [])
+                    for span in line["spans"]
+                    if span["text"].strip() == label
+                ]
+                assert spans, f"page {i}: label {label!r} not found"
+                actual_x = spans[0]["bbox"][0]
+                assert abs(actual_x - expected_x) < 1.0, (
+                    f"page {i}: label {label!r} x={actual_x} expected~={expected_x}"
+                )
+        finally:
+            doc.close()
+
+    def test_center_position_is_symmetric(self, simple_pdf, tmp_path):
+        """Center-aligned label's left/right whitespace margins must match
+        within a point, using the real text width rather than a heuristic."""
+        import fitz
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = add_page_numbers(str(simple_pdf), str(out), position="bottom-center")
+        doc = fitz.open(result)
+        try:
+            page = doc[0]
+            spans = [
+                span for block in page.get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+                if span["text"].strip() == "1"
+            ]
+            assert spans
+            bbox = spans[0]["bbox"]
+            left_gap = bbox[0]
+            right_gap = page.rect.width - bbox[2]
+            assert abs(left_gap - right_gap) < 1.0
+        finally:
+            doc.close()
 
 
 # ──────────────────────────────────────────────
@@ -880,6 +1090,38 @@ class TestAnnotatePDF:
         out.mkdir()
         result = annotate_pdf(str(simple_pdf), str(out), [self._make_annot("redact")])
         assert Path(result).exists()
+
+    def test_redact_removes_text_and_covers_vector_graphics(self, tmp_path):
+        """A redaction must not just remove text — it must also visually cover any
+        vector graphics (drawn rects/lines) under the box. apply_redactions() on the
+        pinned PyMuPDF<1.24 has no `graphics` param (added 1.23.27) and leaves vector
+        paths in the content stream untouched; without an explicit fill the redacted
+        area was previously left blank, letting anything drawn there show straight
+        through post-redaction."""
+        import fitz
+
+        src = tmp_path / "vector.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=400)
+        page.insert_text((50, 55), "SECRET-TEXT-12345", fontsize=14)
+        page.draw_rect(fitz.Rect(40, 30, 250, 70), color=(1, 0, 0), fill=(1, 0, 0))
+        doc.save(str(src))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        ann = self._make_annot("redact", rect=[35, 25, 260, 75])
+        result = annotate_pdf(str(src), str(out), [ann])
+
+        doc2 = fitz.open(result)
+        page2 = doc2[0]
+        assert "SECRET-TEXT-12345" not in page2.get_text()
+        pix = page2.get_pixmap()
+        # Center and edge of the redacted rect must render black, not the red
+        # vector rect that was drawn underneath.
+        assert pix.pixel(140, 50) == (0, 0, 0)
+        assert pix.pixel(40, 30) == (0, 0, 0)
+        doc2.close()
 
     def test_multiple_annotations(self, simple_pdf, tmp_path):
         out = tmp_path / "out"

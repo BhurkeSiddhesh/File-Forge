@@ -309,6 +309,34 @@ def test_api_workflow_invalid_steps_json(sample_pdf, mock_dirs, auth_client):
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize("steps", ["5", '"x"', '{"a": 1}', "[]", "[1, 2]", "null"])
+def test_api_workflow_non_list_or_malformed_steps_is_400(sample_pdf, mock_dirs, auth_client, steps):
+    """A `steps` value that is valid JSON but not a non-empty list of objects
+    must 400 up front rather than crash mid-SSE-stream (#79)."""
+    with open(sample_pdf, "rb") as f:
+        files = {"file": (sample_pdf.name, f, "application/pdf")}
+        data = {"steps": steps}
+        response = auth_client.post("/api/workflow/execute", files=files, data=data)
+
+    assert response.status_code == 400
+
+
+def test_api_workflow_too_many_steps_is_400(sample_pdf, mock_dirs, auth_client):
+    """A step list beyond MAX_WORKFLOW_STEPS must 400, not run unbounded (#79)."""
+    import json
+
+    from main import MAX_WORKFLOW_STEPS
+
+    steps = json.dumps([{"type": "pdf_to_word"}] * (MAX_WORKFLOW_STEPS + 1))
+
+    with open(sample_pdf, "rb") as f:
+        files = {"file": (sample_pdf.name, f, "application/pdf")}
+        data = {"steps": steps}
+        response = auth_client.post("/api/workflow/execute", files=files, data=data)
+
+    assert response.status_code == 400
+
+
 def test_api_workflow_single_pdf_to_word_step(sample_pdf, mock_dirs, auth_client):
     """Workflow with a single pdf_to_word step streams events and completes."""
     import json

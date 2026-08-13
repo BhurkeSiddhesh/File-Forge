@@ -73,9 +73,19 @@ def test_heic_to_jpeg_output_filename(sample_heic, tmp_path):
     assert Path(result).suffix == '.jpg'
 
 
+_TEST_XMP = (
+    b'<?xpacket begin="\xef\xbb\xbf" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+    b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+    b'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+    b'<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+    b'<dc:title>Test Photo Title</dc:title></rdf:Description></rdf:RDF>'
+    b'</x:xmpmeta><?xpacket end="w"?>'
+)
+
+
 @pytest.fixture(scope="session")
 def heic_with_metadata(tmp_path_factory):
-    """A HEIC carrying an ICC color profile and EXIF (orientation + camera + date)."""
+    """A HEIC carrying an ICC color profile, EXIF (orientation + camera + date), and XMP."""
     try:
         import pillow_heif
         from PIL import Image, ImageCms
@@ -95,7 +105,14 @@ def heic_with_metadata(tmp_path_factory):
         for y in range(90):
             for x in range(160):
                 px[x, y] = (x % 256, (y * 2) % 256, (x * y) % 256)
-        img.save(file_path, format="HEIF", icc_profile=icc, exif=exif.tobytes(), quality=95)
+        img.save(
+            file_path,
+            format="HEIF",
+            icc_profile=icc,
+            exif=exif.tobytes(),
+            xmp=_TEST_XMP,
+            quality=95,
+        )
         return {"path": file_path, "icc_len": len(icc)}
     except Exception as e:  # pragma: no cover - env without pillow-heif
         pytest.skip(f"Could not create HEIC with metadata: {e}")
@@ -132,8 +149,22 @@ def test_heic_to_jpeg_preserves_exif_metadata(heic_with_metadata, tmp_path):
     assert exif.get(0x0112, 1) == 1
 
 
+def test_heic_to_jpeg_preserves_xmp_metadata(heic_with_metadata, tmp_path):
+    """XMP (title/rating/keywords/copyright packet) must be carried over, byte-identical."""
+    from PIL import Image
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    result = heic_to_jpeg(str(heic_with_metadata["path"]), str(output_dir))
+
+    with Image.open(result) as j:
+        out_xmp = j.info.get("xmp", b"")
+    assert out_xmp, "XMP metadata was dropped during HEIC->JPEG conversion"
+    assert out_xmp == _TEST_XMP
+
+
 def test_heic_to_jpeg_no_metadata_is_safe(tmp_path):
-    """A HEIC without ICC/EXIF must still convert cleanly (no crash, no empty block)."""
+    """A HEIC without ICC/EXIF/XMP must still convert cleanly (no crash, no empty block)."""
     import pillow_heif
     from PIL import Image
 
@@ -149,3 +180,254 @@ def test_heic_to_jpeg_no_metadata_is_safe(tmp_path):
         assert j.mode == "RGB"
         assert j.size == (48, 32)
         assert not j.info.get("icc_profile")
+        assert not j.info.get("xmp")
+
+
+# ── Alpha flattens to white, not black, when a transparent image is forced to JPEG ──
+#
+# Image.convert("RGB") drops the alpha channel and keeps whatever RGB values sit
+# underneath it. Many PNG/WebP encoders zero those out for fully-transparent
+# pixels, so a naive convert renders a solid black hole where the image should
+# look empty. Every JPEG-output path in image_utils.py must composite onto white
+# first instead.
+
+def _transparent_png(path):
+    """A red square on a fully-transparent background whose RGB channels are
+    black underneath — the exact shape that exposes the naive-convert bug."""
+    from PIL import Image
+
+    img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    px = img.load()
+    for x in range(20, 80):
+        for y in range(20, 80):
+            px[x, y] = (255, 0, 0, 255)
+    img.save(path, "PNG")
+    return path
+
+
+class TestAlphaFlattensToWhite:
+    def test_flatten_to_rgb_helper_composites_on_white(self):
+        from PIL import Image
+        from scripts.image_utils import _flatten_to_rgb
+
+        img = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
+        flattened = _flatten_to_rgb(img)
+        assert flattened.mode == "RGB"
+        assert flattened.getpixel((0, 0)) == (255, 255, 255)
+
+    def test_flatten_to_rgb_is_noop_for_opaque_rgb(self):
+        from PIL import Image
+        from scripts.image_utils import _flatten_to_rgb
+
+        img = Image.new("RGB", (10, 10), (30, 60, 90))
+        assert _flatten_to_rgb(img) is img
+
+    def test_resize_image_transparent_png_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import resize_image
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = resize_image(str(src), str(tmp_path), mode="dimensions", width=50)
+        with Image.open(out) as r:
+            r, g, b = r.getpixel((2, 2))
+        assert (r, g, b) != (0, 0, 0)
+        assert r > 200 and g > 200 and b > 200
+
+    def test_crop_image_transparent_png_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import crop_image
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = crop_image(str(src), str(tmp_path), x=0, y=0, width=100, height=100)
+        with Image.open(out) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_convert_image_format_to_jpg_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import convert_image_format
+
+        src = _transparent_png(tmp_path / "trans.png")
+        out = convert_image_format(str(src), str(tmp_path), "jpg")
+        with Image.open(out) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_compress_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
+        """compress_image falls back to jpg for extensions outside jpg/png/webp."""
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        src = tmp_path / "trans.bmp"
+        _transparent_png(src)
+        result = compress_image(str(src), str(tmp_path), quality=80)
+        with Image.open(result["output_path"]) as r:
+            assert r.getpixel((2, 2)) == (255, 255, 255)
+
+    def test_watermark_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import watermark_image
+
+        src = tmp_path / "trans.bmp"
+        _transparent_png(src)
+        out = watermark_image(str(src), str(tmp_path), "DRAFT", position="top-left")
+        with Image.open(out) as r:
+            assert r.getpixel((90, 90)) == (255, 255, 255)
+
+    def test_heic_to_jpeg_alpha_flattens_to_white(self, tmp_path):
+        import pillow_heif
+        from PIL import Image
+        from scripts.image_utils import heic_to_jpeg
+
+        pillow_heif.register_heif_opener()
+        img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        px = img.load()
+        for x in range(20, 80):
+            for y in range(20, 80):
+                px[x, y] = (255, 0, 0, 255)
+        src = tmp_path / "trans.heic"
+        img.save(src, format="HEIF", quality=95)
+
+        out = heic_to_jpeg(str(src), str(tmp_path))
+        with Image.open(out) as r:
+            corner = r.getpixel((2, 2))
+        assert corner != (0, 0, 0)
+        assert all(c > 200 for c in corner)
+
+    def test_opaque_jpeg_inputs_unaffected_by_flatten(self, tmp_path):
+        """Zero-regression guard: an already-opaque source must still produce a
+        plain RGB output (no alpha-compositing path is taken) for every
+        affected function."""
+        from PIL import Image
+        from scripts.image_utils import (
+            compress_image, convert_image_format, crop_image,
+            resize_image, rotate_image, watermark_image,
+        )
+
+        src = tmp_path / "opaque.jpg"
+        Image.new("RGB", (100, 100), (30, 60, 90)).save(src, "JPEG", quality=95)
+
+        # Each op gets its own subdir: several of them brand to the same
+        # filename (same input stem + extension), so sharing a directory
+        # would make later calls silently overwrite earlier outputs.
+        ops = {
+            "resize": lambda d: resize_image(str(src), d, mode="percentage", percentage=50),
+            "crop": lambda d: crop_image(str(src), d, x=0, y=0, width=50, height=50),
+            "compress": lambda d: compress_image(str(src), d, quality=80)["output_path"],
+            "convert": lambda d: convert_image_format(str(src), d, "png"),
+            "watermark": lambda d: watermark_image(str(src), d, "X", position="top-left"),
+            "rotate": lambda d: rotate_image(str(src), d, angle=90),
+        }
+        for name, op in ops.items():
+            out_dir = tmp_path / name
+            out_dir.mkdir()
+            with Image.open(op(str(out_dir))) as r:
+                assert r.mode == "RGB"
+
+
+# ── ICC color profile survives every image operation, not just HEIC->JPEG ──
+#
+# Wide-gamut (Display P3 / Adobe RGB) JPEGs and PNGs carry an embedded ICC
+# profile. Pillow's JPEG and WebP encoders only write it if it's passed
+# explicitly to save() — they don't fall back to img.info like the PNG
+# encoder does — so any function that re-encodes to JPEG/WebP without
+# forwarding it silently strips the profile, and viewers then reinterpret the
+# pixels as sRGB: a visible color shift, not just missing metadata.
+
+def _icc_bytes():
+    from PIL import ImageCms
+
+    return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+
+def _icc_tagged_jpeg(path, icc):
+    from PIL import Image
+
+    Image.new("RGB", (100, 100), (200, 50, 50)).save(
+        path, "JPEG", icc_profile=icc, quality=95
+    )
+    return path
+
+
+class TestIccProfilePreserved:
+    def test_rotate_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import rotate_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = rotate_image(str(src), str(tmp_path), angle=90)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_compress_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = compress_image(str(src), str(tmp_path), quality=80)["output_path"]
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_convert_image_format_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import convert_image_format
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        # Each target format gets its own dir: branded filenames collide otherwise.
+        for target in ("jpg", "png", "webp"):
+            out_dir = tmp_path / f"conv_{target}"
+            out_dir.mkdir()
+            out = convert_image_format(str(src), str(out_dir), target)
+            with Image.open(out) as r:
+                assert r.info.get("icc_profile") == icc, f"dropped for target={target}"
+
+    def test_watermark_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import watermark_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = watermark_image(str(src), str(tmp_path), "DRAFT")
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_resize_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import resize_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = resize_image(str(src), str(tmp_path), mode="dimensions", width=50)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_crop_image_preserves_icc(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import crop_image
+
+        icc = _icc_bytes()
+        src = _icc_tagged_jpeg(tmp_path / "src.jpg", icc)
+        out = crop_image(str(src), str(tmp_path), x=0, y=0, width=50, height=50)
+        with Image.open(out) as r:
+            assert r.info.get("icc_profile") == icc
+
+    def test_no_icc_source_is_safe(self, tmp_path):
+        """A source with no ICC profile must still convert cleanly (no crash, no bogus key)."""
+        from PIL import Image
+        from scripts.image_utils import rotate_image, compress_image
+
+        src = tmp_path / "plain.jpg"
+        Image.new("RGB", (60, 40), (10, 20, 30)).save(src, "JPEG", quality=90)
+
+        r_dir, c_dir = tmp_path / "r", tmp_path / "c"
+        r_dir.mkdir()
+        c_dir.mkdir()
+
+        out1 = rotate_image(str(src), str(r_dir), angle=90)
+        with Image.open(out1) as r:
+            assert not r.info.get("icc_profile")
+
+        out2 = compress_image(str(src), str(c_dir), quality=80)["output_path"]
+        with Image.open(out2) as r:
+            assert not r.info.get("icc_profile")

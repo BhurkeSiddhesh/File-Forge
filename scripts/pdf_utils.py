@@ -1,12 +1,15 @@
+import contextlib
+import html
 import threading
 import logging
+import re
 import uuid
 import pikepdf
 from pathlib import Path
 import os
 from typing import List, Optional
 
-from scripts.utils import branded_filename, original_stem
+from scripts.utils import branded_filename, original_stem, libreoffice_to_pdf
 
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
@@ -27,6 +30,10 @@ try:
 except ImportError:
     Composer = None
     Document_docx = None
+try:
+    from ebooklib import epub
+except ImportError:
+    epub = None
 import shutil
 
 
@@ -98,13 +105,33 @@ def get_paddle_engine():
     return _PADDLE_ENGINE
 
 def remove_pdf_password(input_path: str, password: str, output_dir: str) -> str:
-    """Removes password from PDF and saves to output_dir."""
+    """Remove password protection / restrictions from a PDF and save to output_dir.
+
+    Owner-restricted PDFs carry permission restrictions (no copy/print/edit) but
+    no open password, so they open with an *empty* password. When the supplied
+    password is rejected we therefore retry once with an empty password before
+    giving up: this strips owner-only restrictions even when the caller passes a
+    wrong or irrelevant password, matching how mainstream "Unlock PDF" tools
+    (iLovePDF, Smallpdf, PDF24) behave. A PDF that genuinely has an *open*
+    (user) password still fails on a wrong password, because the empty-password
+    retry cannot open it either — so this never produces a false unlock.
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
-    
-    with pikepdf.open(input_file, password=password) as pdf:
+
+    try:
+        pdf = pikepdf.open(input_file, password=password)
+    except pikepdf.PasswordError:
+        # Fall back to an empty password: succeeds only for owner-restricted
+        # PDFs (no open password). Re-raise the original error otherwise.
+        try:
+            pdf = pikepdf.open(input_file, password="")
+        except pikepdf.PasswordError:
+            raise
+
+    with pdf:
         pdf.save(output_file)
-    
+
     return str(output_file)
 
 def _parse_page_selection(pages: str, total_pages: int) -> List[int]:
@@ -547,16 +574,168 @@ def _use_multiprocessing() -> bool:
     return _available_cores() >= _MULTIPROCESSING_MIN_CORES
 
 
-def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
-    """Shared pdf2docx conversion core, used by both the standard converter
-    and pdf_to_word_ai's automatic text-layer routing."""
-    from pdf2docx import Converter
+# pdf2docx reports its own per-page progress with `logging.info` on the ROOT
+# logger, in the fixed form "(3/17) Page 3" — twice per document, once while
+# parsing pages and once while writing them. That is the only progress signal
+# it exposes: convert() takes no callback. Parsing it back out of a log record
+# is not elegant, but the alternative is a 6-minute conversion that streams
+# nothing at all, and the SSE endpoint exists precisely to avoid that.
+_PDF2DOCX_PAGE_LOG = re.compile(r"^\((\d+)/(\d+)\)\s+Page\s+\d+")
 
-    multi = _use_multiprocessing()
-    cv = Converter(decrypted_path)
+
+class _Pdf2docxProgress(logging.Handler):
+    """Translate pdf2docx's page logs into progress_callback calls.
+
+    Scoped to the calling thread: this attaches to the root logger, so in a
+    server handling concurrent conversions it would otherwise see every other
+    conversion's pages too and report one request's progress into another's
+    stream. pdf2docx's serial path logs from the thread that called it, so
+    thread identity is the correct filter.
+
+    How many passes are visible depends on the mode, so the caller says which:
+
+    * serial — both the parsing and the writing pass log in this thread. They
+      are folded into one monotonic 0..total count, because reporting each as
+      1..total would send the progress bar back to the start halfway through,
+      which reads as a failure to anyone watching it.
+    * multiprocessing — parsing happens in subprocesses whose logging never
+      reaches this process, so only the writing pass is visible and it maps
+      straight through.
+    """
+
+    def __init__(self, progress_callback, single_pass: bool):
+        super().__init__(level=logging.INFO)
+        self._callback = progress_callback
+        self._single_pass = single_pass
+        self._thread = threading.get_ident()
+        self._seen_first_pass = False
+        self._furthest = 0
+
+    def emit(self, record):
+        # A logging handler that raises would take the conversion down with
+        # it — this is progress reporting, it must never be load-bearing.
+        try:
+            if record.thread != self._thread:
+                return
+            match = _PDF2DOCX_PAGE_LOG.match(record.getMessage())
+            if not match:
+                return
+            done, total = int(match.group(1)), int(match.group(2))
+            if self._single_pass:
+                _safe_progress(self._callback, min(done, total), total)
+                return
+            if done < self._furthest:
+                self._seen_first_pass = True  # counter restarted: second pass
+            self._furthest = done
+            half = total / 2
+            scaled = (half + done / 2) if self._seen_first_pass else (done / 2)
+            _safe_progress(self._callback, min(int(scaled), total), total)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@contextlib.contextmanager
+def _pdf2docx_progress(progress_callback, single_pass: bool):
+    """Attach the progress handler for the duration of a conversion."""
+    if progress_callback is None:
+        yield
+        return
+    handler = _Pdf2docxProgress(progress_callback, single_pass)
+    root = logging.getLogger()
+    # pdf2docx logs at INFO; if the root logger is above that the records are
+    # dropped before any handler sees them, so make sure they get through.
+    previous_level = root.level
+    if previous_level > logging.INFO:
+        root.setLevel(logging.INFO)
+    root.addHandler(handler)
+    try:
+        yield
+    finally:
+        root.removeHandler(handler)
+        if previous_level > logging.INFO:
+            root.setLevel(previous_level)
+
+
+# A missing *system* library surfaces as an ImportError naming a .so file —
+# "libGL.so.1: cannot open shared object file". pdf2docx imports cv2, so a host
+# that never installed the OpenCV runtime libraries fails here rather than at
+# startup, once per conversion, for as long as nobody notices.
+_MISSING_SHARED_LIB = re.compile(r"(lib[\w.+-]*\.so[\w.]*)")
+
+
+class ServerDependencyError(ImportError):
+    """A required component is missing from the *server*, not the user's file.
+
+    Raised instead of letting a raw ImportError reach the user. The two read
+    very differently: "libGL.so.1: cannot open shared object file" invites
+    someone to go and re-save their PDF, which cannot possibly help, while this
+    says the problem is ours and their file was never the issue.
+
+    Subclasses ImportError rather than RuntimeError so it stays exactly what it
+    replaced: callers and tests that treat a missing dependency as an
+    ImportError keep working, and only the message and the HTTP status change.
+    """
+
+
+def _server_dependency_error(feature: str, exc: Exception) -> "ServerDependencyError":
+    """Translate a missing-dependency ImportError, and log it for the operator."""
+    match = _MISSING_SHARED_LIB.search(str(exc))
+    library = match.group(1) if match else None
+    logger.error(
+        "%s is unavailable: a required dependency is missing on this host (%s). "
+        "This is a provisioning gap, not a code bug — see "
+        "docs/fix-libreoffice-libgl-oracle.md for the runbook.",
+        feature, exc,
+    )
+    detail = f" (missing system library {library})" if library else ""
+    return ServerDependencyError(
+        f"{feature} is temporarily unavailable on this server{detail}. "
+        "This is a server configuration problem, not a problem with your file — "
+        "nothing you change about the document will help. Please try again later."
+    )
+
+
+# Once a multiprocessing pass has failed in this process it will keep failing —
+# the causes are environmental (no fork, no /dev/shm, a cgroup CPU budget), not
+# per-document. Remembering it turns "every conversion silently costs two full
+# conversions" into "the first one does".
+_multiprocessing_broken = False
+
+
+def _convert_pdf2docx(decrypted_path: str, output_file: Path,
+                      progress_callback=None) -> None:
+    """Shared pdf2docx conversion core, used by both the standard converter
+    and pdf_to_word_ai's automatic text-layer routing.
+
+    `progress_callback(page_done, total_pages)` is driven from pdf2docx's own
+    page logging. Under multiprocessing only the writing pass is visible (the
+    parsing pass runs in subprocesses), which is the right way round: that mode
+    is the fast one, and the slow serial path — where a user most needs to be
+    told something is still happening — reports both passes.
+    """
+    global _multiprocessing_broken
+    # pdf2docx pulls in cv2, which needs OpenCV's runtime shared libraries. On a
+    # host missing them this is where every PDF→Word conversion dies, and the
+    # raw message names a .so file the user can do nothing about. Both the
+    # import and the construction are covered: which of the two raises depends
+    # on whether the dependency underneath is imported eagerly or lazily.
+    try:
+        from pdf2docx import Converter
+
+        cv = Converter(decrypted_path)
+    except ImportError as exc:
+        raise _server_dependency_error("PDF to Word conversion", exc) from exc
+
+    multi = _use_multiprocessing() and not _multiprocessing_broken
     try:
         try:
-            cv.convert(str(output_file), multi_processing=multi)
+            with _pdf2docx_progress(progress_callback, single_pass=multi):
+                cv.convert(str(output_file), multi_processing=multi)
+        except ImportError as exc:
+            # A lazily-imported dependency can fail here rather than above.
+            # Caught before the retry below so it surfaces on the first attempt
+            # instead of doubling the wait before the same failure.
+            raise _server_dependency_error("PDF to Word conversion", exc) from exc
         except (OSError, RuntimeError, ValueError, AssertionError) as exc:
             # Some environments (e.g. spawn-only Windows workers) can't fork —
             # fall back to a serial pass. Deliberately narrow: this retry costs
@@ -567,10 +746,13 @@ def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
             if not multi:
                 raise
             logger.warning(
-                "pdf2docx multiprocessing pass failed (%s: %s) — retrying serially",
+                "pdf2docx multiprocessing pass failed (%s: %s) — retrying "
+                "serially, and using the serial path directly from now on",
                 type(exc).__name__, exc,
             )
-            cv.convert(str(output_file))
+            _multiprocessing_broken = True
+            with _pdf2docx_progress(progress_callback, single_pass=False):
+                cv.convert(str(output_file))
     finally:
         # pdf2docx Converter holds the source PDF open via PyMuPDF until close()
         # is called. Without this finally block, a failed convert() would leak
@@ -578,15 +760,23 @@ def _convert_pdf2docx(decrypted_path: str, output_file: Path) -> None:
         cv.close()
 
 
-def pdf_to_docx(input_path: str, output_dir: str, password: str = None) -> str:
-    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based)."""
+def pdf_to_docx(input_path: str, output_dir: str, password: str = None,
+                progress_callback=None) -> str:
+    """Converts PDF to DOCX using pdf2docx (Fast, Rule-based).
+
+    `progress_callback(page_done, total_pages)` mirrors pdf_to_word_ai's, so
+    the streaming endpoint can report progress on this path too. It could not
+    before: the standard converter is the *slower* of the two on long
+    documents, and it was the one streaming nothing between "start" and a
+    result several minutes later.
+    """
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "docx")
 
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
 
     try:
-        _convert_pdf2docx(decrypted_path, output_file)
+        _convert_pdf2docx(decrypted_path, output_file, progress_callback)
     finally:
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
@@ -1457,8 +1647,6 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
     Returns:
         Path to the converted PDF.
     """
-    import subprocess
-
     input_file = Path(input_path)
     suffix = input_file.suffix.lower()
     if suffix not in (".docx", ".doc", ".odt", ".rtf"):
@@ -1466,22 +1654,14 @@ def word_to_pdf(input_path: str, output_dir: str) -> str:
 
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
 
-    # ── Try LibreOffice first ──────────────────────────────────
-    try:
-        result = subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
-             "--outdir", str(output_dir), str(input_file)],
-            capture_output=True, text=True, timeout=120,
-        )
-        # LibreOffice writes "<input stem>.pdf" itself; rename to our branded
-        # name rather than checking for a path it never produces.
-        libreoffice_output = Path(output_dir) / f"{input_file.stem}.pdf"
-        if result.returncode == 0 and libreoffice_output.exists():
-            if libreoffice_output != output_file:
-                libreoffice_output.replace(output_file)
-            return str(output_file)
-    except Exception:
-        pass
+    # ── Try LibreOffice first (shared helper: isolated per-call profile dir,
+    # so this doesn't contend on the shared ~/.config/libreoffice lock with a
+    # concurrent excel_to_pdf/ppt_to_pdf/word_to_pdf conversion) ───────────
+    produced = libreoffice_to_pdf(input_path, output_dir)
+    if produced is not None:
+        if produced != output_file:
+            produced.replace(output_file)
+        return str(output_file)
 
     # ── Pure-Python fallback (DOCX only) ──────────────────────
     if suffix != ".docx":
@@ -1595,9 +1775,17 @@ def _extract_borderless_tables(page) -> list:
     Called only for pages where the "lines" pass found nothing, so it never
     alters an already-detected table. Returns a list of cleaned row-lists
     (fully-empty spacer rows trimmed). To avoid mangling ordinary prose into a
-    spurious table, only genuine grids (>= 2 columns and >= 2 non-empty rows)
-    are returned; anything else yields ``[]`` so the page still falls through to
-    the raw-text fallback sheet exactly as before.
+    spurious table, only genuine grids (>= 2 columns and >= 2 non-empty rows,
+    with most rows actually filling most columns) are returned; anything else
+    yields ``[]`` so the page still falls through to the raw-text fallback
+    sheet exactly as before.
+
+    The fill-consistency check exists because the "text" strategy invents a
+    column boundary at every recurring word-start x-coordinate, so a page of
+    ordinary paragraphs (e.g. a resume) can score >= 2 columns and >= 2 rows
+    while each "row" only fills a handful of its columns at ragged, unrelated
+    positions — unlike a real table, where each row fills essentially all of
+    its columns.
     """
     try:
         found = page.find_tables(
@@ -1610,7 +1798,8 @@ def _extract_borderless_tables(page) -> list:
 
     accepted = []
     for table in getattr(found, "tables", []) or []:
-        if getattr(table, "col_count", 0) < 2:
+        col_count = getattr(table, "col_count", 0)
+        if col_count < 2:
             continue
         rows = [
             [("" if cell is None else cell) for cell in row]
@@ -1618,6 +1807,12 @@ def _extract_borderless_tables(page) -> list:
             if any(cell is not None and str(cell).strip() != "" for cell in row)
         ]
         if len(rows) < 2:
+            continue
+        near_full_rows = sum(
+            1 for row in rows
+            if sum(1 for cell in row if str(cell).strip() != "") >= col_count - 1
+        )
+        if near_full_rows / len(rows) < 0.7:
             continue
         accepted.append(rows)
     return accepted
@@ -1804,10 +1999,20 @@ def extract_text_from_pdf(
 ) -> dict:
     """Extract all text content from a PDF to a .txt file.
 
+    Any page whose native text layer is genuinely empty (scanned/image-only)
+    is rasterized and OCR'd via the configured backend, so this - unlike a
+    plain text-layer read - actually delivers on "batch OCR" for the premium
+    tier (see batch_ocr.py) instead of silently skipping scanned pages. Pages
+    that already have native text (however little) keep it as-is; OCR is
+    never used to "improve" text that's already there, and the OCR engine is
+    only loaded when at least one page is genuinely empty.
+
     Args:
         input_path: Path to input PDF.
         output_dir: Directory to save the text file.
-        preserve_layout: If True, use 'blocks' layout; otherwise plain text.
+        preserve_layout: If True, use 'blocks' layout for natively-extracted
+            pages; otherwise plain text. OCR'd pages always use the OCR
+            engine's recognized line order regardless of this flag.
         password: PDF password if encrypted.
 
     Returns:
@@ -1820,18 +2025,33 @@ def extract_text_from_pdf(
 
     try:
         doc = fitz.open(decrypted_path)
-        all_text = []
         page_count = len(doc)
 
-        for page_num, page in enumerate(doc, start=1):
+        native_page_text = []
+        for page in doc:
             if preserve_layout:
-                text = page.get_text("blocks")
-                page_text = "\n".join(b[4].strip() for b in text if b[4].strip())
+                blocks = page.get_text("blocks")
+                text = "\n".join(b[4].strip() for b in blocks if b[4].strip())
             else:
-                page_text = page.get_text().strip()
+                text = page.get_text().strip()
+            native_page_text.append(text)
+
+        engine = None
+        if any(not text for text in native_page_text):
+            from scripts.ocr_engine import get_ocr_engine
+            engine = get_ocr_engine()
+
+        all_text = []
+        for i, page in enumerate(doc):
+            page_text = native_page_text[i]
+
+            if not page_text and engine is not None:
+                img = _render_page_bgr(page)
+                items = engine.recognize(img)
+                page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
 
             if page_text:
-                all_text.append(f"--- Page {page_num} ---\n{page_text}")
+                all_text.append(f"--- Page {i + 1} ---\n{page_text}")
 
         doc.close()
 
@@ -1842,6 +2062,184 @@ def extract_text_from_pdf(
             Path(decrypted_path).unlink(missing_ok=True)
 
     return {"output_path": str(output_file), "page_count": page_count}
+
+
+# ──────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ──────────────────────────────────────────────
+
+_SPAN_FLAG_ITALIC = 1 << 1
+_SPAN_FLAG_BOLD = 1 << 4
+
+
+def _span_style(span: dict) -> tuple:
+    """Return (bold, italic) for a get_text('dict') span.
+
+    PyMuPDF's font-flag bits are the primary signal; the font name is
+    checked too since some PDF producers omit reliable flags but always
+    embed a "Bold"/"Italic" subset font name.
+    """
+    flags = span.get("flags", 0)
+    font = (span.get("font") or "").lower()
+    bold = bool(flags & _SPAN_FLAG_BOLD) or "bold" in font
+    italic = bool(flags & _SPAN_FLAG_ITALIC) or "italic" in font or "oblique" in font
+    return bold, italic
+
+
+def _href_for_point(point: "fitz.Point", links: list) -> Optional[str]:
+    """Return the URI of the link annotation whose clickable rect contains
+    `point`, if any."""
+    for link in links:
+        if link.get("kind") != fitz.LINK_URI:
+            continue
+        uri = link.get("uri")
+        rect = link.get("from")
+        if uri and rect is not None and rect.contains(point):
+            return uri
+    return None
+
+
+def _page_html_paragraphs(page) -> list:
+    """Render a page's native text as HTML paragraphs, preserving bold/italic
+    runs and hyperlink annotations (dropped entirely by a plain get_text()
+    dump). One <p> per detected line, matching the line granularity a plain
+    text extraction would produce.
+
+    Matches links per character (via get_text("rawdict")'s char-level
+    boxes), not per span/line, because a link's clickable rect commonly
+    covers only part of a same-font text run (e.g. "Visit our site:
+    example.com" is one span, but only "example.com" is linked) — matching
+    at span granularity would either miss the link or wrongly link
+    surrounding text.
+    """
+    links = page.get_links()
+    paragraphs = []
+    for block in page.get_text("rawdict").get("blocks", []):
+        if block.get("type") != 0:  # 0 = text block
+            continue
+        for line in block.get("lines", []):
+            runs = []  # list of [text, bold, italic, href]
+            for span in line.get("spans", []):
+                bold, italic = _span_style(span)
+                for ch in span.get("chars", []):
+                    c = ch.get("c", "")
+                    if not c:
+                        continue
+                    bbox = ch.get("bbox")
+                    center = fitz.Point((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+                    href = _href_for_point(center, links)
+                    if runs and runs[-1][1:] == [bold, italic, href]:
+                        runs[-1][0] += c
+                    else:
+                        runs.append([c, bold, italic, href])
+
+            line_html = ""
+            for text, bold, italic, href in runs:
+                escaped = html.escape(text)
+                if bold:
+                    escaped = f"<b>{escaped}</b>"
+                if italic:
+                    escaped = f"<i>{escaped}</i>"
+                if href:
+                    escaped = f'<a href="{html.escape(href, quote=True)}">{escaped}</a>'
+                line_html += escaped
+            line_html = line_html.strip()
+            if line_html:
+                paragraphs.append(line_html)
+    return paragraphs
+
+
+def pdf_to_epub(
+    input_path: str,
+    output_dir: str,
+    password: str = None,
+) -> str:
+    """Convert a PDF into a reflowable EPUB ebook, one chapter per page.
+
+    Native-text pages keep their bold/italic runs and hyperlink annotations
+    (see _page_html_paragraphs); only pages with no text at all
+    (scanned/image-only) are rasterized and OCR'd — that path is necessarily
+    plain text, since a raster scan carries no font/link metadata to recover.
+
+    Args:
+        input_path: Path to input PDF.
+        output_dir: Directory to save the EPUB file.
+        password: PDF password if encrypted.
+
+    Returns:
+        Path to the generated .epub file.
+    """
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / branded_filename(input_file, "epub")
+
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        doc = fitz.open(decrypted_path)
+
+        native_page_text = [page.get_text().strip() for page in doc]
+
+        engine = None
+        if any(not text for text in native_page_text):
+            from scripts.ocr_engine import get_ocr_engine
+            engine = get_ocr_engine()
+
+        title = (doc.metadata.get("title") or "").strip() or input_file.stem
+
+        book = epub.EpubBook()
+        book.set_identifier(f"forgefiles-{uuid.uuid4()}")
+        book.set_title(title)
+        book.set_language("en")
+
+        chapters = []
+        for i, page in enumerate(doc):
+            page_text = native_page_text[i]
+            ocr_used = False
+
+            if not page_text and engine is not None:
+                img = _render_page_bgr(page)
+                items = engine.recognize(img)
+                page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
+                ocr_used = True
+
+            if not page_text:
+                continue
+
+            if ocr_used:
+                paragraphs = "".join(
+                    f"<p>{html.escape(line)}</p>" for line in page_text.split("\n") if line.strip()
+                )
+            else:
+                paragraphs = "".join(f"<p>{p}</p>" for p in _page_html_paragraphs(page))
+
+            chapter = epub.EpubHtml(
+                title=f"Page {i + 1}",
+                file_name=f"page_{i + 1}.xhtml",
+                lang="en",
+            )
+            chapter.content = f"<h1>Page {i + 1}</h1>{paragraphs}"
+            book.add_item(chapter)
+            chapters.append(chapter)
+
+        doc.close()
+
+        if not chapters:
+            chapter = epub.EpubHtml(title="Page 1", file_name="page_1.xhtml", lang="en")
+            chapter.content = "<h1>Page 1</h1><p>(No text found in document)</p>"
+            book.add_item(chapter)
+            chapters.append(chapter)
+
+        book.toc = tuple(chapters)
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        book.spine = ["nav"] + chapters
+
+        epub.write_epub(str(output_file), book)
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return str(output_file)
 
 
 # ──────────────────────────────────────────────
@@ -1979,12 +2377,14 @@ def add_page_numbers(
             else:
                 y = y_top
 
+            label_width = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
+
             if "left" in position:
                 x = margin
             elif "right" in position:
-                x = rect.width - margin - font_size * len(label) * 0.5
+                x = rect.width - margin - label_width
             else:  # center
-                x = rect.width / 2 - font_size * len(label) * 0.25
+                x = rect.width / 2 - label_width / 2
 
             page.insert_text(
                 fitz.Point(x, y),
@@ -2221,7 +2621,13 @@ def annotate_pdf(
             elif ann_type == "text":
                 page.insert_textbox(rect, content, fontname="helv", fontsize=11, color=(0, 0, 0))
             elif ann_type == "redact":
-                page.add_redact_annot(rect)
+                # `fill=(0, 0, 0)` is load-bearing: apply_redactions() on the pinned
+                # PyMuPDF<1.24 (no `graphics` param yet — added 1.23.27) strips text and
+                # blanks overlapping raster images, but leaves vector content (drawn
+                # rects/lines, form-field borders) under the rect fully visible with no
+                # fill. The black box covers that gap at the render/extraction level even
+                # though the underlying vector path stays in the content stream.
+                page.add_redact_annot(rect, fill=(0, 0, 0))
                 page.apply_redactions()
 
         doc.save(str(output_file), garbage=3, deflate=True)

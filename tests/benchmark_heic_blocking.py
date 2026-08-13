@@ -79,6 +79,17 @@ def benchmark():
         duration = end - start
         print(f"Light request took: {duration:.4f}s")
 
+        # Regression guard (issue #93): heic_to_jpeg, and four other
+        # conversion endpoints, used to call the CPU-heavy conversion inline
+        # on the event loop instead of via run_in_threadpool, so a light
+        # request queued behind whatever heavy request was already running.
+        # A fast pytest-native version of this same check (no real server, no
+        # timing race) lives in test_endpoints_do_not_block_event_loop.py.
+        assert duration < 2.0, (
+            f"Light request took {duration:.2f}s while a heavy HEIC conversion "
+            "was in flight -- the event loop is blocked."
+        )
+
         t.join(timeout=10)
 
     finally:

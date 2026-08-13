@@ -75,8 +75,77 @@ def test_cta_appears_before_the_ad_slot():
     assert html.index('class="cta"') < html.index(seo_content.ADS_SLOT)
 
 
-def test_landing_pages_stay_javascript_free():
-    """These pages rank because they render fully without JS. The deep link is a
-    plain href precisely so that stays true — no script.js on landing pages."""
+def test_landing_pages_do_not_load_the_app_bundle():
+    """These pages rank because they render fully without JS, so the SPA bundle
+    must stay off them. static/seo-upload.js is deliberately not that: it is a
+    few KB whose only job is to hand a chosen file to the app, and the page
+    degrades to the plain deep link without it (see the noscript test below)."""
     html = seo_content.render_tool_page("pdf-to-word")
     assert "script.js" not in html
+
+
+@pytest.mark.parametrize("slug", sorted(seo_content.TOOL_PAGES))
+def test_landing_pages_still_work_without_javascript(slug):
+    """The upload box needs JS to carry the file across the navigation, so
+    every page must still offer the plain link when there is none. Ranking
+    depends on these pages being complete without scripting."""
+    html = seo_content.render_tool_page(slug)
+    tool = seo_content.TOOL_PAGES[slug]["tool"]
+    assert f'<a class="cta" href="/?tool={tool}&amp;op={slug}"' in html
+
+
+@pytest.mark.parametrize(
+    "slug", sorted(s for s in seo_content.TOOL_PAGES
+                   if s not in seo_content._MULTI_FILE_SLUGS
+                   and seo_content.TOOL_PAGES[s]["tool"] in seo_content._CATEGORY_ACCEPT)
+)
+def test_single_file_pages_lead_with_an_upload_box(slug):
+    """The landing page used to offer only a link to the app, so the first
+    upload box a visitor saw was a full page load away — 89% of landing
+    sessions never opened a tool at all. The page's primary action is now
+    giving it a file."""
+    html = seo_content.render_tool_page(slug)
+    assert "data-ff-upload" in html, f"{slug} has no upload box"
+    assert f'data-ff-target="/?tool={seo_content.TOOL_PAGES[slug]["tool"]}&amp;op={slug}"' in html
+    # Above the ad block, which is what would otherwise push it below the fold.
+    assert html.index("data-ff-upload") < html.index(seo_content.ADS_SLOT)
+
+
+@pytest.mark.parametrize("slug", sorted(seo_content._MULTI_FILE_SLUGS))
+def test_merge_pages_keep_the_plain_link(slug):
+    """Merge tools need several files. Collecting one and handing it over
+    would misrepresent what the tool actually wants."""
+    html = seo_content.render_tool_page(slug)
+    assert "data-ff-upload" not in html
+
+
+@pytest.mark.parametrize("slug", sorted(seo_content.TOOL_PAGES))
+def test_upload_box_accepts_what_its_category_accepts(slug):
+    """A picker offering the wrong types is a dead end the visitor can only
+    discover by choosing a file and being rejected."""
+    html = seo_content.render_tool_page(slug)
+    if "data-ff-upload" not in html:
+        return
+    tool = seo_content.TOOL_PAGES[slug]["tool"]
+    accept = seo_content._CATEGORY_ACCEPT[tool]
+    assert f'accept="{accept}"' in html
+    # Must match the app-side input the handed-off file will land in.
+    input_id = {"pdf": "file-input", "image": "image-file-input",
+                "excel": "excel-file-input", "ppt": "ppt-file-input",
+                "word": "word-file-input"}[tool]
+    assert f'<input type="file" id="{input_id}" accept="{accept}" hidden>' in INDEX_HTML
+
+
+def test_handoff_categories_match_between_the_two_files():
+    """seo-upload.js stashes the file and script.js claims it into a category's
+    input. Nothing checks these two across files but this."""
+    handoff_js = (STATIC / "seo-upload.js").read_text(encoding="utf-8")
+    # Both halves must agree on the IndexedDB database, store and key.
+    for token in ("ff_handoff", "files", "pending"):
+        assert token in handoff_js, f"{token} missing from seo-upload.js"
+        assert token in SCRIPT_JS, f"{token} missing from script.js"
+
+    claimed = set(re.findall(r"^\s{4}(\w+): '([a-z-]+)',$", SCRIPT_JS, re.M))
+    categories = {c for c, _ in claimed}
+    for tool in seo_content._CATEGORY_ACCEPT:
+        assert tool in categories, f"script.js cannot claim a handoff for {tool}"

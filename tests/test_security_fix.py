@@ -36,8 +36,8 @@ def test_upload_filename_is_unique(mock_dirs, auth_client):
     saved_paths = []
     real_save_upload = main.save_upload
 
-    def spy_save_upload(file, allowed=None):
-        dest = real_save_upload(file, allowed)
+    async def spy_save_upload(file, allowed=None):
+        dest = await real_save_upload(file, allowed)
         saved_paths.append(dest)
         return dest
 
@@ -70,8 +70,8 @@ def test_two_uploads_of_the_same_name_do_not_collide(mock_dirs, auth_client):
     saved_paths = []
     real_save_upload = main.save_upload
 
-    def spy_save_upload(file, allowed=None):
-        dest = real_save_upload(file, allowed)
+    async def spy_save_upload(file, allowed=None):
+        dest = await real_save_upload(file, allowed)
         saved_paths.append(dest)
         return dest
 

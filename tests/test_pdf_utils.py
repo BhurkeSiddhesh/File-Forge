@@ -6,7 +6,8 @@ from docx import Document
 from reportlab.pdfgen import canvas
 from scripts.pdf_utils import (
     remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text,
-    _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
+    extract_text_from_pdf, _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
+    pdf_to_epub,
 )
 import scripts.pdf_utils as pdf_utils_module
 import scripts.ocr_engine as ocr_engine
@@ -90,9 +91,70 @@ def test_extract_pdf_text_blank_pdf_without_ocr_raises(tmp_path):
 
 
 def test_remove_pdf_password_wrong_password(locked_pdf, tmp_path):
-    """Wrong password raises an error."""
+    """Wrong password on an open-password PDF raises an error (no false unlock)."""
     with pytest.raises(Exception):
         remove_pdf_password(str(locked_pdf["path"]), "wrong_password", str(tmp_path))
+
+
+def _make_owner_restricted_pdf(sample_pdf, dest):
+    """An owner-restricted PDF: permission restrictions but NO open/user password,
+    so it opens with an empty password (the common 'Unlock PDF' case)."""
+    with pikepdf.open(sample_pdf) as pdf:
+        pdf.save(
+            dest,
+            encryption=pikepdf.Encryption(
+                user="",  # ggignore  — no open password
+                owner="owner-secret",  # ggignore
+                allow=pikepdf.Permissions(extract=False, modify_other=False, print_highres=False),
+            ),
+        )
+    return dest
+
+
+def _pdf_text(path):
+    doc = fitz.open(str(path))
+    try:
+        return "".join(page.get_text() for page in doc)
+    finally:
+        doc.close()
+
+
+def test_remove_pdf_password_owner_restricted_with_wrong_password(sample_pdf, tmp_path):
+    """Owner-restricted PDFs (no open password) unlock even when the caller passes
+    a wrong/irrelevant password, matching mainstream Unlock PDF tools. Content must
+    be preserved and the output must be fully decrypted."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted.pdf")
+    baseline_text = _pdf_text(sample_pdf)
+
+    out = Path(remove_pdf_password(str(src), "a-guess-that-is-wrong", str(tmp_path)))
+
+    assert out.exists()
+    with pikepdf.open(out) as pdf:  # opens with no password → truly unlocked
+        assert not pdf.is_encrypted
+    # Extracted content is byte/hash-identical to the source (zero fidelity loss).
+    assert _pdf_text(out) == baseline_text
+
+
+def test_remove_pdf_password_owner_restricted_removes_restrictions(sample_pdf, tmp_path):
+    """After unlocking, the owner-level permission restrictions are gone."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted2.pdf")
+
+    out = Path(remove_pdf_password(str(src), "", str(tmp_path)))
+
+    with pikepdf.open(out) as pdf:
+        assert not pdf.is_encrypted
+        # A non-encrypted PDF imposes no permission restrictions.
+        assert pdf.allow.extract and pdf.allow.print_highres
+
+
+def test_remove_pdf_password_owner_restricted_with_owner_password(sample_pdf, tmp_path):
+    """Supplying the correct owner password also unlocks (first-try path)."""
+    src = _make_owner_restricted_pdf(sample_pdf, tmp_path / "restricted3.pdf")
+
+    out = Path(remove_pdf_password(str(src), "owner-secret", str(tmp_path)))  # ggignore
+
+    with pikepdf.open(out) as pdf:
+        assert not pdf.is_encrypted
 
 
 def test_pdf_to_docx_with_password(locked_pdf, tmp_path):
@@ -356,4 +418,113 @@ def test_pdf_to_word_ai_hybrid_routes_ocr_only_to_scanned_pages(tmp_path, monkey
     doc = Document(output_path)
     text = "\n".join(p.text for p in doc.paragraphs)
     assert "This page already has plenty of real embedded text content." in text
+
+
+# ---------------------------------------------------------------------------
+# extract_text_from_pdf: OCR fallback for scanned pages
+#
+# Regression coverage for a real bug: extract_text_from_pdf (the function
+# behind both the free /api/pdf/extract-text endpoint and the premium
+# "batch OCR" job in batch_ocr.py) never invoked OCR at all - a scanned PDF
+# just produced "(No text found in document)", silently failing the one
+# thing a paid "batch OCR" feature is supposed to do.
+# ---------------------------------------------------------------------------
+
+def test_extract_text_from_pdf_skips_ocr_for_text_pdf(text_rich_pdf, tmp_path, monkeypatch):
+    """A fully text-based PDF never touches the OCR engine."""
+    def _fail(*args, **kwargs):
+        raise AssertionError("OCR engine should not be loaded for a text-based PDF")
+
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", _fail)
+
+    result = extract_text_from_pdf(str(text_rich_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert "Senior Analytics Consultant" in text
+
+
+def test_extract_text_from_pdf_ocrs_scanned_pdf(scanned_like_pdf, tmp_path, monkeypatch):
+    """A scanned/image-only PDF is routed through the configured OCR engine
+    instead of producing an empty/placeholder result."""
+    from unittest.mock import MagicMock
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Recognized scanned text", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+
+    assert fake_engine.recognize.call_count == 1
+    assert "Recognized scanned text" in text
+    assert "No text found" not in text
+
+
+def test_extract_text_from_pdf_hybrid_ocrs_only_scanned_pages(tmp_path, monkeypatch):
+    """A mixed PDF (one text page, one scanned page) extracts the text page
+    natively and OCRs only the scanned page."""
+    from PIL import Image
+    from unittest.mock import MagicMock
+
+    d = tmp_path / "mixed_src"
+    d.mkdir()
+    file_path = d / "mixed.pdf"
+
+    c = canvas.Canvas(str(file_path))
+    c.drawString(72, 750, "This page already has plenty of real embedded text content.")
+    c.showPage()
+    img_path = d / "page.png"
+    Image.new("RGB", (200, 200), color="white").save(img_path)
+    c.drawImage(str(img_path), 0, 0, width=200, height=200)
+    c.showPage()
+    c.save()
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Scanned line", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    result = extract_text_from_pdf(str(file_path), str(output_dir))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+
+    assert fake_engine.recognize.call_count == 1
+    assert "This page already has plenty of real embedded text content." in text
     assert "Scanned line" in text
+
+
+def test_extract_text_from_pdf_scanned_pdf_no_ocr_engine_stays_placeholder(scanned_like_pdf, tmp_path, monkeypatch):
+    """When AI/OCR is unavailable (e.g. DISABLE_AI=1), a scanned PDF still
+    degrades gracefully to the placeholder instead of raising."""
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: None)
+
+    result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
+    text = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert "No text found" in text
+
+
+def test_pdf_to_epub_ocrs_scanned_pdf(scanned_like_pdf, tmp_path, monkeypatch):
+    """A scanned/image-only PDF is routed through the configured OCR engine
+    so its chapter carries real recognized text instead of the placeholder."""
+    from unittest.mock import MagicMock
+    from ebooklib import epub
+
+    fake_engine = MagicMock()
+    fake_engine.name = "fake"
+    fake_engine.recognize.return_value = [
+        {"text": "Recognized scanned text", "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]}
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    result = pdf_to_epub(str(scanned_like_pdf), str(tmp_path))
+    book = epub.read_epub(result)
+    all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+    assert fake_engine.recognize.call_count == 1
+    assert b"Recognized scanned text" in all_content
+    assert b"No text found" not in all_content
