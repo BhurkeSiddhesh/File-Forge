@@ -117,11 +117,12 @@ def test_logging_failure_never_raises(tmp_path, monkeypatch):
 
 # --- integration: middleware + handler instrumentation ---
 
-def test_api_operation_logged_with_country_and_session(event_db, mock_dirs, auth_client):
+def test_api_operation_logged_with_country_and_session(event_db, mock_dirs, auth_client, monkeypatch):
+    monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
     resp = auth_client.post(
         "/api/pdf/create-blank",
         data={"num_pages": 1},
-        headers={"cf-ipcountry": "IN"},
+        headers={"cf-ipcountry": "IN", "x-ff-edge-auth": "s3cret"},
     )
     assert resp.status_code == 200
     assert "ff_sid" in resp.cookies

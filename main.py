@@ -419,16 +419,24 @@ def _delete_stale_files(directory: Path, ttl: int) -> None:
         try:
             if f.is_file():
                 if (now - f.stat().st_mtime) > ttl:
-                    f.unlink(missing_ok=True)
+                    try:
+                        f.unlink(missing_ok=True)
+                    except (OSError, FileNotFoundError):
+                        pass
             elif f.is_dir():
                 # A per-result output directory (its name is the download
                 # token). Age it by its newest member so a multi-step workflow
                 # writing into it can't have the directory swept mid-chain.
                 mtimes = [c.stat().st_mtime for c in f.iterdir() if c.is_file()]
-                newest = max(mtimes, default=f.stat().st_mtime)
-                if (now - newest) > ttl:
-                    shutil.rmtree(f, ignore_errors=True)
-                    app.state.downloads.discard(f.name)
+                if not mtimes:
+                    if (now - f.stat().st_mtime) > ttl:
+                        shutil.rmtree(f, ignore_errors=True)
+                        app.state.downloads.discard(f.name)
+                else:
+                    newest = max(mtimes)
+                    if (now - newest) > ttl:
+                        shutil.rmtree(f, ignore_errors=True)
+                        app.state.downloads.discard(f.name)
         except Exception:
             pass
 
@@ -944,9 +952,9 @@ EDGE_AUTH_SECRET = os.environ.get("RATE_LIMIT_EDGE_SECRET", "").strip()
 
 
 def _from_trusted_edge(request: Request) -> bool:
-    """True if this request carries our edge's shared secret (or none is set)."""
+    """True if this request carries our edge's shared secret."""
     if not EDGE_AUTH_SECRET:
-        return True
+        return False
     presented = request.headers.get(EDGE_AUTH_HEADER) or ""
     # Compare as bytes: hmac.compare_digest raises TypeError on a str holding
     # non-ASCII, which a client controls and could otherwise turn into a 500.

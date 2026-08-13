@@ -107,28 +107,31 @@ class TestRateLimitMiddleware:
 # ---------------------------------------------------------------------------
 
 class TestClientIdentity:
-    def test_cf_connecting_ip_wins_over_forwarded_for(self):
+    def test_cf_connecting_ip_wins_over_forwarded_for(self, monkeypatch):
         from main import client_identity
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
 
         class _Req:
             headers = {
                 "cf-connecting-ip": "203.0.113.7",
                 "x-forwarded-for": "10.0.0.1",
                 "x-real-ip": "10.0.0.2",
+                "x-ff-edge-auth": "s3cret",
             }
             client = None
 
         assert client_identity(_Req()) == "203.0.113.7"
 
-    def test_falls_back_to_x_real_ip_then_peer(self):
+    def test_falls_back_to_x_real_ip_then_peer(self, monkeypatch):
         from main import client_identity
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
 
         class _WithReal:
-            headers = {"x-real-ip": "198.51.100.4", "x-forwarded-for": "10.0.0.1"}
+            headers = {"x-real-ip": "198.51.100.4", "x-forwarded-for": "10.0.0.1", "x-ff-edge-auth": "s3cret"}
             client = None
 
         class _Peer:
-            headers = {"x-forwarded-for": "10.0.0.1"}
+            headers = {"x-forwarded-for": "10.0.0.1", "x-ff-edge-auth": "s3cret"}
 
             class client:
                 host = "192.0.2.9"
@@ -136,8 +139,9 @@ class TestClientIdentity:
         assert client_identity(_WithReal()) == "198.51.100.4"
         assert client_identity(_Peer()) == "192.0.2.9"
 
-    def test_spoofed_forwarded_for_does_not_reset_the_bucket(self, rate_limited_client):
+    def test_spoofed_forwarded_for_does_not_reset_the_bucket(self, rate_limited_client, monkeypatch):
         """The attack from the issue: rotate XFF, keep the real CF header."""
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
         codes = []
         for i in range(6):
             resp = rate_limited_client.post(
@@ -145,6 +149,7 @@ class TestClientIdentity:
                 headers={
                     "CF-Connecting-IP": "203.0.113.10",
                     "X-Forwarded-For": f"10.0.0.{i}",   # a different lie each time
+                    "x-ff-edge-auth": "s3cret",
                 },
                 files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
             )
@@ -155,26 +160,27 @@ class TestClientIdentity:
         assert codes.count(429) == 4, codes
         assert 429 not in codes[:2], codes
 
-    def test_distinct_cf_ips_get_distinct_buckets(self, rate_limited_client):
+    def test_distinct_cf_ips_get_distinct_buckets(self, rate_limited_client, monkeypatch):
+        monkeypatch.setattr("main.EDGE_AUTH_SECRET", "s3cret")
         first = rate_limited_client.post(
             "/api/pdf/convert-to-word",
-            headers={"CF-Connecting-IP": "203.0.113.20"},
+            headers={"CF-Connecting-IP": "203.0.113.20", "x-ff-edge-auth": "s3cret"},
             files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
         )
         for _ in range(3):
             rate_limited_client.post(
                 "/api/pdf/convert-to-word",
-                headers={"CF-Connecting-IP": "203.0.113.20"},
+                headers={"CF-Connecting-IP": "203.0.113.20", "x-ff-edge-auth": "s3cret"},
                 files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
             )
         blocked = rate_limited_client.post(
             "/api/pdf/convert-to-word",
-            headers={"CF-Connecting-IP": "203.0.113.20"},
+            headers={"CF-Connecting-IP": "203.0.113.20", "x-ff-edge-auth": "s3cret"},
             files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
         )
         other = rate_limited_client.post(
             "/api/pdf/convert-to-word",
-            headers={"CF-Connecting-IP": "203.0.113.21"},
+            headers={"CF-Connecting-IP": "203.0.113.21", "x-ff-edge-auth": "s3cret"},
             files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
         )
         assert first.status_code != 429
@@ -239,13 +245,13 @@ class TestEdgeAuthentication:
 
         assert client_identity(weird) == "192.0.2.9"
 
-    def test_unset_secret_keeps_the_previous_behaviour(self, monkeypatch):
+    def test_unset_secret_falls_back_to_peer(self, monkeypatch):
         from main import client_identity
 
         monkeypatch.setattr("main.EDGE_AUTH_SECRET", "")
         req = _FakeRequest({"cf-connecting-ip": "203.0.113.7"}, peer="192.0.2.9")
 
-        assert client_identity(req) == "203.0.113.7"
+        assert client_identity(req) == "192.0.2.9"
 
     def test_rotating_the_header_no_longer_mints_fresh_buckets(self, monkeypatch, rate_limited_client):
         """The attack from the issue, end to end."""
@@ -278,12 +284,12 @@ class TestCountryIsNotClientControlled:
         assert _client_country(_FakeRequest({"cf-ipcountry": "INDIA"})) is None
         assert _client_country(_FakeRequest({"cf-ipcountry": ""})) is None
 
-    def test_valid_codes_pass_through_uppercased(self, monkeypatch):
+    def test_unauthenticated_country_is_dropped_when_unset(self, monkeypatch):
         from main import _client_country
 
         monkeypatch.setattr("main.EDGE_AUTH_SECRET", "")
-        assert _client_country(_FakeRequest({"cf-ipcountry": "in"})) == "IN"
-        assert _client_country(_FakeRequest({"cf-ipcountry": "T1"})) == "T1"   # Cloudflare: Tor
+        assert _client_country(_FakeRequest({"cf-ipcountry": "in"})) is None
+        assert _client_country(_FakeRequest({"cf-ipcountry": "T1"})) is None
 
 
 # ---------------------------------------------------------------------------
@@ -385,13 +391,13 @@ class TestLimiterStateIsBounded:
     """defaultdict(deque) grew one entry per key seen since boot, forever."""
 
     def test_prune_drops_drained_keys(self):
-        limiter = SlidingWindowRateLimiter(window_seconds=0.05)
+        limiter = SlidingWindowRateLimiter(window_seconds=0.1)
         for i in range(200):
             limiter.check(f"ip{i}:light", 5)
         assert len(limiter._hits) == 200
 
         import time as _time
-        _time.sleep(0.06)
+        _time.sleep(0.15)
         removed = limiter.prune()
 
         assert removed == 200
@@ -405,13 +411,13 @@ class TestLimiterStateIsBounded:
 
     def test_emptied_bucket_is_reclaimed(self):
         """The specific leak: check() pops expired hits but left the empty deque."""
-        limiter = SlidingWindowRateLimiter(window_seconds=0.05)
+        limiter = SlidingWindowRateLimiter(window_seconds=0.1)
         limiter.check("transient:light", 5)
 
         import time as _time
-        _time.sleep(0.06)
+        _time.sleep(0.15)
         limiter.check("transient:light", 5)   # drains the deque, re-adds one hit
-        _time.sleep(0.06)
+        _time.sleep(0.15)
 
         assert limiter.prune() == 1
         assert limiter._hits == {}
