@@ -474,6 +474,30 @@ TOOL_PAGES: Dict[str, dict] = {
         ],
         "related": ["pdf-to-jpg", "powerpoint-to-pdf", "pdf-to-word", "pdf-to-excel", "compress-pdf"],
     },
+    "pdf-to-epub": {
+        "title": "PDF to EPUB: Convert PDF to Ebook Free | Forge Files",
+        "meta": "Convert a PDF into a reflowable EPUB ebook online, free. Scanned pages are OCR'd automatically. No signup, no watermarks, open source, files auto-deleted.",
+        "h1": "PDF to EPUB: Convert PDF to a Reflowable Ebook",
+        "lede": "Reading a PDF on a phone or e-reader means constant pinch-zooming. Convert it into a reflowable EPUB instead, so the text adapts to any screen size and font setting.",
+        "tool": "pdf", "app": "PDF to EPUB", "cta": "Convert PDF to EPUB, free",
+        "how": "How to convert PDF to EPUB",
+        "steps": [
+            "Upload your PDF (drag &amp; drop or browse).",
+            "Choose <strong>PDF → EPUB</strong>.",
+            "Download the .epub file. Your upload is deleted from our server automatically.",
+        ],
+        "benefits": [
+            "<strong>Reflowable text:</strong> the ebook adapts to any screen size and font, unlike a fixed PDF page.",
+            "<strong>Scanned pages included:</strong> pages with no text layer are OCR'd automatically instead of coming out blank.",
+            "<strong>Free &amp; verifiably private:</strong> deleted after download, <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">open source</a>, no signup.",
+        ],
+        "faqs": [
+            ("Will scanned PDFs work?", "Yes, any page without a real text layer is rasterized and run through OCR, so scanned books still produce readable chapters."),
+            ("Does it keep the original page layout?", "No, EPUB is a reflowable format: text is extracted page by page into chapters so it can adapt to any screen. For a page-image-perfect copy, use <a href=\"/pdf-to-powerpoint\">PDF to PowerPoint</a> instead."),
+            ("Is it free?", "Yes, no signup, no watermark, and the <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">code is open source</a>."),
+        ],
+        "related": ["pdf-to-word", "pdf-to-text", "pdf-to-excel", "pdf-to-powerpoint", "compress-pdf"],
+    },
     "sign-pdf": {
         "title": "Sign PDF: Add a Signature to a PDF Free | Forge Files",
         "meta": "Add a signature image to a PDF online, free. Place your signature on any page and position. No signup, no watermarks, open source, files deleted automatically.",

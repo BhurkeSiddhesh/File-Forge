@@ -285,6 +285,7 @@ function hidePdfActionAreas() {
     document.getElementById('pdf-metadata-area')?.classList.add('hidden');
     document.getElementById('pdf-to-excel-area')?.classList.add('hidden');
     document.getElementById('pdf-to-pptx-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-epub-area')?.classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
 }
 
@@ -313,6 +314,7 @@ const PDF_AREA_CARD = {
     'pdf-metadata-area': 'pdf-metadata-btn',
     'pdf-to-excel-area': 'pdf-to-excel-btn',
     'pdf-to-pptx-area': 'pdf-to-pptx-btn',
+    'pdf-to-epub-area': 'pdf-to-epub-btn',
 };
 
 function openPdfArea(areaId) {
@@ -883,6 +885,7 @@ function resetUI() {
     document.getElementById('pdf-metadata-area')?.classList.add('hidden');
     document.getElementById('pdf-to-excel-area')?.classList.add('hidden');
     document.getElementById('pdf-to-pptx-area')?.classList.add('hidden');
+    document.getElementById('pdf-to-epub-area')?.classList.add('hidden');
     document.getElementById('status-display').classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
     const extractInput = document.getElementById('extract-pages-input');
@@ -1451,6 +1454,8 @@ function addStepToWorkflow(type, label, icon) {
     } else if (type === 'pdf_to_pptx') {
         step.config.dpi = 150;
         step.config.password = '';
+    } else if (type === 'pdf_to_epub') {
+        step.config.password = '';
     } else if (type === 'extract_text') {
         step.config.preserve_layout = false;
         step.config.password = '';
@@ -1531,7 +1536,7 @@ function needsConfig(type) {
         'remove_password', 'resize_image', 'compress_pdf',
         'rotate_image', 'compress_image', 'convert_image', 'watermark_image',
         'csv_to_xlsx', 'xlsx_to_csv', 'ppt_to_images',
-        'crop_image', 'rotate_pdf', 'protect_pdf', 'pdf_to_excel', 'pdf_to_pptx', 'word_to_pptx',
+        'crop_image', 'rotate_pdf', 'protect_pdf', 'pdf_to_excel', 'pdf_to_pptx', 'pdf_to_epub', 'word_to_pptx',
         'extract_text', 'organize_pdf', 'add_page_numbers', 'annotate_pdf', 'edit_metadata',
     ].includes(type);
 }
@@ -1701,6 +1706,10 @@ function openConfigModal(index) {
             </select></label>
             <label><span style="display:block; margin:0.75rem 0 0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
             <input type="password" id="config-pdf-to-pptx-password" value="${escapeAttr(step.config.password)}"></label>`;
+    } else if (step.type === 'pdf_to_epub') {
+        body.innerHTML = `
+            <label><span style="display:block; margin-bottom:0.5rem; color:var(--text-muted)">Source PDF password (if protected)</span>
+            <input type="password" id="config-pdf-to-epub-password" value="${escapeAttr(step.config.password)}"></label>`;
     } else if (step.type === 'extract_text') {
         body.innerHTML = `
             <label><input type="checkbox" id="config-extract-text-preserve" ${step.config.preserve_layout ? 'checked' : ''}>
@@ -1826,6 +1835,8 @@ function saveStepConfig() {
     } else if (step.type === 'pdf_to_pptx') {
         step.config.dpi = parseInt(document.getElementById('config-pdf-to-pptx-dpi').value) || 150;
         step.config.password = document.getElementById('config-pdf-to-pptx-password').value;
+    } else if (step.type === 'pdf_to_epub') {
+        step.config.password = document.getElementById('config-pdf-to-epub-password').value;
     } else if (step.type === 'extract_text') {
         step.config.preserve_layout = document.getElementById('config-extract-text-preserve').checked;
         step.config.password = document.getElementById('config-extract-text-password').value;
@@ -2714,6 +2725,17 @@ document.getElementById('process-pdf-to-pptx-btn')?.addEventListener('click', ()
     processAction('/api/pdf/to-pptx', 'Converting to PowerPoint...', fd);
 });
 
+// --- PDF to EPUB ---
+document.getElementById('pdf-to-epub-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('pdf-to-epub-area');
+});
+document.getElementById('process-pdf-to-epub-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    processAction('/api/pdf/to-epub', 'Converting to EPUB...', fd);
+});
+
 // === Word Tools Page ===
 
 let selectedWordFile = null;
@@ -2851,6 +2873,7 @@ const DEEP_LINK_OPS = {
     'pdf-page-numbers': { card: 'page-numbers-btn' },
     'pdf-to-excel': { card: 'pdf-to-excel-btn' },
     'pdf-to-powerpoint': { card: 'pdf-to-pptx-btn' },
+    'pdf-to-epub': { card: 'pdf-to-epub-btn' },
     'sign-pdf': { card: 'sign-pdf-btn' },
     'organize-pdf': { card: 'organize-pdf-btn' },
     // Image

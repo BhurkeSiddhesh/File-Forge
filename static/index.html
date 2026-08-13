@@ -363,6 +363,13 @@
                                 <p>Convert pages to presentation</p>
                             </div>
                         </div>
+                        <div class="action-card" id="pdf-to-epub-btn" role="button" tabindex="0">
+                            <i class="fas fa-book"></i>
+                            <div class="action-text">
+                                <h4>PDF → EPUB</h4>
+                                <p>Turn a PDF into a reflowable ebook</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Compress PDF Options -->
@@ -602,6 +609,12 @@
                             <option value="200">200 DPI (high quality)</option>
                         </select>
                         <button id="process-pdf-to-pptx-btn" class="primary-btn">Convert to PPTX</button>
+                    </div>
+
+                    <!-- PDF to EPUB Options -->
+                    <div id="pdf-to-epub-area" class="password-area hidden">
+                        <p class="helper-text">Convert this PDF into a reflowable EPUB ebook:</p>
+                        <button id="process-pdf-to-epub-btn" class="primary-btn">Convert to EPUB</button>
                     </div>
 
                     <!-- Password Modal-style Input (inline) -->
@@ -1245,6 +1258,11 @@
                                 data-step-label="PDF to PowerPoint" data-step-icon="fa-file-powerpoint" role="button" tabindex="0" aria-label="Add PDF to PowerPoint step">
                                 <i class="fas fa-file-powerpoint"></i>
                                 <span>PDF → PowerPoint</span>
+                            </div>
+                            <div class="step-item" draggable="true" data-step-type="pdf_to_epub"
+                                data-step-label="PDF to EPUB" data-step-icon="fa-book" role="button" tabindex="0" aria-label="Add PDF to EPUB step">
+                                <i class="fas fa-book"></i>
+                                <span>PDF → EPUB</span>
                             </div>
                             <div class="step-item" draggable="true" data-step-type="extract_text"
                                 data-step-label="Extract Text" data-step-icon="fa-align-left" role="button" tabindex="0" aria-label="Add Extract Text step">

@@ -47,6 +47,7 @@ from scripts.pdf_utils import (
     word_to_pptx,
     pdf_to_excel,
     pdf_to_pptx,
+    pdf_to_epub,
     extract_text_from_pdf,
     organize_pdf,
     add_page_numbers,
@@ -2103,6 +2104,11 @@ async def execute_workflow(
                     output_path = await run_in_threadpool(pdf_to_pptx, str(current_file), str(result_dir), dpi, password)
                     current_file = Path(output_path)
 
+                elif step_type == 'pdf_to_epub':
+                    password = config.get('password') or None
+                    output_path = await run_in_threadpool(pdf_to_epub, str(current_file), str(result_dir), password)
+                    current_file = Path(output_path)
+
                 elif step_type == 'extract_text':
                     preserve = config.get('preserve_layout', False)
                     password = config.get('password') or None
@@ -2401,6 +2407,37 @@ async def api_pdf_to_pptx(
             run_in_threadpool(pdf_to_pptx, str(temp_path), str(result_dir), dpi, password or None),
         )
         return {"status": "success", "message": "PDF converted to PowerPoint", **download_fields(output_path)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/pdf/to-epub")
+async def api_pdf_to_epub(
+    file: UploadFile = File(...),
+    password: str = Form(None),
+):
+    """Convert a PDF into a reflowable EPUB ebook."""
+    safe_filename = secure_filename(file.filename)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
+    try:
+        output_path = await event_log.timed(
+            "pdf_to_epub",
+            run_in_threadpool(pdf_to_epub, str(temp_path), str(result_dir), password or None),
+        )
+        return {"status": "success", "message": "PDF converted to EPUB", **download_fields(output_path)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:

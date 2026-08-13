@@ -24,6 +24,7 @@ from scripts.pdf_utils import (
     word_to_pdf,
     pdf_to_excel,
     pdf_to_pptx,
+    pdf_to_epub,
     extract_text_from_pdf,
     organize_pdf,
     add_page_numbers,
@@ -517,6 +518,114 @@ class TestPDFToPPTX:
         out.mkdir()
         result = pdf_to_pptx(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
         assert Path(result).exists()
+
+
+# ──────────────────────────────────────────────
+# Feature #60: PDF to EPUB
+# ──────────────────────────────────────────────
+
+class TestPDFToEpub:
+    def test_creates_epub_file(self, simple_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(simple_pdf), str(out))
+        assert Path(result).exists()
+        assert result.endswith(".epub")
+        assert Path(result).stem == f"{simple_pdf.stem}_forgefiles.org"
+
+    def test_chapter_count_matches_pages(self, multi_page_pdf, tmp_path):
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(multi_page_pdf), str(out))
+        book = epub.read_epub(result)
+        chapters = [item for item in book.get_items_of_type(9) if item.file_name.startswith("page_")]
+        assert len(chapters) == 4
+
+    def test_extracted_text_appears_in_a_chapter(self, text_rich_pdf, tmp_path):
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(text_rich_pdf), str(out))
+        book = epub.read_epub(result)
+        all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+        assert b"Jordan Rivera" in all_content
+
+    def test_with_locked_pdf(self, locked_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(locked_pdf["path"]), str(out), password=locked_pdf["password"])
+        assert Path(result).exists()
+
+    def test_locked_pdf_without_password_raises(self, locked_pdf, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        with pytest.raises(ValueError):
+            pdf_to_epub(str(locked_pdf["path"]), str(out))
+
+    def test_scanned_pdf_falls_back_to_placeholder_without_ocr(self, scanned_like_pdf, tmp_path, monkeypatch):
+        """When AI/OCR is unavailable, a scanned PDF still degrades gracefully
+        to a placeholder chapter instead of raising."""
+        import scripts.ocr_engine as ocr_engine
+        monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: None)
+
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(scanned_like_pdf), str(out))
+        book = epub.read_epub(result)
+        all_content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+        assert b"No text found" in all_content
+
+    def test_preserves_bold_and_italic(self, tmp_path):
+        import fitz
+        from ebooklib import epub
+
+        pdf_path = tmp_path / "styled.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        bold_font = fitz.Font("hebo")  # Helvetica-Bold
+        italic_font = fitz.Font("heit")  # Helvetica-Italic
+        page.insert_font(fontname="F0", fontbuffer=bold_font.buffer)
+        page.insert_font(fontname="F1", fontbuffer=italic_font.buffer)
+        page.insert_text((72, 100), "Bold Heading", fontsize=14, fontname="F0")
+        page.insert_text((72, 130), "Italic emphasis", fontsize=12, fontname="F1")
+        page.insert_text((72, 160), "Plain text", fontsize=12)
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+        assert b"<b>Bold Heading</b>" in content
+        assert b"<i>Italic emphasis</i>" in content
+        assert b"<p>Plain text</p>" in content
+
+    def test_preserves_hyperlinks(self, tmp_path):
+        import fitz
+        from ebooklib import epub
+
+        pdf_path = tmp_path / "linked.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 100), "Visit our site: Example Site", fontsize=12)
+        link_rect = page.search_for("Example Site")[0]
+        page.insert_link({"kind": fitz.LINK_URI, "from": link_rect, "uri": "https://example.com"})
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+        assert b'<a href="https://example.com">Example Site</a>' in content
+        # Only the linked substring is wrapped — the rest of the line stays plain.
+        assert b"Visit our site: <a" in content
 
 
 # ──────────────────────────────────────────────
