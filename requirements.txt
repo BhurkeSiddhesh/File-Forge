@@ -3,7 +3,7 @@ pikepdf>=8.0.0
 # relies on) is a deliberate upgrade rather than a surprise on the next deploy —
 # deploy-oracle.yml reinstalls requirements on every push to main.
 fastapi>=0.115,<1
-uvicorn>=0.30,<1
+uvicorn>=0.52.3,<1
 python-multipart
 pdf2docx
 # >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
@@ -18,7 +18,7 @@ opencv-python-headless
 docxcompose==1.4.0; python_version < "3.10"
 docxcompose==2.2.0; python_version >= "3.10"
 setuptools>=69.0
-PyMuPDF>=1.24.0
+PyMuPDF>=1.28.2
 reportlab
 requests>=2.32.0
 filetype>=1.2.0
@@ -26,6 +26,7 @@ pillow-heif
 onnxruntime
 aiofiles
 gunicorn
+redis>=5.0,<6
 openpyxl
 pandas
 python-pptx
