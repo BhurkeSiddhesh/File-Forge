@@ -545,6 +545,7 @@ function handleFile(file) {
     }
     if (!ffCheckUploadSize(file)) return;
     selectedFile = file;
+    ffUpdatePdfCompressPreview();
     filenameDisplay.textContent = file.name;
     fileInfo.classList.remove('hidden');
 
@@ -579,6 +580,7 @@ document.getElementById('compress-pdf-btn').onclick = () => {
     setMergeMode(false);
     if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('compress-area');
+    ffUpdatePdfCompressPreview();
 };
 
 document.getElementById('merge-pdf-btn').onclick = () => {
@@ -603,6 +605,10 @@ document.getElementById('sign-pdf-btn').onclick = () => {
     if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('sign-area');
 };
+
+document.querySelectorAll('input[name="compress-level"]').forEach(function (radio) {
+    radio.addEventListener('change', ffUpdatePdfCompressPreview);
+});
 
 document.getElementById('process-compress-btn').onclick = async () => {
     const level = document.querySelector('input[name="compress-level"]:checked')?.value || 'medium';
@@ -972,6 +978,69 @@ async function processAction(url, text, formData = null) {
 
 }
 
+const FF_PDF_COMPRESS_HINT = { low: [0.80, 0.90], medium: [0.50, 0.70], high: [0.30, 0.50] };
+
+function ffUpdatePdfCompressPreview() {
+    const el = document.getElementById('pdf-compress-preview');
+    if (!el) return;
+    const level = document.querySelector('input[name="compress-level"]:checked')?.value || 'medium';
+    const range = FF_PDF_COMPRESS_HINT[level] || FF_PDF_COMPRESS_HINT.medium;
+    if (!selectedFile) {
+        el.textContent = 'Typical reduction: Low ~10–20%, Medium ~30–50%, High ~50–70%. Select a file for an estimate.';
+        return;
+    }
+    el.textContent = 'This ' + formatBytes(selectedFile.size) + ' file would typically become about '
+        + formatBytes(Math.round(selectedFile.size * range[0])) + '–'
+        + formatBytes(Math.round(selectedFile.size * range[1]))
+        + ' at ' + level + ' compression (estimate).';
+}
+
+function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId) {
+    const wrap = document.getElementById(wrapId);
+    const imgEl = document.getElementById(imgId);
+    const label = document.getElementById(labelId);
+    if (!file || !wrap || !imgEl || !label) return;
+    if (file.type && !file.type.startsWith('image/') && !/\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name || '')) {
+        wrap.classList.add('hidden');
+        return;
+    }
+    const q = Math.max(1, Math.min(100, Number(quality) || 80));
+    const url = URL.createObjectURL(file);
+    const probe = new Image();
+    probe.onload = function () {
+        const canvas = document.createElement('canvas');
+        let w = probe.naturalWidth;
+        let h = probe.naturalHeight;
+        const max = 720;
+        if (Math.max(w, h) > max) {
+            const s = max / Math.max(w, h);
+            w = Math.max(1, Math.round(w * s));
+            h = Math.max(1, Math.round(h * s));
+        }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(probe, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(function (blob) {
+            if (!blob) return;
+            if (imgEl.dataset.blobUrl) URL.revokeObjectURL(imgEl.dataset.blobUrl);
+            const previewUrl = URL.createObjectURL(blob);
+            imgEl.dataset.blobUrl = previewUrl;
+            imgEl.src = previewUrl;
+            label.textContent = 'Preview ≈ ' + formatBytes(blob.size) + ' at ' + q + '%'
+                + (probe.naturalWidth > w ? ' (preview scaled)' : '');
+            wrap.classList.remove('hidden');
+        }, 'image/jpeg', q / 100);
+    };
+    probe.onerror = function () {
+        URL.revokeObjectURL(url);
+        wrap.classList.add('hidden');
+    };
+    probe.src = url;
+}
+window.ffUpdatePdfCompressPreview = ffUpdatePdfCompressPreview;
+window.ffPreviewJpegQuality = ffPreviewJpegQuality;
+
 function formatBytes(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -1117,6 +1186,10 @@ if (imageDropZone) {
 if (qualitySlider) {
     qualitySlider.oninput = () => {
         qualityValue.textContent = qualitySlider.value;
+        if (selectedImageFile) {
+            ffPreviewJpegQuality(selectedImageFile, qualitySlider.value,
+                'jpeg-quality-preview-img', 'jpeg-quality-preview-label', 'jpeg-quality-preview');
+        }
     };
 }
 
@@ -1131,6 +1204,10 @@ function handleImageFile(file) {
     selectedImageFile = file;
     imageFilenameDisplay.textContent = file.name;
     imageFileInfo.classList.remove('hidden');
+    if (qualitySlider) {
+        ffPreviewJpegQuality(file, qualitySlider.value,
+            'jpeg-quality-preview-img', 'jpeg-quality-preview-label', 'jpeg-quality-preview');
+    }
 
     document.getElementById('image-status-display').classList.add('hidden');
     document.getElementById('image-result-display').classList.add('hidden');
@@ -2380,7 +2457,11 @@ document.getElementById('rotate-image-btn')?.addEventListener('click', () => {
     showImageOptionPanel('rotate-image-area');
 });
 document.getElementById('compress-image-btn')?.addEventListener('click', () => {
-    showImageOptionPanel('compress-image-area');
+    if (!showImageOptionPanel('compress-image-area')) return;
+    if (selectedImageFile && compressImgQ) {
+        ffPreviewJpegQuality(selectedImageFile, compressImgQ.value,
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview');
+    }
 });
 document.getElementById('convert-format-btn')?.addEventListener('click', () => {
     showImageOptionPanel('convert-format-area');
@@ -2392,6 +2473,10 @@ document.getElementById('watermark-image-btn')?.addEventListener('click', () => 
 const compressImgQ = document.getElementById('compress-image-quality');
 if (compressImgQ) compressImgQ.addEventListener('input', e => {
     document.getElementById('compress-image-quality-value').textContent = e.target.value;
+    if (selectedImageFile) {
+        ffPreviewJpegQuality(selectedImageFile, e.target.value,
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview');
+    }
 });
 const convertFmtQ = document.getElementById('convert-format-quality');
 if (convertFmtQ) convertFmtQ.addEventListener('input', e => {
