@@ -8,9 +8,9 @@ python-multipart
 pdf2docx
 # >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
 # resolve the app's top-level modules (see pytest.ini).
-pytest>=7.0
+pytest>=9.1.1
 httpx
-rapidocr>=2.0,<3.0
+rapidocr>=3.9.2,<4.0
 opencv-python-headless
 # docxcompose 1.4.0 imports pkg_resources, which modern setuptools (>=81) no
 # longer ships — so it fails to import on Python 3.12 runners. 2.x dropped that
