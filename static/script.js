@@ -45,8 +45,160 @@ try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 // if those scripts failed to load, this is exactly the request the tool would
 // have made anyway, so a missing local layer costs nothing instead of breaking
 // half the tools with "ffProcess is not defined".
+const FF_MAX_UPLOAD_MB = 50;
+let ffInflightAbort = null;
+
+function ffSanitizeMessage(msg) {
+    const s = String(msg == null ? '' : msg);
+    if (!s || /<[a-z!/]/i.test(s) || s.length > 400) {
+        return 'Something went wrong. Please try again.';
+    }
+    return s;
+}
+
+function ffNotify(message) {
+    const text = ffSanitizeMessage(message);
+    let host = document.getElementById('ff-toast-host');
+    if (!host && document.body) {
+        host = document.createElement('div');
+        host.id = 'ff-toast-host';
+        host.setAttribute('aria-live', 'polite');
+        document.body.appendChild(host);
+        if (!document.getElementById('ff-toast-style')) {
+            const st = document.createElement('style');
+            st.id = 'ff-toast-style';
+            st.textContent = '#ff-toast-host{position:fixed;z-index:10000;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;max-width:min(420px,92vw)}'
+                + '.ff-toast{background:#171717;color:#fff;padding:12px 14px;border-radius:10px;font:14px/1.4 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2)}'
+                + '.ff-cancel-btn{margin-left:8px}';
+            document.head.appendChild(st);
+        }
+    }
+    if (!host) return;
+    const el = document.createElement('div');
+    el.className = 'ff-toast';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(function () { el.remove(); }, 7000);
+}
+
+function ffCheckUploadSize(fileOrList) {
+    const files = (fileOrList && fileOrList.length != null && fileOrList.size == null)
+        ? Array.from(fileOrList)
+        : (fileOrList ? [fileOrList] : []);
+    for (const f of files) {
+        if (f && typeof f.size === 'number' && f.size > FF_MAX_UPLOAD_MB * 1024 * 1024) {
+            ffNotify('This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.');
+            return false;
+        }
+    }
+    return true;
+}
+
+async function ffMessageFromResponse(response) {
+    if (response.status === 413) {
+        return 'This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.';
+    }
+    if (response.status === 429) {
+        const ra = response.headers.get('Retry-After');
+        return (ra && /^\d+$/.test(ra))
+            ? ('Too many requests. Please wait ' + ra + ' seconds and try again.')
+            : 'Too many requests. Please wait a moment and try again.';
+    }
+    try {
+        const data = await response.clone().json();
+        let detail = data.detail || data.message || '';
+        if (Array.isArray(detail)) detail = detail.map(function (x) { return x.msg || x; }).join('; ');
+        return ffSanitizeMessage(detail || 'Something went wrong. Please try again.');
+    } catch (_) {
+        const text = await response.text();
+        if (text && !/<[a-z!/]/i.test(text) && text.length < 280) return text;
+        return 'Something went wrong. Please try again.';
+    }
+}
+
+function ffStartInflight() {
+    if (ffInflightAbort) {
+        try { ffInflightAbort.abort(); } catch (e) { /* ignore */ }
+    }
+    ffInflightAbort = (typeof AbortController === 'function') ? new AbortController() : null;
+    ffSetCancelVisible(true);
+    return ffInflightAbort;
+}
+
+function ffIsAbort(error) {
+    return !!(error && (error.name === 'AbortError' || /aborted/i.test(String(error.message || ''))));
+}
+
+function ffBindCancelButtons() {
+    document.querySelectorAll('.status-display').forEach(function (el) {
+        if (el.querySelector('.ff-cancel-btn')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ff-cancel-btn secondary-btn';
+        btn.textContent = 'Cancel';
+        btn.hidden = true;
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            ffCancelInflight();
+        });
+        el.appendChild(btn);
+    });
+}
+
+function ffSetCancelVisible(on) {
+    document.querySelectorAll('.ff-cancel-btn').forEach(function (btn) {
+        btn.hidden = !on;
+    });
+}
+
+function ffCancelInflight() {
+    if (ffInflightAbort) {
+        try { ffInflightAbort.abort(); } catch (e) { /* ignore */ }
+        ffInflightAbort = null;
+        ffSetCancelVisible(false);
+        ffNotify('Conversion cancelled.');
+    }
+}
+
+function ffFormDataFiles(formData) {
+    const files = [];
+    if (!formData || typeof formData.forEach !== 'function') return files;
+    formData.forEach(function (value) {
+        if (value && typeof value.size === 'number' && typeof value.name === 'string') files.push(value);
+    });
+    return files;
+}
+
+window.ffNotify = ffNotify;
+window.ffSanitizeMessage = ffSanitizeMessage;
+window.ffCheckUploadSize = ffCheckUploadSize;
+window.ffMessageFromResponse = ffMessageFromResponse;
+window.ffCancelInflight = ffCancelInflight;
+window.ffIsAbort = ffIsAbort;
+window.ffStartInflight = ffStartInflight;
+
+const _ffProcessFallback = (path, formData, init) => {
+    if (!ffCheckUploadSize(ffFormDataFiles(formData))) {
+        return Promise.resolve(new Response(JSON.stringify({
+            detail: 'This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.',
+        }), { status: 413, headers: { 'Content-Type': 'application/json' } }));
+    }
+    const abort = (init && init.signal) ? null : ffStartInflight();
+    ffSetCancelVisible(true);
+    return fetch(apiUrl(path), Object.assign({
+        method: 'POST',
+        body: formData,
+        signal: (init && init.signal) || (abort && abort.signal) || (ffInflightAbort && ffInflightAbort.signal) || undefined,
+    }, init || {})).finally(function () { ffSetCancelVisible(false); });
+};
 const ffProcess = window.ffProcess
-    || ((path, formData) => fetch(apiUrl(path), { method: 'POST', body: formData }));
+    || _ffProcessFallback;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ffBindCancelButtons);
+} else {
+    ffBindCancelButtons();
+}
 
 // Tracks which local result each download anchor is currently holding, so the
 // previous one can be released when the anchor is repointed.
@@ -133,7 +285,7 @@ function updateDownloadLink(element, token, filename) {
 
             if (response.status === 404) {
                 e.preventDefault();
-                alert("The converted file no longer exists. Please re-process.");
+                ffNotify("The converted file no longer exists. Please re-process.");
                 return false;
             }
 
@@ -372,9 +524,10 @@ function handleFiles(files) {
         fileInput.value = '';
         filenameDisplay.textContent = 'No file selected';
         fileInfo.classList.add('hidden');
-        alert('Please select PDF files.');
+        ffNotify('Please select PDF files.');
         return;
     }
+    if (!ffCheckUploadSize(pdfs)) return;
     selectedFiles = pdfs;
     selectedFile = pdfs[0];
     filenameDisplay.textContent = pdfs.length === 1
@@ -387,9 +540,10 @@ function handleFiles(files) {
 
 function handleFile(file) {
     if (file.type !== 'application/pdf') {
-        alert('Please select a PDF file.');
+        ffNotify('Please select a PDF file.');
         return;
     }
+    if (!ffCheckUploadSize(file)) return;
     selectedFile = file;
     filenameDisplay.textContent = file.name;
     fileInfo.classList.remove('hidden');
@@ -405,25 +559,25 @@ function handleFile(file) {
 // Actions
 document.getElementById('remove-password-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('password-input-area');
 };
 
 document.getElementById('convert-word-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('convert-password-area');
 };
 
 document.getElementById('extract-pages-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('extract-pages-area');
 };
 
 document.getElementById('compress-pdf-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('compress-area');
 };
 
@@ -434,24 +588,25 @@ document.getElementById('merge-pdf-btn').onclick = () => {
 
 document.getElementById('watermark-pdf-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('watermark-area');
 };
 
 document.getElementById('to-images-pdf-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('to-images-area');
 };
 
 document.getElementById('sign-pdf-btn').onclick = () => {
     setMergeMode(false);
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('sign-area');
 };
 
 document.getElementById('process-compress-btn').onclick = async () => {
     const level = document.querySelector('input[name="compress-level"]:checked')?.value || 'medium';
+    if (!ffCheckUploadSize(selectedFile)) return;
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -465,22 +620,26 @@ document.getElementById('process-compress-btn').onclick = async () => {
     statusText.textContent = 'Compressing PDF...';
     resultDisplay.classList.add('hidden');
 
+    const abort = ffStartInflight();
     try {
         const response = await fetch(apiUrl('/api/pdf/compress'), {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: abort && abort.signal,
         });
-        const data = await response.json();
         if (response.ok) {
+            const data = await response.json();
             statusDisplay.classList.add('hidden');
             showCompressResult(data);
         } else {
             statusDisplay.classList.add('hidden');
-            alert('Error: ' + (data.detail || 'Compression failed'));
+            ffNotify('Error: ' + await ffMessageFromResponse(response));
         }
     } catch (error) {
         statusDisplay.classList.add('hidden');
-        alert('An error occurred: ' + error.message);
+        if (!ffIsAbort(error)) ffNotify('An error occurred: ' + error.message);
+    } finally {
+        ffSetCancelVisible(false);
     }
 };
 
@@ -558,6 +717,7 @@ async function pollJobStatus(jobId, statusText, maxWaitMs = 6 * 60 * 1000) {
 }
 
 async function convertToWordWithProgress(formData, useAI) {
+    if (!ffCheckUploadSize(ffFormDataFiles(formData))) return;
     const statusDisplay = document.getElementById('status-display');
     const statusText = document.getElementById('status-text');
     const resultDisplay = document.getElementById('result-display');
@@ -565,6 +725,7 @@ async function convertToWordWithProgress(formData, useAI) {
     statusDisplay.classList.remove('hidden');
     statusText.textContent = useAI ? 'Starting AI conversion...' : 'Starting conversion...';
     resultDisplay.classList.add('hidden');
+    const abort = ffStartInflight();
 
     // The standard path gets no per-page events from the server, so show real
     // elapsed time rather than a fake percentage. Knowing it's still working
@@ -592,19 +753,19 @@ async function convertToWordWithProgress(formData, useAI) {
         } else if (event.event === 'complete') {
             showResult(event.filename, event.message, event.download_token);
         } else if (event.event === 'error') {
-            alert('Error: ' + event.detail);
+            ffNotify('Error: ' + event.detail);
         }
     };
 
     try {
         const response = await fetch(apiUrl('/api/pdf/convert-to-word-stream'), {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: abort && abort.signal,
         });
 
         if (!response.ok) {
-            const data = await response.json().catch(() => ({ detail: 'Conversion failed' }));
-            alert('Error: ' + (data.detail || 'Conversion failed'));
+            ffNotify('Error: ' + await ffMessageFromResponse(response));
             return;
         }
 
@@ -641,24 +802,25 @@ async function convertToWordWithProgress(formData, useAI) {
                 if (finalEvent) {
                     handleEvent(finalEvent);
                 } else {
-                    alert('Error: Lost connection to the server and the conversion did not complete in time. Please try again.');
+                    ffNotify('Error: Lost connection to the server and the conversion did not complete in time. Please try again.');
                 }
             } else {
-                alert('Error: Lost connection to the server before the conversion started. Please try again.');
+                ffNotify('Error: Lost connection to the server before the conversion started. Please try again.');
             }
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        if (!ffIsAbort(error)) ffNotify('Error: ' + error.message);
     } finally {
         if (ticker) clearInterval(ticker);
         statusDisplay.classList.add('hidden');
+        ffSetCancelVisible(false);
     }
 }
 
 document.getElementById('process-password-btn').onclick = () => {
     const password = document.getElementById('pdf-password').value;
     if (!password) {
-        alert('Please enter a password.');
+        ffNotify('Please enter a password.');
         return;
     }
     const formData = new FormData();
@@ -672,7 +834,7 @@ document.getElementById('process-extract-btn').onclick = () => {
     const pages = document.getElementById('extract-pages-input').value.trim();
 
     if (!pages) {
-        alert('Please enter pages to extract (e.g., 1,3,5-7 or all).');
+        ffNotify('Please enter pages to extract (e.g., 1,3,5-7 or all).');
         return;
     }
 
@@ -685,7 +847,7 @@ document.getElementById('process-extract-btn').onclick = () => {
 
 document.getElementById('process-merge-btn').onclick = () => {
     if (!selectedFiles || selectedFiles.length < 2) {
-        alert('Please select at least two PDF files in the upload area.');
+        ffNotify('Please select at least two PDF files in the upload area.');
         return;
     }
     const formData = new FormData();
@@ -701,9 +863,9 @@ if (watermarkOpacityInput) {
 }
 
 document.getElementById('process-watermark-btn').onclick = () => {
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     const text = document.getElementById('watermark-text').value.trim();
-    if (!text) { alert('Please enter watermark text.'); return; }
+    if (!text) { ffNotify('Please enter watermark text.'); return; }
     const position = document.getElementById('watermark-position').value;
     const opacity = document.getElementById('watermark-opacity').value;
 
@@ -717,7 +879,7 @@ document.getElementById('process-watermark-btn').onclick = () => {
 };
 
 document.getElementById('process-to-images-btn').onclick = () => {
-    if (!selectedFile) { alert('Please select a file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     const dpi = document.getElementById('to-images-dpi').value;
     const fmt = document.getElementById('to-images-format').value;
 
@@ -745,10 +907,10 @@ const SIGN_POSITION_PRESETS = {
 };
 
 document.getElementById('process-sign-btn').onclick = () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const sigInput = document.getElementById('signature-image');
     const sigFile = sigInput?.files?.[0];
-    if (!sigFile) { alert('Please choose a signature image.'); return; }
+    if (!sigFile) { ffNotify('Please choose a signature image.'); return; }
 
     const page = parseInt(document.getElementById('sign-page').value, 10) || 1;
     const positionKey = document.getElementById('sign-position').value;
@@ -796,14 +958,14 @@ async function processAction(url, text, formData = null) {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 const data = await response.json();
-                alert('Error: ' + data.detail);
+                ffNotify('Error: ' + data.detail);
             } else {
                 const text = await response.text();
-                alert('Error: ' + text);
+                ffNotify('Error: ' + text);
             }
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        ffNotify('Error: ' + error.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
@@ -963,7 +1125,7 @@ function handleImageFile(file) {
     const ext = '.' + file.name.split('.').pop().toLowerCase();
 
     if (!file.type.startsWith('image/') && !validExts.includes(ext)) {
-        alert('Please select an image file (HEIC, JPG, PNG, WebP, BMP, TIFF, GIF).');
+        ffNotify('Please select an image file (HEIC, JPG, PNG, WebP, BMP, TIFF, GIF).');
         return;
     }
     selectedImageFile = file;
@@ -986,7 +1148,7 @@ const convertJpegBtn = document.getElementById('convert-jpeg-btn');
 if (convertJpegBtn) {
     convertJpegBtn.onclick = () => {
         if (!selectedImageFile) {
-            alert('Please select a file first.');
+            ffNotify('Please select a file first.');
             return;
         }
 
@@ -1018,14 +1180,14 @@ async function processImageAction(url, text, formData) {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 const data = await response.json();
-                alert('Error: ' + data.detail);
+                ffNotify('Error: ' + data.detail);
             } else {
                 const text = await response.text();
-                alert('Error: ' + text);
+                ffNotify('Error: ' + text);
             }
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        ffNotify('Error: ' + error.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
@@ -1114,7 +1276,7 @@ async function initCropper() {
     try {
         await ensureCropperLoaded();
     } catch (e) {
-        alert('Could not load the cropping tool. Check your connection and try again.');
+        ffNotify('Could not load the cropping tool. Check your connection and try again.');
         return;
     }
 
@@ -1171,7 +1333,7 @@ async function initCropper() {
 
         } catch (e) {
             console.error(e);
-            alert("Could not load HEIC preview: " + e.message);
+            ffNotify("Could not load HEIC preview: " + e.message);
             if (statusDisplay) statusDisplay.classList.add('hidden');
         }
 
@@ -1229,7 +1391,7 @@ function toggleResizeInputs() {
 
 async function resizeImage() {
     if (!selectedImageFile) {
-        alert("Please select an image file first.");
+        ffNotify("Please select an image file first.");
         return;
     }
     const file = selectedImageFile;
@@ -1243,7 +1405,7 @@ async function resizeImage() {
         const width = document.getElementById('resize-width').value;
         const height = document.getElementById('resize-height').value;
         if (!width && !height) {
-            alert("Please enter at least width or height.");
+            ffNotify("Please enter at least width or height.");
             return;
         }
         if (width) formData.append('width', width);
@@ -1254,7 +1416,7 @@ async function resizeImage() {
     } else if (mode === 'target_size') {
         const targetSize = document.getElementById('target-size-kb').value;
         if (!targetSize) {
-            alert("Please enter a target size.");
+            ffNotify("Please enter a target size.");
             return;
         }
         formData.append('target_size_kb', targetSize);
@@ -1288,13 +1450,13 @@ async function resizeImage() {
     } catch (error) {
         console.error('Error:', error);
         statusDisplay.classList.add('hidden');
-        alert("An error occurred: " + error.message);
+        ffNotify("An error occurred: " + error.message);
     }
 }
 
 async function cropImage() {
     if (!cropper) {
-        alert("Please start cropping first.");
+        ffNotify("Please start cropping first.");
         return;
     }
 
@@ -1336,7 +1498,7 @@ async function cropImage() {
     } catch (error) {
         console.error('Error:', error);
         statusDisplay.classList.add('hidden');
-        alert("An error occurred: " + error.message);
+        ffNotify("An error occurred: " + error.message);
     }
 }
 
@@ -1539,10 +1701,20 @@ function renderWorkflowSteps() {
             <i class="fas ${step.icon}"></i>
             <span class="step-label">${step.label}</span>
             ${needsConfig(step.type) ? `<button class="config-btn" onclick="openConfigModal(${index})"><i class="fas fa-cog"></i></button>` : ''}
+            <button type="button" class="move-step" onclick="moveStep(${index}, -1)" aria-label="Move step up" ${index === 0 ? 'disabled' : ''}>&uarr;</button>
+            <button type="button" class="move-step" onclick="moveStep(${index}, 1)" aria-label="Move step down" ${index === workflowSteps.length - 1 ? 'disabled' : ''}>&darr;</button>
             <button class="remove-step" onclick="removeStep(${index})"><i class="fas fa-times"></i></button>
         `;
         container.appendChild(stepCard);
     });
+    if (workflowUndo) {
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'secondary-btn undo-step';
+        undo.textContent = 'Undo remove';
+        undo.addEventListener('click', undoRemoveStep);
+        container.appendChild(undo);
+    }
 }
 
 function needsConfig(type) {
@@ -1555,15 +1727,37 @@ function needsConfig(type) {
     ].includes(type);
 }
 
+let workflowUndo = null;
+
 function removeStep(index) {
+    workflowUndo = { index: index, step: workflowSteps[index] };
     workflowSteps.splice(index, 1);
     renderWorkflowSteps();
 }
 
+function undoRemoveStep() {
+    if (!workflowUndo) return;
+    const at = Math.min(workflowUndo.index, workflowSteps.length);
+    workflowSteps.splice(at, 0, workflowUndo.step);
+    workflowUndo = null;
+    renderWorkflowSteps();
+}
+
+function moveStep(index, dir) {
+    const j = index + dir;
+    if (j < 0 || j >= workflowSteps.length) return;
+    const tmp = workflowSteps[index];
+    workflowSteps[index] = workflowSteps[j];
+    workflowSteps[j] = tmp;
+    renderWorkflowSteps();
+}
+window.moveStep = moveStep;
+window.undoRemoveStep = undoRemoveStep;
+
 // Escape values destined for innerHTML attribute interpolation. Any string that
 // originated from a user-typed input (watermark text, sheet name, password) must
 // pass through this before being templated into an HTML string, otherwise a
-// payload like `"><img src=x onerror=alert(1)>` breaks out of the value="..."
+// payload like `"><img src=x onerror=ffNotify(1)>` breaks out of the value="..."
 // attribute and executes script when the modal is re-opened.
 function escapeAttr(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -1925,30 +2119,32 @@ function buildStepConfigPayload(step) {
 
 async function runWorkflow() {
     if (!workflowFile) {
-        alert('Please select an input file first.');
+        ffNotify('Please select an input file first.');
         return;
     }
 
     if (workflowSteps.length === 0) {
-        alert('Please add at least one step to your workflow.');
+        ffNotify('Please add at least one step to your workflow.');
         return;
     }
 
     // Validate required configs
     for (const step of workflowSteps) {
         if (step.type === 'remove_password' && !step.config.password) {
-            alert(`Please configure the password for "${step.label}" step.`);
+            ffNotify(`Please configure the password for "${step.label}" step.`);
             return;
         }
         if (step.type === 'protect_pdf' && !step.config.user_password) {
-            alert(`Please set a new password for "${step.label}" step.`);
+            ffNotify(`Please set a new password for "${step.label}" step.`);
             return;
         }
         if (step.type === 'organize_pdf' && !(step.config.page_order || '').trim()) {
-            alert(`Please set a page order for "${step.label}" step.`);
+            ffNotify(`Please set a page order for "${step.label}" step.`);
             return;
         }
     }
+
+    if (!ffCheckUploadSize(workflowFile)) return;
 
     const statusDisplay = document.getElementById('workflow-status-display');
     const statusText = document.getElementById('workflow-status-text');
@@ -1969,15 +2165,16 @@ async function runWorkflow() {
         config: buildStepConfigPayload(s)
     }))));
 
+    const abort = ffStartInflight();
     try {
         const response = await fetch(apiUrl('/api/workflow/execute'), {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: abort && abort.signal,
         });
 
         if (!response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
-            const data = await response.json();
-            throw new Error(data.detail || 'Workflow execution failed');
+            throw new Error(await ffMessageFromResponse(response));
         }
 
         // Read SSE stream
@@ -2011,7 +2208,9 @@ async function runWorkflow() {
         console.error('Error:', error);
         statusDisplay.classList.add('hidden');
         clearStepStates();
-        alert('Workflow error: ' + error.message);
+        if (!ffIsAbort(error)) ffNotify('Workflow error: ' + error.message);
+    } finally {
+        ffSetCancelVisible(false);
     }
 }
 
@@ -2056,7 +2255,7 @@ function handleWorkflowEvent(data, statusDisplay, resultDisplay) {
         case 'error':
             statusDisplay.classList.add('hidden');
             clearStepStates();
-            alert('Workflow error: ' + data.detail);
+            ffNotify('Workflow error: ' + data.detail);
             break;
     }
 }
@@ -2171,7 +2370,7 @@ resetUI = function () {
 // === Image Page: new feature handlers (rotate, compress, convert format, watermark) ===
 
 function showImageOptionPanel(id) {
-    if (!selectedImageFile) { alert('Please select an image first.'); return false; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return false; }
     hideImageActionAreas();
     document.getElementById(id).classList.remove('hidden');
     return true;
@@ -2204,7 +2403,7 @@ if (wmImgOpacity) wmImgOpacity.addEventListener('input', e => {
 });
 
 document.getElementById('process-rotate-image-btn')?.addEventListener('click', () => {
-    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
     const angle = document.getElementById('rotate-angle').value;
     const fd = new FormData();
     fd.append('file', selectedImageFile);
@@ -2213,7 +2412,7 @@ document.getElementById('process-rotate-image-btn')?.addEventListener('click', (
 });
 
 document.getElementById('process-compress-image-btn')?.addEventListener('click', () => {
-    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
     const quality = document.getElementById('compress-image-quality').value;
     const fd = new FormData();
     fd.append('file', selectedImageFile);
@@ -2222,7 +2421,7 @@ document.getElementById('process-compress-image-btn')?.addEventListener('click',
 });
 
 document.getElementById('process-convert-format-btn')?.addEventListener('click', () => {
-    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
     const target_format = document.getElementById('convert-target-format').value;
     const quality = document.getElementById('convert-format-quality').value;
     const fd = new FormData();
@@ -2233,9 +2432,9 @@ document.getElementById('process-convert-format-btn')?.addEventListener('click',
 });
 
 document.getElementById('process-watermark-image-btn')?.addEventListener('click', () => {
-    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
     const text = document.getElementById('watermark-image-text').value.trim();
-    if (!text) { alert('Please enter watermark text.'); return; }
+    if (!text) { ffNotify('Please enter watermark text.'); return; }
     const position = document.getElementById('watermark-image-position').value;
     const opacity = document.getElementById('watermark-image-opacity').value;
     const color = document.getElementById('watermark-image-color').value;
@@ -2268,7 +2467,7 @@ function handleExcelFiles(files) {
             excelFileInput.value = '';
             excelFilenameDisplay.textContent = 'No file selected';
             excelFileInfo.classList.add('hidden');
-            alert('Please select .xlsx files.');
+            ffNotify('Please select .xlsx files.');
             return;
         }
         selectedExcelFiles = xlsxs;
@@ -2312,19 +2511,19 @@ function setExcelMergeMode(on) {
 
 document.getElementById('excel-to-pdf-btn')?.addEventListener('click', () => {
     setExcelMergeMode(false);
-    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select a file.'); return; }
     hideExcelActionAreas();
     document.getElementById('excel-to-pdf-area').classList.remove('hidden');
 });
 document.getElementById('csv-to-xlsx-btn')?.addEventListener('click', () => {
     setExcelMergeMode(false);
-    if (!selectedExcelFile) { alert('Please select a CSV file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select a CSV file.'); return; }
     hideExcelActionAreas();
     document.getElementById('csv-to-xlsx-area').classList.remove('hidden');
 });
 document.getElementById('xlsx-to-csv-btn')?.addEventListener('click', () => {
     setExcelMergeMode(false);
-    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select a file.'); return; }
     hideExcelActionAreas();
     document.getElementById('xlsx-to-csv-area').classList.remove('hidden');
 });
@@ -2352,30 +2551,30 @@ async function processExcelAction(url, text, formData) {
             updateDownloadLink(document.getElementById('excel-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
-            alert('Error: ' + (data.detail || 'Failed'));
+            ffNotify('Error: ' + (data.detail || 'Failed'));
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        ffNotify('Error: ' + e.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
 }
 
 document.getElementById('process-excel-to-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedExcelFile) { alert('Please select a file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select a file.'); return; }
     const fd = new FormData();
     fd.append('file', selectedExcelFile);
     processExcelAction('/api/excel/to-pdf', 'Converting Excel to PDF...', fd);
 });
 document.getElementById('process-csv-to-xlsx-btn')?.addEventListener('click', () => {
-    if (!selectedExcelFile) { alert('Please select a CSV file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select a CSV file.'); return; }
     const fd = new FormData();
     fd.append('file', selectedExcelFile);
     fd.append('delimiter', document.getElementById('csv-delimiter').value);
     processExcelAction('/api/excel/csv-to-xlsx', 'Converting CSV to XLSX...', fd);
 });
 document.getElementById('process-xlsx-to-csv-btn')?.addEventListener('click', () => {
-    if (!selectedExcelFile) { alert('Please select an XLSX file.'); return; }
+    if (!selectedExcelFile) { ffNotify('Please select an XLSX file.'); return; }
     const fd = new FormData();
     fd.append('file', selectedExcelFile);
     const sheet = document.getElementById('xlsx-sheet-name').value.trim();
@@ -2384,7 +2583,7 @@ document.getElementById('process-xlsx-to-csv-btn')?.addEventListener('click', ()
 });
 document.getElementById('process-merge-excel-btn')?.addEventListener('click', () => {
     if (!selectedExcelFiles || selectedExcelFiles.length < 2) {
-        alert('Please select at least two .xlsx files.'); return;
+        ffNotify('Please select at least two .xlsx files.'); return;
     }
     const fd = new FormData();
     selectedExcelFiles.forEach(f => fd.append('files', f));
@@ -2410,7 +2609,7 @@ function handlePptFiles(files) {
             pptFileInput.value = '';
             pptFilenameDisplay.textContent = 'No file selected';
             pptFileInfo.classList.add('hidden');
-            alert('Please select .pptx files.');
+            ffNotify('Please select .pptx files.');
             return;
         }
         selectedPptFiles = pptxs;
@@ -2420,7 +2619,7 @@ function handlePptFiles(files) {
             : `${pptxs.length} files: ${pptxs.map(f => f.name).join(', ')}`;
     } else {
         if (!files[0].name.toLowerCase().endsWith('.pptx')) {
-            alert('Please select a .pptx file.'); return;
+            ffNotify('Please select a .pptx file.'); return;
         }
         selectedPptFile = files[0];
         selectedPptFiles = [files[0]];
@@ -2457,13 +2656,13 @@ function setPptMergeMode(on) {
 
 document.getElementById('ppt-to-pdf-btn')?.addEventListener('click', () => {
     setPptMergeMode(false);
-    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     hidePptActionAreas();
     document.getElementById('ppt-to-pdf-area').classList.remove('hidden');
 });
 document.getElementById('ppt-to-images-btn')?.addEventListener('click', () => {
     setPptMergeMode(false);
-    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     hidePptActionAreas();
     document.getElementById('ppt-to-images-area').classList.remove('hidden');
 });
@@ -2491,23 +2690,23 @@ async function processPptAction(url, text, formData) {
             updateDownloadLink(document.getElementById('ppt-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
-            alert('Error: ' + (data.detail || 'Failed'));
+            ffNotify('Error: ' + (data.detail || 'Failed'));
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        ffNotify('Error: ' + e.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
 }
 
 document.getElementById('process-ppt-to-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     const fd = new FormData();
     fd.append('file', selectedPptFile);
     processPptAction('/api/ppt/to-pdf', 'Converting PPT to PDF...', fd);
 });
 document.getElementById('process-ppt-to-images-btn')?.addEventListener('click', () => {
-    if (!selectedPptFile) { alert('Please select a PPTX file.'); return; }
+    if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     const fd = new FormData();
     fd.append('file', selectedPptFile);
     fd.append('fmt', document.getElementById('ppt-images-format').value);
@@ -2515,7 +2714,7 @@ document.getElementById('process-ppt-to-images-btn')?.addEventListener('click', 
 });
 document.getElementById('process-merge-ppt-btn')?.addEventListener('click', () => {
     if (!selectedPptFiles || selectedPptFiles.length < 2) {
-        alert('Please select at least two .pptx files.'); return;
+        ffNotify('Please select at least two .pptx files.'); return;
     }
     const fd = new FormData();
     selectedPptFiles.forEach(f => fd.append('files', f));
@@ -2526,7 +2725,7 @@ document.getElementById('process-merge-ppt-btn')?.addEventListener('click', () =
 
 // Helper: show a PDF option panel (same pattern as existing sign/watermark/etc. buttons)
 function showPdfOptionPanel(areaId) {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return false; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return false; }
     openPdfArea(areaId);
     return true;
 }
@@ -2536,7 +2735,7 @@ document.getElementById('rotate-pdf-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('rotate-pdf-area');
 });
 document.getElementById('process-rotate-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const angle = document.getElementById('rotate-pdf-angle').value;
     const pages = document.getElementById('rotate-pdf-pages').value.trim();
     const fd = new FormData();
@@ -2551,9 +2750,9 @@ document.getElementById('protect-pdf-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('protect-pdf-area');
 });
 document.getElementById('process-protect-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const userPwd = document.getElementById('protect-user-password').value;
-    if (!userPwd) { alert('Please enter a user password.'); return; }
+    if (!userPwd) { ffNotify('Please enter a user password.'); return; }
     const ownerPwd = document.getElementById('protect-owner-password').value;
     const allowPrint = document.getElementById('protect-allow-print').checked;
     const allowCopy = document.getElementById('protect-allow-copy').checked;
@@ -2573,7 +2772,7 @@ document.getElementById('extract-text-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('extract-text-area');
 });
 document.getElementById('process-extract-text-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const preserveLayout = document.getElementById('extract-text-layout').checked;
     const fd = new FormData();
     fd.append('file', selectedFile);
@@ -2586,9 +2785,9 @@ document.getElementById('organize-pdf-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('organize-pdf-area');
 });
 document.getElementById('process-organize-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const order = document.getElementById('organize-page-order').value.trim();
-    if (!order) { alert('Please enter a page order (e.g. 1,3,2).'); return; }
+    if (!order) { ffNotify('Please enter a page order (e.g. 1,3,2).'); return; }
     const fd = new FormData();
     fd.append('file', selectedFile);
     fd.append('page_order', order);
@@ -2600,7 +2799,7 @@ document.getElementById('page-numbers-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('page-numbers-area');
 });
 document.getElementById('process-page-numbers-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const position = document.getElementById('page-numbers-position').value;
     const format = document.getElementById('page-numbers-format').value;
     const start = document.getElementById('page-numbers-start').value;
@@ -2620,11 +2819,11 @@ document.getElementById('process-page-numbers-btn')?.addEventListener('click', (
 
 // --- Repair PDF ---
 document.getElementById('repair-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     openPdfArea('repair-pdf-area');
 });
 document.getElementById('process-repair-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const fd = new FormData();
     fd.append('file', selectedFile);
     processAction('/api/pdf/repair', 'Repairing PDF...', fd);
@@ -2658,7 +2857,7 @@ document.getElementById('process-create-pdf-btn')?.addEventListener('click', () 
     if (mode === 'text') {
         const content = document.getElementById('create-pdf-content').value;
         const title = document.getElementById('create-pdf-title').value;
-        if (!content.trim()) { alert('Please enter some text content.'); return; }
+        if (!content.trim()) { ffNotify('Please enter some text content.'); return; }
         fd.append('content', content);
         if (title) fd.append('title', title);
         processAction('/api/pdf/create-from-text', 'Creating PDF from text...', fd);
@@ -2674,7 +2873,7 @@ document.getElementById('annotate-pdf-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('annotate-pdf-area');
 });
 document.getElementById('process-annotate-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const annotType = document.getElementById('annot-type').value;
     const page = document.getElementById('annot-page').value;
     const x0 = document.getElementById('annot-x0').value;
@@ -2699,7 +2898,7 @@ document.getElementById('pdf-metadata-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('pdf-metadata-area');
 });
 document.getElementById('process-pdf-metadata-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const title = document.getElementById('meta-title').value;
     const author = document.getElementById('meta-author').value;
     const subject = document.getElementById('meta-subject').value;
@@ -2720,7 +2919,7 @@ document.getElementById('pdf-to-excel-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('pdf-to-excel-area');
 });
 document.getElementById('process-pdf-to-excel-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const fd = new FormData();
     fd.append('file', selectedFile);
     processAction('/api/pdf/to-excel', 'Extracting tables to Excel...', fd);
@@ -2731,7 +2930,7 @@ document.getElementById('pdf-to-pptx-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('pdf-to-pptx-area');
 });
 document.getElementById('process-pdf-to-pptx-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const dpi = document.getElementById('pdf-to-pptx-dpi').value;
     const fd = new FormData();
     fd.append('file', selectedFile);
@@ -2744,7 +2943,7 @@ document.getElementById('pdf-to-epub-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('pdf-to-epub-area');
 });
 document.getElementById('process-pdf-to-epub-btn')?.addEventListener('click', () => {
-    if (!selectedFile) { alert('Please select a PDF file first.'); return; }
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
     const fd = new FormData();
     fd.append('file', selectedFile);
     processAction('/api/pdf/to-epub', 'Converting to EPUB...', fd);
@@ -2798,22 +2997,22 @@ async function processWordAction(url, statusText, formData) {
             updateDownloadLink(document.getElementById('word-download-link'), data.download_token);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
-            alert('Error: ' + (data.detail || 'Failed'));
+            ffNotify('Error: ' + (data.detail || 'Failed'));
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        ffNotify('Error: ' + e.message);
     } finally {
         statusDisplay.classList.add('hidden');
     }
 }
 
 document.getElementById('word-to-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     document.getElementById('word-to-pptx-area')?.classList.add('hidden');
     document.getElementById('word-to-pdf-area').classList.remove('hidden');
 });
 document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     const fd = new FormData();
     fd.append('file', selectedWordFile);
     processWordAction('/api/word/to-pdf', 'Converting Word to PDF...', fd);
@@ -2821,12 +3020,12 @@ document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', ()
 
 // --- Word to PowerPoint ---
 document.getElementById('word-to-pptx-btn')?.addEventListener('click', () => {
-    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     document.getElementById('word-to-pdf-area')?.classList.add('hidden');
     document.getElementById('word-to-pptx-area').classList.remove('hidden');
 });
 document.getElementById('process-word-to-pptx-btn')?.addEventListener('click', () => {
-    if (!selectedWordFile) { alert('Please select a Word file first.'); return; }
+    if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     const dpi = document.getElementById('word-to-pptx-dpi').value;
     const fd = new FormData();
     fd.append('file', selectedWordFile);
@@ -2839,7 +3038,7 @@ document.getElementById('image-to-pdf-btn')?.addEventListener('click', () => {
     showImageOptionPanel('image-to-pdf-area');
 });
 document.getElementById('process-image-to-pdf-btn')?.addEventListener('click', () => {
-    if (!selectedImageFile) { alert('Please select an image first.'); return; }
+    if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
     const pagesize = document.getElementById('image-to-pdf-pagesize').value;
     const fit = document.getElementById('image-to-pdf-fit').value;
     const fd = new FormData();
@@ -2916,7 +3115,7 @@ const DEEP_LINK_OPS = {
 const DEEP_LINK_NO_FILE_CARDS = ['merge-pdf-btn', 'merge-excel-btn', 'merge-ppt-btn'];
 
 // The action card a deep link asked for, held until the visitor picks a file.
-// Most card handlers alert("Please select a file first.") when clicked with no
+// Most card handlers ffNotify("Please select a file first.") when clicked with no
 // file, so we highlight the card on arrival and open it once a file exists.
 let ffPendingOp = null;
 
