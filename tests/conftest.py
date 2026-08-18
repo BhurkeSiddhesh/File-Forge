@@ -170,7 +170,7 @@ def disable_rate_limit():
 def auth_client():
     """Returns a TestClient. (Auth was removed — the app is fully public;
     the fixture keeps its old name to avoid churn across the test files.)"""
-    return TestClient(app)
+    return TestClient(app, base_url="https://testserver")
 
 
 def result_path(output_dir, payload):

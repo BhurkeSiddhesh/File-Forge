@@ -88,8 +88,16 @@ _ADDED_COLUMNS = (
 
 # The only funnel events we store. Anything else a client POSTs is ignored, so
 # the table can't be polluted by arbitrary event names. Order matters: it's the
-# funnel from broadest (landed on any page) to narrowest (downloaded a result).
-FUNNEL_EVENTS = ("page_view", "tool_open", "file_processed", "file_downloaded")
+# funnel from broadest (landed on any page) to narrowest (downloaded a result / purchase).
+FUNNEL_EVENTS = (
+    "page_view",
+    "tool_open",
+    "file_processed",
+    "file_downloaded",
+    "checkout_viewed",
+    "checkout_started",
+    "purchase_completed",
+)
 _LABEL_MAX = 120
 
 _init_lock = threading.Lock()

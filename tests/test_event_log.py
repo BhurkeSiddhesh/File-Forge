@@ -234,6 +234,16 @@ def test_track_records_a_browser_beacon(event_db, auth_client):
     assert rows[0]["label"] == "/pdf-to-word"
 
 
+def test_checkout_funnel_events_are_accepted(event_db):
+    """Monetization funnel stages (#104) are recognized and recorded."""
+    for ev in ("checkout_viewed", "checkout_started", "purchase_completed"):
+        ok = event_log.log_funnel_event(ev, label="test_plan", session_id="test_sess")
+        assert ok is True
+    rows = _read_funnel(event_db)
+    assert len(rows) == 3
+    assert [r["event"] for r in rows] == ["checkout_viewed", "checkout_started", "purchase_completed"]
+
+
 @pytest.mark.parametrize("ua", [
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
     "Mozilla/5.0 HeadlessChrome/120.0.0.0",
