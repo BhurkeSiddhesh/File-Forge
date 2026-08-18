@@ -8,7 +8,7 @@ python-multipart
 pdf2docx
 # >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
 # resolve the app's top-level modules (see pytest.ini).
-pytest>=7.0
+pytest>=9.1.1
 httpx
 rapidocr>=2.0,<3.0
 opencv-python-headless
