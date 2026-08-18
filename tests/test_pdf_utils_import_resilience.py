@@ -189,5 +189,4 @@ def test_resolve_models_dir_prefers_repo_models(monkeypatch):
     monkeypatch.setattr(module, "__file__", str(fake_script))
 
     resolved = module._resolve_models_dir()
-    expected_models = str(fake_root / "models")
-    assert str(resolved) == expected_models or str(resolved).replace("\\", "/") == expected_models.replace("\\", "/")
+    assert Path(resolved).resolve() == (fake_root / "models").resolve()

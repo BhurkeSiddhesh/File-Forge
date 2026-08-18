@@ -60,6 +60,19 @@ const ffHeldLocalTokens = new WeakMap();
 // Results processed on-device (static/local/) carry a local token instead and
 // never existed on the server. `ffLocal.resolve()` returns null for a server
 // token, which is what lets one function serve both.
+function ffShowSuccessUpsell(downloadEl) {
+    // Highest-intent moment: the file just worked. Only when the private
+    // deploy injected the payments upsell (#102 / #62).
+    if (!document.getElementById('ff-upsell')) return;
+    if (!downloadEl || !downloadEl.parentNode) return;
+    if (downloadEl.parentNode.querySelector('.ff-success-upsell')) return;
+    const a = document.createElement('a');
+    a.className = 'ff-success-upsell';
+    a.href = '/pricing';
+    a.textContent = 'Go ad-free — remove ads on every conversion';
+    downloadEl.parentNode.insertBefore(a, downloadEl.nextSibling);
+}
+
 function updateDownloadLink(element, token, filename) {
     if (!element) return;
 
@@ -76,6 +89,7 @@ function updateDownloadLink(element, token, filename) {
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
     ffTrack('file_processed', ffFunnelLabel());
+    ffShowSuccessUpsell(element);
 
     if (local) {
         ffHeldLocalTokens.set(element, token);
