@@ -517,8 +517,17 @@ def _stream_to_disk(file: UploadFile, dest: Path, budget: int, limit_mb: int) ->
     """
     written = 0
     too_large = False
+    first_chunk = True
     with dest.open("wb") as out:
         while chunk := file.file.read(1024 * 1024):
+            if first_chunk:
+                first_chunk = False
+                import filetype
+                kind = filetype.guess(chunk)
+                if kind and kind.mime in ("application/x-executable", "application/x-msdownload", "application/x-sh"):
+                    out.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(status_code=415, detail="Executable files are not allowed for security reasons.")
             written += len(chunk)
             if written > budget:
                 too_large = True

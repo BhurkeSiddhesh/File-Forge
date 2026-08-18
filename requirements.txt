@@ -18,9 +18,10 @@ opencv-python-headless
 docxcompose==1.4.0; python_version < "3.10"
 docxcompose==2.2.0; python_version >= "3.10"
 setuptools>=69.0
-PyMuPDF>=1.19.0,<1.24.0
+PyMuPDF>=1.24.0
 reportlab
-requests
+requests>=2.32.0
+filetype>=1.2.0
 pillow-heif
 onnxruntime
 aiofiles
