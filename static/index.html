@@ -401,6 +401,7 @@
                                 </span>
                             </label>
                         </div>
+                        <p id="pdf-compress-preview" class="helper-text compress-preview-hint"></p>
                         <button id="process-compress-btn" class="primary-btn">Compress Now</button>
                     </div>
 
@@ -685,6 +686,10 @@
                                 <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
                                 <input type="range" id="quality-slider" min="50" max="100" value="95">
                             </label>
+                            <div id="jpeg-quality-preview" class="compress-preview hidden">
+                                <img id="jpeg-quality-preview-img" alt="Quality preview">
+                                <p id="jpeg-quality-preview-label" class="helper-text"></p>
+                            </div>
                         </div>
 
                         <!-- Options for Resize Mode -->
@@ -804,6 +809,10 @@
                     <div id="compress-image-area" class="password-area hidden">
                         <label class="helper-text" for="compress-image-quality">Quality: <span id="compress-image-quality-value">70</span></label>
                         <input type="range" id="compress-image-quality" min="10" max="95" value="70">
+                        <div id="compress-image-preview" class="compress-preview hidden">
+                            <img id="compress-image-preview-img" alt="Compression preview">
+                            <p id="compress-image-preview-label" class="helper-text"></p>
+                        </div>
                         <button id="process-compress-image-btn" class="primary-btn">Compress</button>
                     </div>
 

@@ -611,12 +611,69 @@ import threading
 from collections import defaultdict, deque
 
 
+class RedisSlidingWindowRateLimiter:
+    """Sliding-window limiter whose counters live in Redis (#105, #125).
+
+    Same ``check(key, limit) -> (allowed, retry_after)`` contract as the
+    in-memory limiter, so the middleware does not care which backend is in
+    use. Timestamps are wall-clock (not monotonic) because workers do not
+    share a clock source other than Redis.
+    """
+
+    def __init__(self, client, window_seconds: float = 60.0, prefix: str = "ff:rl:"):
+        self.client = client
+        self.window = window_seconds
+        self.prefix = prefix
+
+    def check(self, key: str, limit: int):
+        now = time.time()
+        rkey = self.prefix + key
+        member = f"{now:.6f}:{os.urandom(4).hex()}"
+        cutoff = now - self.window
+        pipe = self.client.pipeline()
+        pipe.zremrangebyscore(rkey, "-inf", cutoff)
+        pipe.zcard(rkey)
+        count = int(pipe.execute()[1])
+        if count >= limit:
+            oldest = self.client.zrange(rkey, 0, 0, withscores=True)
+            retry_after = int(self.window) + 1
+            if oldest:
+                retry_after = int(self.window - (now - float(oldest[0][1]))) + 1
+            return False, max(1, retry_after)
+        self.client.zadd(rkey, {member: now})
+        self.client.expire(rkey, int(self.window) + 2)
+        return True, 0
+
+    def prune(self) -> int:
+        return 0
+
+    def reset(self):
+        for key in self.client.scan_iter(match=self.prefix + "*"):
+            self.client.delete(key)
+
+
+def build_rate_limiter(window_seconds: float = 60.0):
+    """Use Redis when REDIS_URL is set; otherwise the in-process limiter."""
+    url = os.environ.get("REDIS_URL", "").strip()
+    if not url:
+        return SlidingWindowRateLimiter(window_seconds=window_seconds)
+    try:
+        import redis
+    except ImportError as exc:
+        raise RuntimeError(
+            "REDIS_URL is set but the redis package is not installed"
+        ) from exc
+    client = redis.Redis.from_url(url, decode_responses=True)
+    client.ping()
+    return RedisSlidingWindowRateLimiter(client, window_seconds=window_seconds)
+
+
 class SlidingWindowRateLimiter:
     """Thread-safe in-memory sliding-window rate limiter keyed by client.
 
     State is per-process. With more than one worker the effective limit
     multiplies by the worker count, so this has to move to shared storage
-    (Redis, or the event-log SQLite) before the app is run with `-w N`.
+    (Redis via REDIS_URL) before the app is run with `-w N`.
     assert_single_worker() below turns that from a silent 4x into a boot error.
     """
 
@@ -914,9 +971,13 @@ def _assert_single_worker() -> None:
     requirements.txt, so `-w 4` is one flag away from being a quiet
     correctness bug with no error to notice. Fail loudly instead.
 
-    Set ALLOW_MULTI_WORKER=1 once both have moved to shared storage.
+    Set ALLOW_MULTI_WORKER=1 once both have moved to shared storage, or set
+    REDIS_URL so the limiter is shared (#105, #125). Download tokens already
+    recover from disk, so a shared volume is enough for results.
     """
     if os.environ.get("ALLOW_MULTI_WORKER") == "1":
+        return
+    if os.environ.get("REDIS_URL", "").strip():
         return
     workers = os.environ.get("WEB_CONCURRENCY") or os.environ.get("GUNICORN_WORKERS")
     try:
@@ -927,12 +988,12 @@ def _assert_single_worker() -> None:
         raise RuntimeError(
             f"This app keeps rate-limit and download-token state per process, so "
             f"{count} workers would multiply the rate limits by {count} and break "
-            f"downloads served by another worker. Run a single worker, or move "
-            f"both to shared storage and set ALLOW_MULTI_WORKER=1."
+            f"downloads served by another worker. Run a single worker, set "
+            f"REDIS_URL for a shared limiter, or set ALLOW_MULTI_WORKER=1."
         )
 
 
-app.state.rate_limiter = SlidingWindowRateLimiter()
+app.state.rate_limiter = build_rate_limiter()
 app.state.rate_limit_enabled = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in ("0", "false", "no")
 app.state.rate_limit_heavy = int(os.environ.get("RATE_LIMIT_HEAVY", "5"))    # req/min per IP
 app.state.rate_limit_light = int(os.environ.get("RATE_LIMIT_LIGHT", "20"))   # req/min per IP
