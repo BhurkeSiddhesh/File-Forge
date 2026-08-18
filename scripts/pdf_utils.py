@@ -2099,11 +2099,29 @@ def _href_for_point(point: "fitz.Point", links: list) -> Optional[str]:
     return None
 
 
-def _page_html_paragraphs(page) -> list:
-    """Render a page's native text as HTML paragraphs, preserving bold/italic
-    runs and hyperlink annotations (dropped entirely by a plain get_text()
-    dump). One <p> per detected line, matching the line granularity a plain
-    text extraction would produce.
+def _compute_base_font_size(doc) -> float:
+    """Compute the dominant body font size across the document."""
+    size_counts = {}
+    for page in doc:
+        raw = page.get_text("rawdict")
+        for block in raw.get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    size = round(span.get("size", 12.0), 1)
+                    char_count = len(span.get("chars", [])) or len(span.get("text", ""))
+                    if char_count > 0:
+                        size_counts[size] = size_counts.get(size, 0) + char_count
+    if size_counts:
+        return max(size_counts.items(), key=lambda x: x[1])[0]
+    return 12.0
+
+
+def _page_html_paragraphs(page, base_font_size: float = 12.0) -> list:
+    """Render a page's native text as HTML block elements (<h2>, <h3>, <p>),
+    preserving bold/italic runs and hyperlink annotations (dropped entirely
+    by a plain get_text() dump).
 
     Matches links per character (via get_text("rawdict")'s char-level
     boxes), not per span/line, because a link's clickable rect commonly
@@ -2119,12 +2137,17 @@ def _page_html_paragraphs(page) -> list:
             continue
         for line in block.get("lines", []):
             runs = []  # list of [text, bold, italic, href]
+            line_size_total = 0.0
+            total_chars = 0
             for span in line.get("spans", []):
                 bold, italic = _span_style(span)
+                span_size = float(span.get("size", 12.0))
                 for ch in span.get("chars", []):
                     c = ch.get("c", "")
                     if not c:
                         continue
+                    line_size_total += span_size
+                    total_chars += 1
                     bbox = ch.get("bbox")
                     center = fitz.Point((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
                     href = _href_for_point(center, links)
@@ -2145,7 +2168,14 @@ def _page_html_paragraphs(page) -> list:
                 line_html += escaped
             line_html = line_html.strip()
             if line_html:
-                paragraphs.append(line_html)
+                avg_size = (line_size_total / total_chars) if total_chars > 0 else base_font_size
+                tag = "p"
+                if 0 < total_chars <= 140:
+                    if avg_size >= 1.45 * base_font_size:
+                        tag = "h2"
+                    elif avg_size >= 1.15 * base_font_size:
+                        tag = "h3"
+                paragraphs.append(f"<{tag}>{line_html}</{tag}>")
     return paragraphs
 
 
@@ -2156,10 +2186,10 @@ def pdf_to_epub(
 ) -> str:
     """Convert a PDF into a reflowable EPUB ebook, one chapter per page.
 
-    Native-text pages keep their bold/italic runs and hyperlink annotations
-    (see _page_html_paragraphs); only pages with no text at all
-    (scanned/image-only) are rasterized and OCR'd — that path is necessarily
-    plain text, since a raster scan carries no font/link metadata to recover.
+    Native-text pages keep their bold/italic runs, hyperlink annotations,
+    and heading structures (see _page_html_paragraphs); inline images are
+    extracted and embedded; only pages with no text at all (scanned/image-only)
+    are rasterized and OCR'd — that path is necessarily plain text.
 
     Args:
         input_path: Path to input PDF.
@@ -2191,10 +2221,60 @@ def pdf_to_epub(
         book.set_title(title)
         book.set_language("en")
 
+        # Generate cover thumbnail from first page
+        if len(doc) > 0:
+            try:
+                cover_page = doc[0]
+                pix = cover_page.get_pixmap(dpi=150)
+                cover_bytes = pix.tobytes("jpeg")
+                book.set_cover("cover.jpg", cover_bytes)
+            except Exception:
+                pass
+
+        base_font_size = _compute_base_font_size(doc)
+
         chapters = []
         for i, page in enumerate(doc):
             page_text = native_page_text[i]
             ocr_used = False
+
+            # Extract embedded raster images
+            page_images_html = []
+            try:
+                for img_idx, img_info in enumerate(page.get_images(full=True)):
+                    xref = img_info[0]
+                    try:
+                        base_img = doc.extract_image(xref)
+                        if not base_img:
+                            continue
+                        img_bytes = base_img.get("image")
+                        if not img_bytes:
+                            continue
+                        img_ext = (base_img.get("ext") or "png").lower()
+                        width = base_img.get("width", 0)
+                        height = base_img.get("height", 0)
+
+                        if width < 40 or height < 40 or len(img_bytes) < 200:
+                            continue
+
+                        img_name = f"images/page_{i + 1}_img_{img_idx + 1}.{img_ext}"
+                        media_type = "image/jpeg" if img_ext in ("jpg", "jpeg") else f"image/{img_ext}"
+
+                        epub_img = epub.EpubImage()
+                        epub_img.file_name = img_name
+                        epub_img.media_type = media_type
+                        epub_img.content = img_bytes
+                        book.add_item(epub_img)
+
+                        page_images_html.append(
+                            f'<div class="figure" style="text-align:center;margin:1em 0;">'
+                            f'<img src="{html.escape(img_name, quote=True)}" alt="Figure" style="max-width:100%;height:auto;"/>'
+                            f'</div>'
+                        )
+                    except Exception:
+                        continue
+            except Exception:
+                pass
 
             if not page_text and engine is not None:
                 img = _render_page_bgr(page)
@@ -2202,22 +2282,25 @@ def pdf_to_epub(
                 page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
                 ocr_used = True
 
-            if not page_text:
+            if not page_text and not page_images_html:
                 continue
 
             if ocr_used:
                 paragraphs = "".join(
                     f"<p>{html.escape(line)}</p>" for line in page_text.split("\n") if line.strip()
                 )
+            elif page_text:
+                paragraphs = "".join(_page_html_paragraphs(page, base_font_size=base_font_size))
             else:
-                paragraphs = "".join(f"<p>{p}</p>" for p in _page_html_paragraphs(page))
+                paragraphs = "<p>(No text found in document)</p>"
 
+            img_section = "".join(page_images_html)
             chapter = epub.EpubHtml(
                 title=f"Page {i + 1}",
                 file_name=f"page_{i + 1}.xhtml",
                 lang="en",
             )
-            chapter.content = f"<h1>Page {i + 1}</h1>{paragraphs}"
+            chapter.content = f"<h1>Page {i + 1}</h1>{img_section}{paragraphs}"
             book.add_item(chapter)
             chapters.append(chapter)
 

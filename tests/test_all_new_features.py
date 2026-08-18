@@ -668,6 +668,76 @@ class TestPDFToEpub:
         # Only the linked substring is wrapped — the rest of the line stays plain.
         assert b"Visit our site: <a" in content
 
+    def test_generates_cover_thumbnail(self, multi_page_pdf, tmp_path):
+        from ebooklib import epub
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(multi_page_pdf), str(out))
+        book = epub.read_epub(result)
+        # Verify cover item exists in EPUB
+        cover_items = [item for item in book.get_items() if "cover" in item.get_name().lower()]
+        assert len(cover_items) > 0
+
+    def test_extracts_and_embeds_images(self, tmp_path):
+        import fitz
+        import ebooklib
+        from ebooklib import epub
+        from PIL import Image
+        import io
+
+        pdf_path = tmp_path / "doc_with_image.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=300)
+        page.insert_text((50, 50), "Document with illustration", fontsize=12)
+
+        # Create a 100x100 test image and insert into page via byte stream
+        img = Image.new("RGB", (100, 100), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        page.insert_image(fitz.Rect(50, 80, 150, 180), stream=buf.getvalue())
+
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+
+        # Verify image item is saved in EPUB manifest
+        image_items = [item for item in book.get_items_of_type(ebooklib.ITEM_IMAGE)]
+        # Filter out cover.jpg to check extracted page images
+        page_images = [img for img in image_items if "cover" not in img.get_name().lower()]
+        assert len(page_images) >= 1
+
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+        assert b'<img src="images/page_1_img_' in content
+        assert b"Document with illustration" in content
+
+    def test_infers_h2_and_h3_headings(self, tmp_path):
+        import fitz
+        from ebooklib import epub
+
+        pdf_path = tmp_path / "headings.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 100), "Major Section Title", fontsize=20)
+        page.insert_text((72, 140), "Subsection Topic", fontsize=15)
+        page.insert_text((72, 180), "This is regular body text spanning the paragraph.", fontsize=11)
+        page.insert_text((72, 210), "Another regular body sentence.", fontsize=11)
+        doc.save(str(pdf_path))
+        doc.close()
+
+        out = tmp_path / "out"
+        out.mkdir()
+        result = pdf_to_epub(str(pdf_path), str(out))
+        book = epub.read_epub(result)
+        content = b"".join(item.get_content() for item in book.get_items_of_type(9))
+
+        assert b"<h2>Major Section Title</h2>" in content
+        assert b"<h3>Subsection Topic</h3>" in content
+        assert b"<p>This is regular body text spanning the paragraph.</p>" in content
+
 
 # ──────────────────────────────────────────────
 # Feature #58: Extract Text from PDF
