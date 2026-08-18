@@ -156,6 +156,32 @@ _CORS_ORIGINS += [
 # turns out to need it.
 _CORS_ALLOW_CREDENTIALS = os.environ.get("CORS_ALLOW_CREDENTIALS", "0") == "1"
 
+# Baseline security headers on every response. Full script-src CSP is a
+# follow-up: the tool pages, checkout, and AdSense bootstrap still use
+# inline <script> / style. frame-ancestors + X-Frame-Options cover the
+# clickjacking gap on /checkout today (#77).
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "").lower()
+    if proto == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -1143,6 +1169,7 @@ async def event_context_middleware(request: Request, call_next):
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
+            secure=True,
         )
     return response
 
