@@ -2,15 +2,15 @@ pikepdf>=8.0.0
 # Upper-bounded so a major upstream release (which may drop shims the app still
 # relies on) is a deliberate upgrade rather than a surprise on the next deploy —
 # deploy-oracle.yml reinstalls requirements on every push to main.
-fastapi>=0.115,<1
+fastapi>=0.141.1,<1
 uvicorn>=0.52.3,<1
 python-multipart
 pdf2docx
 # >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
 # resolve the app's top-level modules (see pytest.ini).
-pytest>=7.0
+pytest>=9.1.1
 httpx
-rapidocr>=2.0,<3.0
+rapidocr>=3.9.2,<4.0
 opencv-python-headless
 # docxcompose 1.4.0 imports pkg_resources, which modern setuptools (>=81) no
 # longer ships — so it fails to import on Python 3.12 runners. 2.x dropped that
