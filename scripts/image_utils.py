@@ -260,10 +260,14 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             # Save with best quality found
             img.save(output_file, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
 
-            # If still too large, progressively resize dimensions
+            # If still too large, progressively resize dimensions. Test each
+            # candidate in memory (like the binary-search pass above) and write
+            # to disk only once, after the final size is chosen.
             if output_file.stat().st_size > target_bytes:
+                buffer = io.BytesIO()
+                img.save(buffer, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
                 scale_factor = 0.9
-                while output_file.stat().st_size > target_bytes:
+                while buffer.tell() > target_bytes:
                     current_width, current_height = img.size
                     new_width = int(current_width * scale_factor)
                     new_height = int(current_height * scale_factor)
@@ -272,7 +276,11 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                         break  # Stop if image gets too small
 
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    img.save(output_file, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
+                    buffer = io.BytesIO()
+                    img.save(buffer, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
+
+                with open(output_file, "wb") as f:
+                    f.write(buffer.getvalue())
 
         else:
             raise ValueError(f"Unknown resize mode: {mode}")

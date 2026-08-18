@@ -75,6 +75,42 @@ def test_resize_target_size(sample_image, tmp_path):
     assert result_size < original_size
 
 
+def test_resize_target_size_fallback_writes_to_disk_once(tmp_path, monkeypatch):
+    """The dimension-shrink fallback must test candidates in memory and write
+    the output file only once (#107).
+
+    A random-noise image can't reach a tiny target size by quality reduction
+    alone, so the fallback shrink loop is guaranteed to run. Before the fix it
+    did one disk write per iteration.
+    """
+    src = tmp_path / "noise.jpg"
+    Image.effect_noise((800, 800), 100).convert("RGB").save(src, "JPEG", quality=95)
+    output_dir = tmp_path / "output_fallback"
+    output_dir.mkdir()
+
+    disk_writes = []
+    real_save = Image.Image.save
+
+    def counting_save(self, fp, *args, **kwargs):
+        if not hasattr(fp, "write"):  # a path, not a buffer — a real disk write
+            disk_writes.append(fp)
+        return real_save(self, fp, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "save", counting_save)
+
+    result = resize_image(str(src), str(output_dir), mode='target_size', target_size_kb=5)
+
+    # Two path saves total: the initial quality=95 attempt and the best-quality
+    # save after the binary search. The fallback's final write goes through
+    # open()/write() after sizing in memory — zero extra Image.save disk writes.
+    assert len(disk_writes) == 2
+    with Image.open(result) as img:
+        img.verify()
+        # The fallback loop ran: dimensions had to shrink to approach 5 KB.
+        assert img.size[0] < 800 and img.size[1] < 800
+    assert os.path.getsize(result) < os.path.getsize(src)
+
+
 def test_resize_unknown_mode_raises(sample_image, tmp_path):
     """Unknown resize mode raises ValueError."""
     output_dir = tmp_path / "output_unknown"
