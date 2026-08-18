@@ -2,7 +2,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, SlidingWindowRateLimiter, RATE_LIMIT_HEAVY_PATHS
+from main import (
+    app,
+    SlidingWindowRateLimiter,
+    RedisSlidingWindowRateLimiter,
+    RATE_LIMIT_HEAVY_PATHS,
+    build_rate_limiter,
+)
 
 
 @pytest.fixture
@@ -450,6 +456,7 @@ class TestMultiWorkerGuard:
 
         monkeypatch.setenv("WEB_CONCURRENCY", "4")
         monkeypatch.delenv("ALLOW_MULTI_WORKER", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
         with pytest.raises(RuntimeError, match="single worker"):
             _assert_single_worker()
 
@@ -462,3 +469,101 @@ class TestMultiWorkerGuard:
         monkeypatch.setenv("WEB_CONCURRENCY", "4")
         monkeypatch.setenv("ALLOW_MULTI_WORKER", "1")
         _assert_single_worker()
+
+    def test_redis_url_allows_multiple_workers(self, monkeypatch):
+        from main import _assert_single_worker
+
+        monkeypatch.setenv("WEB_CONCURRENCY", "4")
+        monkeypatch.delenv("ALLOW_MULTI_WORKER", raising=False)
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        _assert_single_worker()
+
+
+class _FakePipe:
+    def __init__(self, store):
+        self.store = store
+        self.ops = []
+
+    def zremrangebyscore(self, key, lo, hi):
+        self.ops.append(("zremrangebyscore", key, lo, hi))
+        return self
+
+    def zcard(self, key):
+        self.ops.append(("zcard", key))
+        return self
+
+    def execute(self):
+        out = []
+        for op in self.ops:
+            if op[0] == "zremrangebyscore":
+                out.append(self.store.zremrangebyscore(op[1], op[2], op[3]))
+            elif op[0] == "zcard":
+                out.append(self.store.zcard(op[1]))
+        self.ops = []
+        return out
+
+
+class FakeRedis:
+    def __init__(self):
+        self.data = {}
+
+    def pipeline(self):
+        return _FakePipe(self)
+
+    def zremrangebyscore(self, key, lo, hi):
+        lo_n = float("-inf") if lo == "-inf" else float(lo)
+        hi_n = float(hi)
+        members = [(s, m) for s, m in self.data.get(key, []) if not (lo_n <= s <= hi_n)]
+        self.data[key] = members
+        return 1
+
+    def zcard(self, key):
+        return len(self.data.get(key, []))
+
+    def zadd(self, key, mapping):
+        bucket = self.data.setdefault(key, [])
+        for member, score in mapping.items():
+            bucket.append((float(score), member))
+        return len(mapping)
+
+    def zrange(self, key, start, end, withscores=False):
+        items = sorted(self.data.get(key, []), key=lambda x: x[0])
+        sliced = items[start : end + 1 if end != -1 else None]
+        if withscores:
+            return [(m, s) for s, m in sliced]
+        return [m for _, m in sliced]
+
+    def expire(self, key, _ttl):
+        return True
+
+    def scan_iter(self, match=None):
+        prefix = (match or "*").rstrip("*")
+        for key in list(self.data):
+            if key.startswith(prefix):
+                yield key
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+class TestRedisSlidingWindowRateLimiter:
+    def test_blocks_over_limit_like_the_memory_limiter(self):
+        limiter = RedisSlidingWindowRateLimiter(FakeRedis(), window_seconds=60)
+        for _ in range(3):
+            allowed, _ = limiter.check("ip1:light", 3)
+            assert allowed
+        allowed, retry_after = limiter.check("ip1:light", 3)
+        assert not allowed
+        assert retry_after >= 1
+
+    def test_keys_are_independent(self):
+        limiter = RedisSlidingWindowRateLimiter(FakeRedis(), window_seconds=60)
+        for _ in range(3):
+            limiter.check("ip1:light", 3)
+        allowed, _ = limiter.check("ip2:light", 3)
+        assert allowed
+
+    def test_build_rate_limiter_defaults_to_memory(self, monkeypatch):
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        limiter = build_rate_limiter()
+        assert isinstance(limiter, SlidingWindowRateLimiter)
