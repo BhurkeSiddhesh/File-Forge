@@ -2,7 +2,7 @@ pikepdf>=8.0.0
 # Upper-bounded so a major upstream release (which may drop shims the app still
 # relies on) is a deliberate upgrade rather than a surprise on the next deploy —
 # deploy-oracle.yml reinstalls requirements on every push to main.
-fastapi>=0.115,<1
+fastapi>=0.141.1,<1
 uvicorn>=0.52.3,<1
 python-multipart
 pdf2docx
