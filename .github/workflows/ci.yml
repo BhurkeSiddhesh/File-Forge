@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
         disable-ai: ['0']
         include:
           # No-AI profile: verifies the app works with OCR disabled entirely
@@ -49,7 +49,7 @@ jobs:
           DISABLE_AI: ${{ matrix.disable-ai }}
 
       - name: Upload Test Results to Trunk
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.TRUNK_API_TOKEN != '' }}
         continue-on-error: true
         uses: trunk-io/analytics-uploader@v2
         with:
