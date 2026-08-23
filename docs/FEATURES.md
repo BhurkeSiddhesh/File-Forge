@@ -400,6 +400,20 @@ curl -X POST http://localhost:8001/api/pdf/to-pptx \
 
 ---
 
+### PDF to EPUB **[NEW]**
+**Endpoint:** `POST /api/pdf/to-epub`
+
+Convert a PDF into a reflowable EPUB ebook, one chapter per page, with OCR and embedded images.
+
+```bash
+curl -X POST http://localhost:8001/api/pdf/to-epub \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@book.pdf" \
+  -F "password=optional_password"
+```
+
+---
+
 ## Image Tools
 
 ### HEIC to JPEG
@@ -604,6 +618,7 @@ Files are automatically deleted after download to save disk space.
 | **Read Metadata** | PDF | JSON | `/api/pdf/metadata/read` |
 | **PDF → Excel** | PDF | XLSX | `/api/pdf/to-excel` |
 | **PDF → PowerPoint** | PDF | PPTX | `/api/pdf/to-pptx` |
+| **PDF → EPUB** | PDF | EPUB | `/api/pdf/to-epub` |
 | HEIC → JPEG | HEIC | JPEG | `/api/image/heic-to-jpeg` |
 | Resize Image | Image | JPEG | `/api/image/resize` |
 | Crop Image | Image | JPEG | `/api/image/crop` |

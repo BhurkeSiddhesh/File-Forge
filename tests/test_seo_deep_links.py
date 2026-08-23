@@ -96,10 +96,9 @@ def test_landing_pages_still_work_without_javascript(slug):
 
 @pytest.mark.parametrize(
     "slug", sorted(s for s in seo_content.TOOL_PAGES
-                   if s not in seo_content._MULTI_FILE_SLUGS
-                   and seo_content.TOOL_PAGES[s]["tool"] in seo_content._CATEGORY_ACCEPT)
+                   if seo_content.TOOL_PAGES[s]["tool"] in seo_content._CATEGORY_ACCEPT)
 )
-def test_single_file_pages_lead_with_an_upload_box(slug):
+def test_tool_pages_lead_with_an_upload_box(slug):
     """The landing page used to offer only a link to the app, so the first
     upload box a visitor saw was a full page load away — 89% of landing
     sessions never opened a tool at all. The page's primary action is now
@@ -112,11 +111,12 @@ def test_single_file_pages_lead_with_an_upload_box(slug):
 
 
 @pytest.mark.parametrize("slug", sorted(seo_content._MULTI_FILE_SLUGS))
-def test_merge_pages_keep_the_plain_link(slug):
-    """Merge tools need several files. Collecting one and handing it over
-    would misrepresent what the tool actually wants."""
+def test_merge_pages_have_multi_file_upload_box(slug):
+    """Merge tools support uploading and dropping multiple files directly on the landing page."""
     html = seo_content.render_tool_page(slug)
-    assert "data-ff-upload" not in html
+    assert "data-ff-upload" in html, f"{slug} must have an upload box"
+    assert "multiple hidden>" in html, f"{slug} upload box must have multiple attribute"
+    assert "or drop files here" in html, f"{slug} upload box must have multi-file hint text"
 
 
 @pytest.mark.parametrize("slug", sorted(seo_content.TOOL_PAGES))

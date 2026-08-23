@@ -335,6 +335,30 @@ document.addEventListener('click', (e) => {
     ffTrack('tool_open', currentOp);
 });
 
+// Highlights the action card the visitor picked and clears the previous pick
+// within the same action list. Called only from handlers that actually opened
+// the card's option panel, so the highlight never claims a tool that isn't
+// active (e.g. a click that bailed with "Please select a file first").
+function ffSelectActionCard(card) {
+    if (!card) return;
+    const scope = card.closest('.action-buttons') || document;
+    scope.querySelectorAll('.action-card.selected').forEach(function (c) {
+        c.classList.remove('selected');
+        c.setAttribute('aria-pressed', 'false');
+    });
+    card.classList.add('selected');
+    card.setAttribute('aria-pressed', 'true');
+}
+
+// Drops the picked-action highlight, e.g. when picking a new file closes the
+// open option panels.
+function ffClearActionSelection(scope) {
+    (scope || document).querySelectorAll('.action-card.selected').forEach(function (c) {
+        c.classList.remove('selected');
+        c.setAttribute('aria-pressed', 'false');
+    });
+}
+
 // Navigation
 // `instant` skips the 500ms home-page fade — used by the SEO deep link, where
 // the visitor already chose a tool on the landing page and the animation is
@@ -453,6 +477,8 @@ function hidePdfActionAreas() {
     document.getElementById('pdf-to-pptx-area')?.classList.add('hidden');
     document.getElementById('pdf-to-epub-area')?.classList.add('hidden');
     document.getElementById('result-display').classList.add('hidden');
+    // Panels are closing, so no action is picked anymore.
+    ffClearActionSelection(document.getElementById('pdf-page'));
 }
 
 // Each option panel belongs directly under its action card. We move the panel
@@ -498,6 +524,7 @@ function openPdfArea(areaId) {
         const result = document.getElementById('result-display');
         if (status) area.insertAdjacentElement('afterend', status);
         if (result && status) status.insertAdjacentElement('afterend', result);
+        ffSelectActionCard(card);
     }
 
     area.classList.remove('hidden');
@@ -1218,6 +1245,7 @@ function handleImageFile(file) {
 function hideImageActionAreas() {
     ['rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area', 'image-to-pdf-area']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+    ffClearActionSelection(document.getElementById('image-page'));
 }
 
 // Convert to JPEG
@@ -2453,21 +2481,22 @@ function showImageOptionPanel(id) {
     return true;
 }
 
-document.getElementById('rotate-image-btn')?.addEventListener('click', () => {
-    showImageOptionPanel('rotate-image-area');
+document.getElementById('rotate-image-btn')?.addEventListener('click', (e) => {
+    if (showImageOptionPanel('rotate-image-area')) ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('compress-image-btn')?.addEventListener('click', () => {
+document.getElementById('compress-image-btn')?.addEventListener('click', (e) => {
     if (!showImageOptionPanel('compress-image-area')) return;
+    ffSelectActionCard(e.currentTarget);
     if (selectedImageFile && compressImgQ) {
         ffPreviewJpegQuality(selectedImageFile, compressImgQ.value,
             'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview');
     }
 });
-document.getElementById('convert-format-btn')?.addEventListener('click', () => {
-    showImageOptionPanel('convert-format-area');
+document.getElementById('convert-format-btn')?.addEventListener('click', (e) => {
+    if (showImageOptionPanel('convert-format-area')) ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('watermark-image-btn')?.addEventListener('click', () => {
-    showImageOptionPanel('watermark-image-area');
+document.getElementById('watermark-image-btn')?.addEventListener('click', (e) => {
+    if (showImageOptionPanel('watermark-image-area')) ffSelectActionCard(e.currentTarget);
 });
 
 const compressImgQ = document.getElementById('compress-image-quality');
@@ -2587,6 +2616,7 @@ function hideExcelActionAreas() {
     ['excel-to-pdf-area', 'csv-to-xlsx-area', 'xlsx-to-csv-area', 'merge-excel-area']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
     document.getElementById('excel-result-display')?.classList.add('hidden');
+    ffClearActionSelection(document.getElementById('excel-page'));
 }
 
 function setExcelMergeMode(on) {
@@ -2594,28 +2624,32 @@ function setExcelMergeMode(on) {
     if (!on) selectedExcelFiles = [];
 }
 
-document.getElementById('excel-to-pdf-btn')?.addEventListener('click', () => {
+document.getElementById('excel-to-pdf-btn')?.addEventListener('click', (e) => {
     setExcelMergeMode(false);
     if (!selectedExcelFile) { ffNotify('Please select a file.'); return; }
     hideExcelActionAreas();
     document.getElementById('excel-to-pdf-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('csv-to-xlsx-btn')?.addEventListener('click', () => {
+document.getElementById('csv-to-xlsx-btn')?.addEventListener('click', (e) => {
     setExcelMergeMode(false);
     if (!selectedExcelFile) { ffNotify('Please select a CSV file.'); return; }
     hideExcelActionAreas();
     document.getElementById('csv-to-xlsx-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('xlsx-to-csv-btn')?.addEventListener('click', () => {
+document.getElementById('xlsx-to-csv-btn')?.addEventListener('click', (e) => {
     setExcelMergeMode(false);
     if (!selectedExcelFile) { ffNotify('Please select a file.'); return; }
     hideExcelActionAreas();
     document.getElementById('xlsx-to-csv-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('merge-excel-btn')?.addEventListener('click', () => {
+document.getElementById('merge-excel-btn')?.addEventListener('click', (e) => {
     setExcelMergeMode(true);
     hideExcelActionAreas();
     document.getElementById('merge-excel-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
 
 async function processExcelAction(url, text, formData) {
@@ -2732,6 +2766,7 @@ function hidePptActionAreas() {
     ['ppt-to-pdf-area', 'ppt-to-images-area', 'merge-ppt-area']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
     document.getElementById('ppt-result-display')?.classList.add('hidden');
+    ffClearActionSelection(document.getElementById('ppt-page'));
 }
 
 function setPptMergeMode(on) {
@@ -2739,22 +2774,25 @@ function setPptMergeMode(on) {
     if (!on) selectedPptFiles = [];
 }
 
-document.getElementById('ppt-to-pdf-btn')?.addEventListener('click', () => {
+document.getElementById('ppt-to-pdf-btn')?.addEventListener('click', (e) => {
     setPptMergeMode(false);
     if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     hidePptActionAreas();
     document.getElementById('ppt-to-pdf-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('ppt-to-images-btn')?.addEventListener('click', () => {
+document.getElementById('ppt-to-images-btn')?.addEventListener('click', (e) => {
     setPptMergeMode(false);
     if (!selectedPptFile) { ffNotify('Please select a PPTX file.'); return; }
     hidePptActionAreas();
     document.getElementById('ppt-to-images-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
-document.getElementById('merge-ppt-btn')?.addEventListener('click', () => {
+document.getElementById('merge-ppt-btn')?.addEventListener('click', (e) => {
     setPptMergeMode(true);
     hidePptActionAreas();
     document.getElementById('merge-ppt-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
 
 async function processPptAction(url, text, formData) {
@@ -3091,10 +3129,11 @@ async function processWordAction(url, statusText, formData) {
     }
 }
 
-document.getElementById('word-to-pdf-btn')?.addEventListener('click', () => {
+document.getElementById('word-to-pdf-btn')?.addEventListener('click', (e) => {
     if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     document.getElementById('word-to-pptx-area')?.classList.add('hidden');
     document.getElementById('word-to-pdf-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
 document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', () => {
     if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
@@ -3104,10 +3143,11 @@ document.getElementById('process-word-to-pdf-btn')?.addEventListener('click', ()
 });
 
 // --- Word to PowerPoint ---
-document.getElementById('word-to-pptx-btn')?.addEventListener('click', () => {
+document.getElementById('word-to-pptx-btn')?.addEventListener('click', (e) => {
     if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
     document.getElementById('word-to-pdf-area')?.classList.add('hidden');
     document.getElementById('word-to-pptx-area').classList.remove('hidden');
+    ffSelectActionCard(e.currentTarget);
 });
 document.getElementById('process-word-to-pptx-btn')?.addEventListener('click', () => {
     if (!selectedWordFile) { ffNotify('Please select a Word file first.'); return; }
@@ -3119,8 +3159,8 @@ document.getElementById('process-word-to-pptx-btn')?.addEventListener('click', (
 });
 
 // --- Image to PDF ---
-document.getElementById('image-to-pdf-btn')?.addEventListener('click', () => {
-    showImageOptionPanel('image-to-pdf-area');
+document.getElementById('image-to-pdf-btn')?.addEventListener('click', (e) => {
+    if (showImageOptionPanel('image-to-pdf-area')) ffSelectActionCard(e.currentTarget);
 });
 document.getElementById('process-image-to-pdf-btn')?.addEventListener('click', () => {
     if (!selectedImageFile) { ffNotify('Please select an image first.'); return; }
@@ -3255,10 +3295,10 @@ window.ffConsumePendingOp = ffConsumePendingOp;
     if (DEEP_LINK_NO_FILE_CARDS.includes(op.card)) {
         const card = document.getElementById(op.card);
         if (card) setTimeout(() => card.click(), 0);
-        return;
+    } else {
+        ffPendingOp = op.card;
+        ffHighlightCard(op.card);
     }
-    ffPendingOp = op.card;
-    ffHighlightCard(op.card);
 
     // ?handoff=1 means the visitor already chose a file on the SEO landing
     // page and static/seo-upload.js stashed it in IndexedDB. Pick it up and
@@ -3310,12 +3350,22 @@ function ffClaimHandoff(tool) {
         };
         tx.oncomplete = () => {
             db.close();
-            if (!record || !record.blob) return;
+            if (!record) return;
+            const fileItems = Array.isArray(record.files) && record.files.length
+                ? record.files
+                : (record.blob ? [{ blob: record.blob, name: record.name, type: record.type }] : []);
+            if (!fileItems.length) return;
+
             try {
-                const file = new File([record.blob], record.name || 'upload',
-                    { type: record.type || record.blob.type || '' });
+                if (fileItems.length > 1) {
+                    input.multiple = true;
+                }
                 const dt = new DataTransfer();
-                dt.items.add(file);
+                for (const item of fileItems) {
+                    const file = new File([item.blob], item.name || 'upload',
+                        { type: item.type || item.blob?.type || '' });
+                    dt.items.add(file);
+                }
                 input.files = dt.files;
                 input.dispatchEvent(new Event('change', { bubbles: true }));
             } catch (e) {

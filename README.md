@@ -32,6 +32,7 @@
 | **PDF to Images** | Render every page to JPEG or PNG and download as a ZIP |
 | **PDF to Excel** | Extract tables from a PDF into an XLSX workbook |
 | **PDF to PowerPoint** | Convert PDF pages into a PPTX presentation (one slide per page) |
+| **PDF to EPUB** | Convert a PDF into a reflowable EPUB ebook |
 | **PDF to Text** | Extract all text content to a plain `.txt` file, with optional layout preservation |
 | **Repair PDF** | Attempt to recover and re-save a corrupted or malformed PDF |
 | **Create PDF from Text** | Generate a new PDF from plain text content |
