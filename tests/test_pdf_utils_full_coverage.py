@@ -333,6 +333,10 @@ def _install_fake_fitz(monkeypatch, doc):
 
 
 class TestCompressPdf:
+    @pytest.fixture(autouse=True)
+    def _mock_decrypt(self, monkeypatch):
+        monkeypatch.setattr(pu, "_get_decrypted_pdf_path", lambda p, pwd=None, temp_dir=None: (p, False))
+
     def _input(self, tmp_path, size=10):
         p = tmp_path / "input.pdf"
         p.write_bytes(b"%PDF-tiny" + b"x" * size)
