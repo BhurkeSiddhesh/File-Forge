@@ -17,7 +17,7 @@ opencv-python-headless
 # import but requires Python >=3.10, so keep the old pin only for 3.9.
 docxcompose==1.4.0; python_version < "3.10"
 docxcompose==2.2.0; python_version >= "3.10"
-setuptools>=69.0
+setuptools>=84.0.0
 PyMuPDF>=1.28.2
 reportlab
 requests>=2.34.2
