@@ -38,18 +38,30 @@
         });
     }
 
-    function stash(file) {
+    function stash(files) {
+        if (!files) files = [];
+        if (!Array.isArray(files)) {
+            files = [files];
+        }
+        var fileList = files.filter(Boolean);
+        if (!fileList.length) return Promise.reject(new Error('no files'));
+
         return openDb().then(function (db) {
             return new Promise(function (resolve, reject) {
                 var tx = db.transaction(STORE, 'readwrite');
-                // Stored as a plain object, not the File itself: structured
-                // clone keeps File in every browser that matters, but the name
-                // is the part we cannot afford to lose (the app derives the
-                // output filename from it) so it is carried explicitly.
-                tx.objectStore(STORE).put(
-                    { blob: file, name: file.name, type: file.type, at: Date.now() },
-                    KEY
-                );
+                // Stored as plain objects: structured clone keeps Blob/File,
+                // but the names are carried explicitly so output naming works.
+                var payload = {
+                    files: fileList.map(function (f) {
+                        return { blob: f, name: f.name, type: f.type };
+                    }),
+                    // Maintain backward compatibility for single-file readers
+                    blob: fileList[0],
+                    name: fileList[0].name,
+                    type: fileList[0].type,
+                    at: Date.now()
+                };
+                tx.objectStore(STORE).put(payload, KEY);
                 tx.oncomplete = function () { db.close(); resolve(); };
                 tx.onerror = function () { db.close(); reject(tx.error); };
             });
@@ -69,16 +81,18 @@
             : target;
     }
 
-    function accept(file) {
-        if (!file) return;
+    function accept(files) {
+        if (!files) return;
+        var fileList = Array.from(files).filter(Boolean);
+        if (!fileList.length) return;
         zone.classList.add('is-busy');
         // Never let a storage failure strand the visitor on this page: on any
         // error, go to the app anyway and let them pick the file there.
-        stash(file).then(function () { go(true); }, function () { go(false); });
+        stash(fileList).then(function () { go(true); }, function () { go(false); });
     }
 
     input.addEventListener('change', function () {
-        accept(input.files && input.files[0]);
+        accept(input.files);
     });
 
     // Drag and drop over the whole box. Files arrive on a conversion page by
@@ -97,6 +111,6 @@
         });
     });
     zone.addEventListener('drop', function (e) {
-        accept(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+        accept(e.dataTransfer && e.dataTransfer.files);
     });
 })();

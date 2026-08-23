@@ -3316,7 +3316,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover — manual dev-server entry point
     import uvicorn
     import os
     port = int(os.environ.get("PORT", 8001))

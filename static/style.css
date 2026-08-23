@@ -501,6 +501,20 @@ body {
     outline-offset: 2px;
 }
 
+/* The action the visitor actually picked. Stays lit while its option panel is
+   open so it's obvious which tool the panel below belongs to. Distinct from
+   .deep-link-target (ink = "you came for this", blue = "you picked this"). */
+.action-card.selected {
+    background: var(--canvas-soft);
+    box-shadow: var(--shadow-3);
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+}
+
+.action-card.selected i {
+    color: var(--link);
+}
+
 .action-card i {
     font-size: 1.4rem;
     width: 40px;

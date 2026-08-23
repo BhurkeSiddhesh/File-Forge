@@ -66,37 +66,34 @@ _CATEGORY_ACCEPT = {
     "word": ".docx,.doc",
 }
 
-# Categories whose tools collect several files themselves (merge, etc). Handing
-# one file over would be misleading about what the tool needs, so these keep
-# the plain link.
+# Tools that collect several files (merge tools).
 _MULTI_FILE_SLUGS = ("merge-pdf", "merge-excel", "merge-ppt")
 
 
 def _upload_box(slug: str, page: dict) -> str:
     """The landing page's primary action: an upload box, not a link to one.
 
-    A visitor who searched "pdf to word" and landed here previously had to
-    click through to the app and wait for a full page load before the first
-    upload box existed. 89% of landing sessions never opened a tool at all.
-    The file chosen here is carried into the app by static/seo-upload.js, so
-    nobody is asked for it twice.
+    A visitor who searched "pdf to word" or "merge pdf" and landed here can
+    choose or drop their file(s) immediately. The file(s) chosen here are
+    carried into the app by static/seo-upload.js so conversion starts right away.
 
-    The link is still rendered inside the box: it is what the box degrades to
-    with JavaScript disabled, and it stays the whole target for the merge
-    tools, which need several files rather than the one this collects.
+    The link is still rendered inside noscript for JS-disabled browsers.
     """
     tool = page["tool"]
     target = f"/?tool={tool}&amp;op={slug}"
     cta = html.escape(page["cta"])
-    if slug in _MULTI_FILE_SLUGS or tool not in _CATEGORY_ACCEPT:
+    if tool not in _CATEGORY_ACCEPT:
         return f'        <p><a class="cta" href="{target}">{cta}</a></p>'
     accept = _CATEGORY_ACCEPT[tool]
+    is_multi = slug in _MULTI_FILE_SLUGS
+    multiple_attr = " multiple" if is_multi else ""
+    drop_hint = "or drop files here" if is_multi else "or drop a file here"
     return f"""        <div class="upload-cta" data-ff-upload data-ff-target="/?tool={tool}&amp;op={slug}">
             <label class="upload-cta-label">
-                <input type="file" accept="{accept}" hidden>
+                <input type="file" accept="{accept}"{multiple_attr} hidden>
                 <span class="cta">{cta}</span>
             </label>
-            <p class="upload-cta-hint">or drop a file here &middot; free, no signup,
+            <p class="upload-cta-hint">{drop_hint} &middot; free, no signup,
                 files deleted automatically</p>
             <noscript><p><a class="cta" href="{target}">{cta}</a></p></noscript>
         </div>"""

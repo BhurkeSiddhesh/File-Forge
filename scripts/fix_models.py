@@ -153,8 +153,9 @@ def convert_to_onnx(model_dir):
         print(f"  STDOUT: {e.stdout}")
         print(f"  STDERR: {e.stderr}")
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     for key, info in MODELS.items():
         model_dir = download_and_extract(key, info)
         convert_to_onnx(model_dir)
     print("\nAll models processed. You can now use use_onnx=True")
+
