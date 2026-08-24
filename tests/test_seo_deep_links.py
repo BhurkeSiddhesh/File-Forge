@@ -81,7 +81,8 @@ def test_landing_pages_do_not_load_the_app_bundle():
     few KB whose only job is to hand a chosen file to the app, and the page
     degrades to the plain deep link without it (see the noscript test below)."""
     html = seo_content.render_tool_page("pdf-to-word")
-    assert "script.js" not in html
+    assert "/static/script.js" not in html
+    assert '"/script.js"' not in html
 
 
 @pytest.mark.parametrize("slug", sorted(seo_content.TOOL_PAGES))

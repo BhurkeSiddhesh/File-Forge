@@ -35,6 +35,14 @@ ADS_SLOT = "{{ADSENSE_SLOT}}"
 CONSENT_BANNER = "{{CONSENT_BANNER}}"
 SITE_VERIFY = "{{SITE_VERIFICATION}}"
 CF_ANALYTICS = "{{CF_ANALYTICS}}"
+DATAFAST_ANALYTICS = (
+    '<script\n'
+    '      defer\n'
+    '      data-website-id="dfid_na6goRSY6Vnle9ErZzQbC"\n'
+    '      data-domain="forgefiles.org"\n'
+    '      src="https://datafa.st/js/script.js">\n'
+    '    </script>'
+)
 
 # First-party page-view beacon for the server-rendered landing pages (which don't
 # load script.js). Posts a single anonymous page_view to /api/track — the same
@@ -1092,6 +1100,7 @@ def render_tool_page(slug: str) -> str:
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
     {ADS_HEAD}
     {CF_ANALYTICS}
+    {DATAFAST_ANALYTICS}
 {schema_blocks}
 </head>
 
@@ -1163,6 +1172,7 @@ def render_404_page() -> str:
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
+    {DATAFAST_ANALYTICS}
 </head>
 
 <body class="seo-page">
