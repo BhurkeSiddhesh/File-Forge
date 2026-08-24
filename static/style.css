@@ -404,8 +404,78 @@ body {
 
 .drill-down-content {
     display: grid;
-    grid-template-columns: 1fr 1.25fr;
-    gap: 2rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.05fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+/* ── Step-Based Process Tracker Bar ── */
+.step-tracker-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 1.25rem;
+    background: var(--canvas);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-1);
+    margin-bottom: 1.25rem;
+}
+
+.step-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--mute);
+    transition: color 0.2s;
+}
+
+.step-indicator.active {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.step-indicator.completed {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--r-full);
+    background: var(--canvas-soft);
+    border: 1px solid var(--hairline-strong);
+    color: var(--mute);
+    font-size: 0.72rem;
+    font-weight: 700;
+    transition: all 0.2s;
+}
+
+.step-indicator.active .step-badge {
+    background: var(--link);
+    border-color: var(--link);
+    color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.15);
+}
+
+.step-indicator.completed .step-badge {
+    background: var(--success);
+    border-color: var(--success);
+    color: #ffffff;
+}
+
+.step-divider {
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+    max-width: 60px;
 }
 
 .drop-zone {
@@ -413,13 +483,13 @@ body {
     border: 1.5px dashed var(--hairline-strong);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-1);
-    height: 300px;
+    min-height: 200px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
     text-align: center;
     padding: 1.5rem;
 }
@@ -431,13 +501,15 @@ body {
 }
 
 .upload-icon {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
     color: var(--ink);
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .drop-zone p {
     color: var(--body-text);
+    font-size: 0.92rem;
+    margin: 0;
 }
 
 .browse-text {
@@ -452,16 +524,21 @@ body {
     gap: 0.5rem;
     color: var(--ink);
     font-weight: 500;
+    padding: 0.4rem 0.75rem;
+    background: var(--canvas-soft);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-pill);
+    font-size: 0.85rem;
 }
 
 .file-info i {
     color: var(--accent-pdf);
 }
 
-/* ── Actions panel ── */
+/* ── Actions panel & Scrollable Action List ── */
 .actions-panel h2 {
-    margin-bottom: 1.5rem;
-    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
     font-weight: 600;
     letter-spacing: -0.025em;
 }
@@ -469,31 +546,54 @@ body {
 .action-buttons {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.55rem;
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.action-buttons::-webkit-scrollbar {
+    width: 6px;
+}
+
+.action-buttons::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.action-buttons::-webkit-scrollbar-thumb {
+    background: var(--hairline-strong);
+    border-radius: var(--r-full);
+}
+
+.action-buttons::-webkit-scrollbar-thumb:hover {
+    background: var(--mute);
 }
 
 .action-card {
     background: var(--canvas);
+    border: 1px solid var(--hairline);
     box-shadow: var(--shadow-1);
-    padding: 1.05rem 1.2rem;
+    padding: 0.65rem 0.9rem;
     border-radius: var(--r-md);
     display: flex;
     align-items: center;
-    gap: 1.1rem;
+    gap: 0.85rem;
     cursor: pointer;
-    transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
+    transition: box-shadow 0.15s, transform 0.15s, background 0.15s, border-color 0.15s;
+    flex-shrink: 0;
 }
 
 .action-card:hover {
     background: var(--canvas-soft);
-    box-shadow: var(--shadow-3);
+    border-color: var(--hairline-strong);
+    box-shadow: var(--shadow-2);
     transform: translateY(-1px);
 }
 
-/* The action card an SEO deep link (/?tool=pdf&op=pdf-to-word) asked for. Held
-   in this state until the visitor picks a file, at which point script.js opens
-   the card for them. Marks "this is the tool you came for" without looking
-   disabled or clicked. */
+/* The action card an SEO deep link (/?tool=pdf&op=pdf-to-word) asked for. */
 .action-card.deep-link-target {
     background: var(--canvas-soft);
     box-shadow: var(--shadow-3);
@@ -501,42 +601,49 @@ body {
     outline-offset: 2px;
 }
 
-/* The action the visitor actually picked. Stays lit while its option panel is
-   open so it's obvious which tool the panel below belongs to. Distinct from
-   .deep-link-target (ink = "you came for this", blue = "you picked this"). */
+/* The action the visitor actually picked. */
 .action-card.selected {
     background: var(--canvas-soft);
-    box-shadow: var(--shadow-3);
-    outline: 2px solid var(--link);
-    outline-offset: 2px;
-}
-
-.action-card.selected i {
-    color: var(--link);
+    border-color: var(--link);
+    box-shadow: 0 0 0 2px rgba(0, 112, 243, 0.25), var(--shadow-2);
 }
 
 .action-card i {
-    font-size: 1.4rem;
-    width: 40px;
-    text-align: center;
+    font-size: 1.15rem;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r-sm);
+    background: var(--canvas-soft);
     color: var(--ink);
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+
+.action-card.selected i {
+    background: rgba(0, 112, 243, 0.12);
+    color: var(--link);
 }
 
 .action-card h4 {
-    margin-bottom: 0.15rem;
-    font-size: 0.98rem;
+    margin: 0 0 0.1rem 0;
+    font-size: 0.88rem;
     font-weight: 600;
     letter-spacing: -0.015em;
 }
 
 .action-card p {
-    font-size: 0.82rem;
+    margin: 0;
+    font-size: 0.76rem;
     color: var(--mute);
+    line-height: 1.25;
 }
 
 /* ── Forms & option panels ── */
 .password-area {
-    margin-top: 1.25rem;
+    margin-top: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -654,6 +761,90 @@ body {
     gap: 0.5rem;
     text-decoration: none;
     margin-top: 1.25rem;
+}
+
+.result-panel {
+    background: var(--canvas);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-1);
+    padding: 1.25rem;
+    min-height: 240px;
+    display: flex;
+    flex-direction: column;
+}
+
+.result-idle-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex: 1;
+    min-height: 180px;
+    padding: 1.25rem;
+    color: var(--mute);
+    border: 1.5px dashed var(--hairline-strong);
+    border-radius: var(--r-md);
+    background: var(--canvas-soft);
+    transition: all 0.2s;
+}
+
+.result-idle-placeholder i.idle-icon {
+    font-size: 2.25rem;
+    color: var(--mute);
+    margin-bottom: 0.75rem;
+    opacity: 0.6;
+}
+
+.result-idle-placeholder p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--mute);
+    line-height: 1.4;
+    max-width: 220px;
+}
+
+.result-panel .status-display {
+    margin-top: 0;
+    padding: 2.5rem 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.result-panel .result-display {
+    margin-top: 0;
+    padding: 1.25rem 0.5rem 0.5rem;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.result-panel .result-display h3 {
+    font-size: 1.15rem;
+    margin: 0 0 0.4rem 0;
+}
+
+.result-panel .result-display p {
+    font-size: 0.88rem;
+    margin: 0 0 1rem 0;
+}
+
+.result-panel .download-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 0.8rem 1.25rem;
+    font-size: 0.95rem;
+    margin-top: 0.5rem;
+}
+
+.result-panel .file-deleted-notice {
+    margin-top: 1rem;
+    font-size: 0.78rem;
+    padding: 0.55rem 0.75rem;
 }
 
 .hidden {
@@ -1709,11 +1900,13 @@ body.seo-page {
 }
 
 /* ── Responsive ── */
-@media (max-width: 768px) {
+@media (max-width: 992px) {
     .drill-down-content {
         grid-template-columns: 1fr;
     }
+}
 
+@media (max-width: 768px) {
     .workflow-layout {
         grid-template-columns: 1fr;
     }

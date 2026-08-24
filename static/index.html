@@ -113,14 +113,23 @@
     {{ADSENSE_HEAD}}
     {{CF_ANALYTICS}}
     <script>
-        // Bright (light) mode is Forge Files' default. We only switch away from it
-        // when the visitor has explicitly chosen a theme with the toggle before —
-        // we intentionally do NOT auto-follow the OS "prefers dark" setting, so a
-        // first-time visitor always lands in bright mode.
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark' || savedTheme === 'light') {
-            document.documentElement.setAttribute('data-theme', savedTheme);
-        }
+        // Automatic Time-of-Day Theme:
+        // Default to dark mode post 6:30 PM (18:30) and before 6:30 AM (06:30) local time.
+        // Default to bright (light) mode between 6:30 AM and 6:30 PM local time.
+        // If the user has explicitly selected a preference with the toggle, respect their choice.
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'dark' || savedTheme === 'light') {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                } else {
+                    const now = new Date();
+                    const minutes = now.getHours() * 60 + now.getMinutes();
+                    const isNight = minutes >= 1110 || minutes < 390; // 18:30 = 1110, 06:30 = 390
+                    document.documentElement.setAttribute('data-theme', isNight ? 'dark' : 'light');
+                }
+            } catch (e) {}
+        })();
     </script>
 </head>
 
@@ -215,6 +224,23 @@
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
             </nav>
 
+            <div class="step-tracker-bar" aria-label="Process steps">
+                <div class="step-indicator active" id="pdf-step-1-ind">
+                    <span class="step-badge">1</span>
+                    <span>Upload PDF</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="pdf-step-2-ind">
+                    <span class="step-badge">2</span>
+                    <span>Select Action</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="pdf-step-3-ind">
+                    <span class="step-badge">3</span>
+                    <span>Download</span>
+                </div>
+            </div>
+
             <div class="drill-down-content">
                 <div class="file-selector-area">
                     <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload PDF file">
@@ -229,8 +255,6 @@
                 </div>
 
                 <div class="actions-panel">
-                    <h2>Select Action for PDF</h2>
-
                     <div class="action-buttons">
                         <div class="action-card" id="remove-password-btn" role="button" tabindex="0">
                             <i class="fas fa-unlock"></i>
@@ -628,6 +652,13 @@
                             aria-label="PDF Password">
                         <button id="process-password-btn" class="primary-btn">Unlock Now</button>
                     </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="result-idle-placeholder" id="pdf-idle-placeholder">
+                        <i class="fas fa-file-download idle-icon"></i>
+                        <p>Choose an action and click process to generate your download.</p>
+                    </div>
 
                     <div id="status-display" class="status-display hidden">
                         <div class="loader"></div>
@@ -641,6 +672,10 @@
                         <a id="download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
+                        <div class="file-deleted-notice">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -651,6 +686,23 @@
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
             </nav>
+
+            <div class="step-tracker-bar" aria-label="Process steps">
+                <div class="step-indicator active" id="image-step-1-ind">
+                    <span class="step-badge">1</span>
+                    <span>Upload Image</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="image-step-2-ind">
+                    <span class="step-badge">2</span>
+                    <span>Select Action</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="image-step-3-ind">
+                    <span class="step-badge">3</span>
+                    <span>Download</span>
+                </div>
+            </div>
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
@@ -667,8 +719,6 @@
                 </div>
 
                 <div class="actions-panel">
-                    <h2>Select Action for Image</h2>
-
                     <div class="options-panel">
                         <div class="switch-toggle">
                             <input type="radio" id="mode-convert" name="image-mode" checked
@@ -868,6 +918,13 @@
                         </select>
                         <button id="process-image-to-pdf-btn" class="primary-btn">Create PDF</button>
                     </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="result-idle-placeholder" id="image-idle-placeholder">
+                        <i class="fas fa-file-download idle-icon"></i>
+                        <p>Choose an action and click process to generate your download.</p>
+                    </div>
 
                     <div id="image-status-display" class="status-display hidden">
                         <div class="loader"></div>
@@ -881,6 +938,10 @@
                         <a id="image-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
+                        <div class="file-deleted-notice">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -891,6 +952,23 @@
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
             </nav>
+
+            <div class="step-tracker-bar" aria-label="Process steps">
+                <div class="step-indicator active" id="excel-step-1-ind">
+                    <span class="step-badge">1</span>
+                    <span>Upload Excel/CSV</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="excel-step-2-ind">
+                    <span class="step-badge">2</span>
+                    <span>Select Action</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="excel-step-3-ind">
+                    <span class="step-badge">3</span>
+                    <span>Download</span>
+                </div>
+            </div>
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
@@ -906,8 +984,6 @@
                 </div>
 
                 <div class="actions-panel">
-                    <h2>Select Action for Excel/CSV</h2>
-
                     <div class="action-buttons">
                         <div class="action-card" id="excel-to-pdf-btn" role="button" tabindex="0">
                             <i class="fas fa-file-pdf"></i>
@@ -964,6 +1040,13 @@
                         <p class="helper-text">Select 2+ .xlsx files via the upload area above.</p>
                         <button id="process-merge-excel-btn" class="primary-btn">Merge Now</button>
                     </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="result-idle-placeholder" id="excel-idle-placeholder">
+                        <i class="fas fa-file-download idle-icon"></i>
+                        <p>Choose an action and click process to generate your download.</p>
+                    </div>
 
                     <div id="excel-status-display" class="status-display hidden">
                         <div class="loader"></div>
@@ -977,6 +1060,10 @@
                         <a id="excel-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
+                        <div class="file-deleted-notice">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -987,6 +1074,23 @@
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
             </nav>
+
+            <div class="step-tracker-bar" aria-label="Process steps">
+                <div class="step-indicator active" id="ppt-step-1-ind">
+                    <span class="step-badge">1</span>
+                    <span>Upload PPTX</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="ppt-step-2-ind">
+                    <span class="step-badge">2</span>
+                    <span>Select Action</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="ppt-step-3-ind">
+                    <span class="step-badge">3</span>
+                    <span>Download</span>
+                </div>
+            </div>
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
@@ -1002,8 +1106,6 @@
                 </div>
 
                 <div class="actions-panel">
-                    <h2>Select Action for PPTX</h2>
-
                     <div class="action-buttons">
                         <div class="action-card" id="ppt-to-pdf-btn" role="button" tabindex="0">
                             <i class="fas fa-file-pdf"></i>
@@ -1046,6 +1148,13 @@
                         <p class="helper-text">Select 2+ .pptx files via the upload area above.</p>
                         <button id="process-merge-ppt-btn" class="primary-btn">Merge Now</button>
                     </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="result-idle-placeholder" id="ppt-idle-placeholder">
+                        <i class="fas fa-file-download idle-icon"></i>
+                        <p>Choose an action and click process to generate your download.</p>
+                    </div>
 
                     <div id="ppt-status-display" class="status-display hidden">
                         <div class="loader"></div>
@@ -1059,6 +1168,10 @@
                         <a id="ppt-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
+                        <div class="file-deleted-notice">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1069,6 +1182,23 @@
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
             </nav>
+
+            <div class="step-tracker-bar" aria-label="Process steps">
+                <div class="step-indicator active" id="word-step-1-ind">
+                    <span class="step-badge">1</span>
+                    <span>Upload Word</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="word-step-2-ind">
+                    <span class="step-badge">2</span>
+                    <span>Select Action</span>
+                </div>
+                <div class="step-divider"></div>
+                <div class="step-indicator" id="word-step-3-ind">
+                    <span class="step-badge">3</span>
+                    <span>Download</span>
+                </div>
+            </div>
 
             <div class="drill-down-content">
                 <div class="file-selector-area">
@@ -1084,8 +1214,6 @@
                 </div>
 
                 <div class="actions-panel">
-                    <h2>Select Action for Word</h2>
-
                     <div class="action-buttons">
                         <div class="action-card" id="word-to-pdf-btn" role="button" tabindex="0">
                             <i class="fas fa-file-pdf"></i>
@@ -1117,6 +1245,13 @@
                         </select>
                         <button id="process-word-to-pptx-btn" class="primary-btn">Convert to PPTX</button>
                     </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="result-idle-placeholder" id="word-idle-placeholder">
+                        <i class="fas fa-file-download idle-icon"></i>
+                        <p>Choose an action and click process to generate your download.</p>
+                    </div>
 
                     <div id="word-status-display" class="status-display hidden">
                         <div class="loader"></div>
@@ -1130,6 +1265,10 @@
                         <a id="word-download-link" href="#" class="primary-btn download-btn">
                             <i class="fas fa-download"></i> Download File
                         </a>
+                        <div class="file-deleted-notice">
+                            <i class="fas fa-shield-alt"></i>
+                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                        </div>
                     </div>
                 </div>
             </div>

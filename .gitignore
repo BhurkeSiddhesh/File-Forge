@@ -26,3 +26,11 @@ asset_outputs
 server.log
 # Anonymous operation-event SQLite DB (see scripts/event_log.py)
 data/
+junit*.xml
+*junit*.xml
+reports/
+.coverage
+.coverage.*
+coverage*.json
+*.coverage
+missing_lines.txt

@@ -359,6 +359,43 @@ function ffClearActionSelection(scope) {
     });
 }
 
+// Step Tracker Management across the 3-step UI workflow
+function ffUpdateStepTracker(tool, stepNum) {
+    const p = tool || currentTool || 'pdf';
+    const ind1 = document.getElementById(`${p}-step-1-ind`);
+    const ind2 = document.getElementById(`${p}-step-2-ind`);
+    const ind3 = document.getElementById(`${p}-step-3-ind`);
+    const idleEl = document.getElementById(`${p}-idle-placeholder`);
+    const statusEl = document.getElementById(p === 'pdf' ? 'status-display' : `${p}-status-display`);
+    const resultEl = document.getElementById(p === 'pdf' ? 'result-display' : `${p}-result-display`);
+
+    if (ind1 && ind2 && ind3) {
+        [ind1, ind2, ind3].forEach(el => {
+            el.classList.remove('active', 'completed');
+        });
+
+        if (stepNum === 1) {
+            ind1.classList.add('active');
+        } else if (stepNum === 2) {
+            ind1.classList.add('completed');
+            ind2.classList.add('active');
+        } else if (stepNum >= 3) {
+            ind1.classList.add('completed');
+            ind2.classList.add('completed');
+            ind3.classList.add('active', 'completed');
+        }
+    }
+
+    if (idleEl) {
+        if (stepNum >= 3 || (statusEl && !statusEl.classList.contains('hidden')) || (resultEl && !resultEl.classList.contains('hidden'))) {
+            idleEl.classList.add('hidden');
+        } else {
+            idleEl.classList.remove('hidden');
+        }
+    }
+}
+window.ffUpdateStepTracker = ffUpdateStepTracker;
+
 // Navigation
 // `instant` skips the 500ms home-page fade — used by the SEO deep link, where
 // the visitor already chose a tool on the landing page and the animation is
@@ -375,45 +412,51 @@ function showDrillDown(tool, instant) {
     else if (tool === 'workflow') pageId = 'workflow-page';
     else return;
 
+    ffUpdateStepTracker(tool, 1);
+
     // Funnel step: visitor opened a tool category from the home grid.
     ffTrack('tool_open', tool);
 
     const reveal = () => {
-        document.getElementById('home-page').style.display = 'none';
-        document.getElementById(pageId).style.display = 'flex';
-        document.getElementById(pageId).style.flexDirection = 'column';
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        setTimeout(() => {
-            document.getElementById(pageId).classList.add('active');
-        }, instant ? 0 : 50);
+        document.querySelectorAll('.view').forEach(el => {
+            if (el.id !== pageId) {
+                el.style.display = 'none';
+                el.classList.remove('active');
+            }
+        });
+        const target = document.getElementById(pageId);
+        if (target) {
+            target.style.display = 'flex';
+            target.style.flexDirection = 'column';
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            setTimeout(() => {
+                target.classList.add('active');
+            }, instant ? 0 : 50);
+        }
     };
 
-    document.getElementById('home-page').classList.remove('active');
+    document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
     if (instant) reveal();
-    else setTimeout(reveal, 500);
+    else setTimeout(reveal, 300);
 }
 
 function showHome() {
-    let pageId;
-    if (currentTool === 'pdf') pageId = 'pdf-page';
-    else if (currentTool === 'image') pageId = 'image-page';
-    else if (currentTool === 'excel') pageId = 'excel-page';
-    else if (currentTool === 'ppt') pageId = 'ppt-page';
-    else if (currentTool === 'word') pageId = 'word-page';
-    else if (currentTool === 'workflow') pageId = 'workflow-page';
-    else pageId = 'pdf-page';
-
-    document.getElementById(pageId).classList.remove('active');
+    document.querySelectorAll('.view').forEach(el => {
+        if (el.id !== 'home-page') {
+            el.classList.remove('active');
+            el.style.display = 'none';
+        }
+    });
     resetUI();
-    setTimeout(() => {
-        document.getElementById(pageId).style.display = 'none';
-        document.getElementById('home-page').style.display = 'flex';
-        document.getElementById('home-page').style.flexDirection = 'column';
+    const home = document.getElementById('home-page');
+    if (home) {
+        home.style.display = 'flex';
+        home.style.flexDirection = 'column';
         window.scrollTo({ top: 0, behavior: 'instant' });
         setTimeout(() => {
-            document.getElementById('home-page').classList.add('active');
+            home.classList.add('active');
         }, 50);
-    }, 500);
+    }
 }
 
 // File Selection
@@ -562,6 +605,7 @@ function handleFiles(files) {
         : `${pdfs.length} files: ${pdfs.map(f => f.name).join(', ')}`;
     fileInfo.classList.remove('hidden');
     document.getElementById('status-display').classList.add('hidden');
+    ffUpdateStepTracker('pdf', 2);
     ffConsumePendingOp();
 }
 
@@ -581,6 +625,7 @@ function handleFile(file) {
     hidePdfActionAreas();
     const extractInput = document.getElementById('extract-pages-input');
     if (extractInput) extractInput.value = '';
+    ffUpdateStepTracker('pdf', 2);
     ffConsumePendingOp();
 }
 
@@ -1088,6 +1133,7 @@ function showResult(filename, message, token) {
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
     updateDownloadLink(downloadLink, token, filename);
+    ffUpdateStepTracker('pdf', 3);
 }
 
 function showCompressResult(data) {
@@ -1127,6 +1173,7 @@ function showCompressResult(data) {
     // Insert after the message, before the download button
     resultMessage.insertAdjacentElement('afterend', stats);
     stats.insertAdjacentElement('afterend', badge);
+    ffUpdateStepTracker('pdf', 3);
 }
 
 function resetUI() {
@@ -1172,6 +1219,8 @@ function resetUI() {
     if (imageFileInfo) imageFileInfo.classList.add('hidden');
     document.getElementById('image-status-display')?.classList.add('hidden');
     document.getElementById('image-result-display')?.classList.add('hidden');
+
+    ['pdf', 'image', 'excel', 'ppt', 'word'].forEach(t => ffUpdateStepTracker(t, 1));
 }
 
 // === Image Tools ===
@@ -1239,6 +1288,7 @@ function handleImageFile(file) {
     document.getElementById('image-status-display').classList.add('hidden');
     document.getElementById('image-result-display').classList.add('hidden');
     hideImageActionAreas();
+    ffUpdateStepTracker('image', 2);
     ffConsumePendingOp();
 }
 
@@ -1306,6 +1356,7 @@ function showImageResult(filename, message, token) {
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
     updateDownloadLink(downloadLink, token, filename);
+    ffUpdateStepTracker('image', 3);
 }
 
 // --- Image Resize & Crop Functions ---
@@ -2597,6 +2648,7 @@ function handleExcelFiles(files) {
     excelFileInfo.classList.remove('hidden');
     document.getElementById('excel-status-display').classList.add('hidden');
     document.getElementById('excel-result-display').classList.add('hidden');
+    ffUpdateStepTracker('excel', 2);
     ffConsumePendingOp();
 }
 
@@ -2668,6 +2720,7 @@ async function processExcelAction(url, text, formData) {
             resultDisplay.classList.remove('hidden');
             document.getElementById('excel-result-message').textContent = `${data.message}: ${data.filename}`;
             updateDownloadLink(document.getElementById('excel-download-link'), data.download_token);
+            ffUpdateStepTracker('excel', 3);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             ffNotify('Error: ' + (data.detail || 'Failed'));
@@ -2747,6 +2800,7 @@ function handlePptFiles(files) {
     pptFileInfo.classList.remove('hidden');
     document.getElementById('ppt-status-display').classList.add('hidden');
     document.getElementById('ppt-result-display').classList.add('hidden');
+    ffUpdateStepTracker('ppt', 2);
     ffConsumePendingOp();
 }
 
@@ -2811,6 +2865,7 @@ async function processPptAction(url, text, formData) {
             resultDisplay.classList.remove('hidden');
             document.getElementById('ppt-result-message').textContent = `${data.message}: ${data.filename}`;
             updateDownloadLink(document.getElementById('ppt-download-link'), data.download_token);
+            ffUpdateStepTracker('ppt', 3);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             ffNotify('Error: ' + (data.detail || 'Failed'));
@@ -3085,6 +3140,7 @@ function handleWordFile(file) {
     document.getElementById('word-file-info').classList.remove('hidden');
     document.getElementById('word-status-display').classList.add('hidden');
     document.getElementById('word-result-display').classList.add('hidden');
+    ffUpdateStepTracker('word', 2);
     ffConsumePendingOp();
 }
 
@@ -3118,6 +3174,7 @@ async function processWordAction(url, statusText, formData) {
             resultDisplay.classList.remove('hidden');
             document.getElementById('word-result-message').textContent = `${data.message}: ${data.filename}`;
             updateDownloadLink(document.getElementById('word-download-link'), data.download_token);
+            ffUpdateStepTracker('word', 3);
         } else {
             const data = await response.json().catch(() => ({ detail: 'Failed' }));
             ffNotify('Error: ' + (data.detail || 'Failed'));
@@ -3376,31 +3433,74 @@ function ffClaimHandoff(tool) {
     };
 }
 
-// Theme Toggle Logic
+// Theme Toggle & Automatic Time-of-Day Logic
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const themeIcon = document.getElementById('theme-icon');
 
+function getTimeBasedTheme() {
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    // Post 6:30 PM (18:30 = 1110 min) or before 6:30 AM (06:30 = 390 min) is dark
+    return (minutes >= 1110 || minutes < 390) ? 'dark' : 'light';
+}
+
+function getEffectiveTheme() {
+    try {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || savedTheme === 'light') {
+            return savedTheme;
+        }
+    } catch (e) {}
+    return getTimeBasedTheme();
+}
+
 function updateThemeIcon() {
     if (!themeIcon) return;
-    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const currentTheme = document.documentElement.getAttribute('data-theme') || getEffectiveTheme();
     if (currentTheme === 'dark') {
         themeIcon.classList.remove('fa-moon');
         themeIcon.classList.add('fa-sun');
+        if (themeToggleBtn) themeToggleBtn.setAttribute('aria-label', 'Switch to Light Mode');
     } else {
         themeIcon.classList.remove('fa-sun');
         themeIcon.classList.add('fa-moon');
+        if (themeToggleBtn) themeToggleBtn.setAttribute('aria-label', 'Switch to Dark Mode');
     }
 }
 
-// Set initial icon
-updateThemeIcon();
+function applyTheme(theme, saveManual = false) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (saveManual) {
+        try {
+            localStorage.setItem('theme', theme);
+        } catch (e) {}
+    }
+    updateThemeIcon();
+}
+
+// Set initial theme & icon
+const initialTheme = document.documentElement.getAttribute('data-theme') || getEffectiveTheme();
+applyTheme(initialTheme, false);
 
 if (themeToggleBtn) {
     themeToggleBtn.addEventListener('click', () => {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const currentTheme = document.documentElement.getAttribute('data-theme') || getEffectiveTheme();
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
-        updateThemeIcon();
+        applyTheme(newTheme, true);
     });
 }
+
+// Live schedule: Check and update theme dynamically if no manual preference is saved
+setInterval(() => {
+    try {
+        const savedTheme = localStorage.getItem('theme');
+        if (!savedTheme) {
+            const timeTheme = getTimeBasedTheme();
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            if (currentTheme !== timeTheme) {
+                applyTheme(timeTheme, false);
+            }
+        }
+    } catch (e) {}
+}, 60000);
+
