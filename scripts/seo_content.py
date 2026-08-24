@@ -23,7 +23,7 @@ from scripts.tool_extra import extra_html
 
 # --- constants -------------------------------------------------------------
 
-ASSET_V = "20260623"
+ASSET_V = "20260824"
 SITE = "Forge Files"
 GITHUB = "https://github.com/BhurkeSiddhesh/File-Forge"
 
