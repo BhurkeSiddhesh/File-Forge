@@ -2,7 +2,14 @@ from typing import List, Optional
 from fastapi import FastAPI, BackgroundTasks
 from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 import asyncio
 import os
 import re
@@ -167,6 +174,20 @@ _SECURITY_HEADERS = {
     "Content-Security-Policy": "frame-ancestors 'none'",
     "Cross-Origin-Opener-Policy": "same-origin",
 }
+
+
+@app.middleware("http")
+async def canonical_host_middleware(request: Request, call_next):
+    """Redirect the apex domain to the canonical www host.
+
+    Cloudflare proxies both hostnames to the same origin, so this application
+    layer fallback keeps direct-origin requests canonical as well. A permanent
+    308 preserves the request method for any API clients that use the apex.
+    """
+    if request.url.hostname and request.url.hostname.lower() == "forgefiles.org":
+        target = request.url.replace(scheme="https", hostname="www.forgefiles.org")
+        return RedirectResponse(url=str(target), status_code=308)
+    return await call_next(request)
 
 
 @app.middleware("http")

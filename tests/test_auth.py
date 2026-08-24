@@ -14,6 +14,24 @@ def test_api_is_public_no_credentials_needed():
     assert response.status_code not in (401, 403)
 
 
+def test_apex_host_redirects_to_canonical_www_host():
+    """The apex hostname permanently redirects without changing the path/query."""
+    client = TestClient(app)
+    response = client.get(
+        "/merge-pdf?source=apex",
+        headers={"host": "forgefiles.org"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 308
+    assert response.headers["location"] == "https://www.forgefiles.org/merge-pdf?source=apex"
+
+
+def test_canonical_www_host_is_served_directly():
+    client = TestClient(app)
+    response = client.get("/merge-pdf", headers={"host": "www.forgefiles.org"})
+    assert response.status_code == 200
+
+
 def test_download_is_public():
     """Download endpoint requires no key; missing file is a plain 404."""
     client = TestClient(app)
