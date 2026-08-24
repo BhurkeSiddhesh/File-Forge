@@ -559,14 +559,7 @@ function openPdfArea(areaId) {
 
     const card = document.getElementById(PDF_AREA_CARD[areaId]);
     if (card) {
-        // Drop the panel in right under its card, and keep the status + result
-        // blocks travelling with it so progress and the download show up in the
-        // same place — directly beneath the action the user clicked.
         card.insertAdjacentElement('afterend', area);
-        const status = document.getElementById('status-display');
-        const result = document.getElementById('result-display');
-        if (status) area.insertAdjacentElement('afterend', status);
-        if (result && status) status.insertAdjacentElement('afterend', result);
         ffSelectActionCard(card);
     }
 
