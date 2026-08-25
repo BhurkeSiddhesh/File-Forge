@@ -3,7 +3,7 @@ pikepdf>=10.11.0
 # relies on) is a deliberate upgrade rather than a surprise on the next deploy —
 # deploy-oracle.yml reinstalls requirements on every push to main.
 fastapi>=0.141.1,<1
-uvicorn>=0.52.3,<1
+uvicorn>=0.52.4,<1
 python-multipart
 pdf2docx
 # >=7 for the `pythonpath` ini option, which is what lets a bare `pytest`
