@@ -15,7 +15,23 @@
 // server-side (never stored as a full URL). It has to come from here: the
 // Referer header on the beacon itself is our own page, so the server has no
 // other way to see which site sent the visitor.
+function ffTrackGoogleAnalytics(event, label) {
+    try {
+        if (!window.ffAnalytics || typeof window.ffAnalytics.event !== 'function') return;
+        window.ffAnalytics.event(event, label || '');
+    } catch (e) { /* third-party analytics must never break the app */ }
+}
+
+function ffTrackPageView(path, title) {
+    try {
+        if (!window.ffAnalytics || typeof window.ffAnalytics.pageView !== 'function') return;
+        const href = window.location.origin ? (window.location.origin + path) : window.location.href;
+        window.ffAnalytics.pageView(path || '/', title || document.title, href);
+    } catch (e) { /* third-party analytics must never break the app */ }
+}
+
 function ffTrack(event, label) {
+    ffTrackGoogleAnalytics(event, label);
     try {
         const payload = JSON.stringify({
             event: event,
@@ -34,6 +50,7 @@ function ffTrack(event, label) {
     } catch (e) { /* analytics must never break the app */ }
 }
 window.ffTrack = ffTrack;
+window.ffTrackPageView = ffTrackPageView;
 
 // One page_view per app load. The home app is a single page (tool drill-downs
 // don't change the URL), so this fires once; the server-rendered landing pages
@@ -416,6 +433,7 @@ function showDrillDown(tool, instant) {
 
     // Funnel step: visitor opened a tool category from the home grid.
     ffTrack('tool_open', tool);
+    ffTrackPageView('/app/' + encodeURIComponent(tool), document.title);
 
     const reveal = () => {
         document.querySelectorAll('.view').forEach(el => {
@@ -441,6 +459,7 @@ function showDrillDown(tool, instant) {
 }
 
 function showHome() {
+    ffTrackPageView('/', document.title);
     document.querySelectorAll('.view').forEach(el => {
         if (el.id !== 'home-page') {
             el.classList.remove('active');

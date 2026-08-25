@@ -7,8 +7,8 @@ both Google and JS-less AI crawlers (GPTBot, ClaudeBot, PerplexityBot, ...) need
 Adding a new tool page is a one-line entry in ``TOOL_PAGES`` below. ``main.py``
 serves these via the catch-all ``/{slug}`` route and lists them in ``sitemap.xml``.
 
-The rendered HTML keeps the literal placeholders ``{{BASE_URL}}``,
-``{{ADSENSE_HEAD}}`` and ``{{ADSENSE_SLOT}}`` — ``main.py`` substitutes them at
+The rendered HTML keeps literal placeholders such as ``{{BASE_URL}}``,
+``{{ADSENSE_HEAD}}`` and ``{{GA_ANALYTICS}}`` — ``main.py`` substitutes them at
 request time (mirroring the existing ``_render_page`` mechanism), so this module
 has no dependency on runtime configuration and stays trivially unit-testable.
 """
@@ -35,6 +35,7 @@ ADS_SLOT = "{{ADSENSE_SLOT}}"
 CONSENT_BANNER = "{{CONSENT_BANNER}}"
 SITE_VERIFY = "{{SITE_VERIFICATION}}"
 CF_ANALYTICS = "{{CF_ANALYTICS}}"
+GA_ANALYTICS = "{{GA_ANALYTICS}}"
 DATAFAST_ANALYTICS = (
     '<script\n'
     '      defer\n'
@@ -1100,6 +1101,7 @@ def render_tool_page(slug: str) -> str:
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
     {ADS_HEAD}
     {CF_ANALYTICS}
+    {GA_ANALYTICS}
     {DATAFAST_ANALYTICS}
 {schema_blocks}
 </head>
@@ -1172,6 +1174,7 @@ def render_404_page() -> str:
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
+    {GA_ANALYTICS}
     {DATAFAST_ANALYTICS}
 </head>
 

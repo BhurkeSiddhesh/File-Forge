@@ -413,6 +413,59 @@ def _build_cf_analytics() -> str:
 
 CF_ANALYTICS_HTML = _build_cf_analytics()
 
+# --- Google Analytics 4 (optional, fully env-gated) ---
+# Set GA_MEASUREMENT_ID (or GOOGLE_ANALYTICS_ID) to a GA4/Google tag id such as
+# G-XXXXXXXXXX. The open-source repo deliberately does not hardcode a property
+# id: self-hosters should not leak traffic into the production Forge Files
+# analytics account, and local/dev runs should stay tracker-free by default.
+#
+# Only anonymous interaction intent is sent by static/script.js: page path, tool
+# category, selected operation, processing success and download click. Never send
+# file names, document contents, emails, order ids, or user ids to GA.
+GA_MEASUREMENT_ID = (
+    os.environ.get("GA_MEASUREMENT_ID", "").strip()
+    or os.environ.get("GOOGLE_ANALYTICS_ID", "").strip()
+)
+_GA_TAG_RE = re.compile(r"^(?:G|GT)-[A-Za-z0-9_-]{4,64}$")
+
+
+def _build_ga_analytics() -> str:
+    if not GA_MEASUREMENT_ID:
+        return ""
+    if not _GA_TAG_RE.fullmatch(GA_MEASUREMENT_ID):
+        logger.warning("Ignoring invalid GA_MEASUREMENT_ID value")
+        return ""
+    tag_id_json = json.dumps(GA_MEASUREMENT_ID)
+    tag_id_attr = html.escape(GA_MEASUREMENT_ID, quote=True)
+    return (
+        '<link rel="preconnect" href="https://www.googletagmanager.com" crossorigin>\n'
+        f'    <script async src="https://www.googletagmanager.com/gtag/js?id={tag_id_attr}"></script>\n'
+        '    <script>\n'
+        '    (function(){\n'
+        '      window.dataLayer=window.dataLayer||[];\n'
+        '      window.gtag=window.gtag||function(){window.dataLayer.push(arguments);};\n'
+        f'      var tagId={tag_id_json};\n'
+        "      window.gtag('js',new Date());\n"
+        "      window.gtag('config',tagId,{send_page_view:false});\n"
+        '      function pageView(path,title,locationHref){try{window.gtag(\'event\',\'page_view\',{'
+        "page_path:path||window.location.pathname||'/',"
+        'page_title:title||document.title,'
+        'page_location:locationHref||window.location.href,'
+        "transport_type:'beacon'});}catch(e){}}\n"
+        '      function event(name,label){try{'
+        "if(name==='page_view'){pageView(label||window.location.pathname||'/');return;}"
+        "window.gtag('event',name,{event_category:'intent',event_label:label||'',"
+        "tool_label:label||'',transport_type:'beacon'});"
+        '}catch(e){}}\n'
+        '      window.ffAnalytics={pageView:pageView,event:event};\n'
+        '      if(!window.FF_GA_MANUAL_PAGEVIEW){pageView(window.location.pathname||\'/\');}\n'
+        '    })();\n'
+        '    </script>'
+    )
+
+
+GA_ANALYTICS_HTML = _build_ga_analytics()
+
 AI_DISABLED_MESSAGE = (
     "AI Layout Recovery is disabled on this server (it needs more memory than the "
     "free hosting tier provides). Uncheck 'Use AI Layout Recovery' to use the standard converter."
@@ -1292,6 +1345,7 @@ def _substitute(html_text: str) -> str:
         .replace("{{CONSENT_BANNER}}", CONSENT_BANNER_HTML)
         .replace("{{SITE_VERIFICATION}}", SITE_VERIFICATION_HTML)
         .replace("{{CF_ANALYTICS}}", CF_ANALYTICS_HTML)
+        .replace("{{GA_ANALYTICS}}", GA_ANALYTICS_HTML)
     )
 
 

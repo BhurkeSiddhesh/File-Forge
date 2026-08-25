@@ -8,8 +8,8 @@ funnel that traffic into the matching tool via prominent in-content CTAs.
 
 Each guide is fully server-rendered HTML (no JS needed) so JS-less crawlers and
 AI bots read the whole article from the raw response. main.py substitutes the
-{{BASE_URL}}/{{ADSENSE_*}}/{{CONSENT_BANNER}}/{{SITE_VERIFICATION}}/{{CF_ANALYTICS}}
-tokens at request time, exactly as for tool pages.
+{{BASE_URL}}/{{ADSENSE_*}}/{{CONSENT_BANNER}}/{{SITE_VERIFICATION}}/{{CF_ANALYTICS}}/
+{{GA_ANALYTICS}} tokens at request time, exactly as for tool pages.
 
 To add a guide: append an entry to GUIDES. `primary_tool` must be a real slug in
 seo_content.TOOL_PAGES; `date` is an ISO date used for Article dateModified and
@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 from scripts import seo_content as sc
 from scripts.seo_content import (
     ASSET_V, SITE, GITHUB, BASE, ADS_HEAD, ADS_SLOT, CONSENT_BANNER,
-    SITE_VERIFY, CF_ANALYTICS, DATAFAST_ANALYTICS, FUNNEL_BEACON, TOOL_PAGES,
+    SITE_VERIFY, CF_ANALYTICS, GA_ANALYTICS, DATAFAST_ANALYTICS, FUNNEL_BEACON, TOOL_PAGES,
     _attr, _plain, _jsonld,
 )
 
@@ -313,6 +313,7 @@ _HEAD = """<!DOCTYPE html>
     <link rel="stylesheet" href="/static/style.css?v={asset_v}">
     {ads_head}
     {cf_analytics}
+    {ga_analytics}
     {datafast_analytics}
 {schema_blocks}
 </head>
@@ -333,7 +334,8 @@ def render_guide(slug: str) -> str:
         site_verify=SITE_VERIFY, title=_attr(g["title"]), meta=_attr(g["meta"]),
         canonical=canonical, og_type="article", site=SITE, og_title=_attr(og_title),
         og_desc=_attr(g["meta"]), base=BASE, asset_v=ASSET_V, ads_head=ADS_HEAD,
-        cf_analytics=CF_ANALYTICS, datafast_analytics=DATAFAST_ANALYTICS, schema_blocks=schema_blocks,
+        cf_analytics=CF_ANALYTICS, ga_analytics=GA_ANALYTICS,
+        datafast_analytics=DATAFAST_ANALYTICS, schema_blocks=schema_blocks,
     )
 
     sections = "\n".join(
@@ -401,7 +403,8 @@ def render_blog_index() -> str:
         site_verify=SITE_VERIFY, title=_attr(title), meta=_attr(meta),
         canonical=canonical, og_type="website", site=SITE, og_title=_attr(title.split(" | ")[0]),
         og_desc=_attr(meta), base=BASE, asset_v=ASSET_V, ads_head=ADS_HEAD,
-        cf_analytics=CF_ANALYTICS, datafast_analytics=DATAFAST_ANALYTICS, schema_blocks=schema_blocks,
+        cf_analytics=CF_ANALYTICS, ga_analytics=GA_ANALYTICS,
+        datafast_analytics=DATAFAST_ANALYTICS, schema_blocks=schema_blocks,
     )
     cards = "\n".join(
         f'            <li><a href="/blog/{slug}"><strong>{_attr(g["h1"])}</strong>'
