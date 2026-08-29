@@ -29,6 +29,16 @@ _UPLOAD_UUID_PREFIX_RE = re.compile(
 # ("sample_forgefiles.org_forgefiles.org...").
 _BRAND_SUFFIX_RE = re.compile(r'_forgefiles\.org$', re.IGNORECASE)
 
+_LIBREOFFICE_REGISTRYMODIFICATIONS = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry">
+ <item oor:path="/org.openoffice.Office.Common/Security/Scripting">
+  <prop oor:name="MacroSecurityLevel" oor:op="fuse">
+   <value>3</value>
+  </prop>
+ </item>
+</oor:items>
+"""
+
 
 def original_stem(input_path) -> str:
     """Return the uploaded file's original stem, with any temp-file UUID prefix
@@ -57,6 +67,15 @@ def try_font(size: int):
         except (OSError, IOError):
             continue
     return ImageFont.load_default()
+
+
+def _write_libreoffice_locked_profile(profile_dir: Path) -> None:
+    """Create a per-call LibreOffice profile that refuses document macros."""
+    user_dir = profile_dir / "user"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    registry = user_dir / "registrymodifications.xcu"
+    registry.write_text(_LIBREOFFICE_REGISTRYMODIFICATIONS, encoding="utf-8")
+
 
 def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
     """Convert an office document to PDF using headless LibreOffice.
@@ -89,11 +108,17 @@ def libreoffice_to_pdf(input_path, output_dir, timeout: int = 120):
         )
         return None
 
-    profile_dir = tempfile.mkdtemp(prefix="ff_lo_profile_")
+    profile_dir = Path(tempfile.mkdtemp(prefix="ff_lo_profile_"))
     try:
+        _write_libreoffice_locked_profile(profile_dir)
         result = subprocess.run(
-            [binary, "--headless",
-             f"-env:UserInstallation=file://{profile_dir}",
+            [binary,
+             "--headless",
+             "--norestore",
+             "--nolockcheck",
+             "--nodefault",
+             "--nologo",
+             f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
              "--convert-to", "pdf",
              "--outdir", str(output_dir), str(input_file)],
             capture_output=True, text=True, timeout=timeout,

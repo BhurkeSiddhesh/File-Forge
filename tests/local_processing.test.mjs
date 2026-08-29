@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 const STATIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'static', 'local');
 
 /** Build a fresh sandbox with the three scripts loaded into it. */
-function load() {
+function load(options = {}) {
     let blobUrls = 0;
     const revoked = [];
 
@@ -29,12 +29,12 @@ function load() {
     URLShim.createObjectURL = () => `blob:mock/${++blobUrls}`;
     URLShim.revokeObjectURL = (u) => { revoked.push(u); };
 
-    const canvasStub = () => ({
+    const canvasStub = options.canvasFactory || (() => ({
         width: 0,
         height: 0,
         toBlob() { throw new Error('canvas rendering is not exercised in these tests'); },
         getContext: () => null,
-    });
+    }));
 
     const fetchCalls = [];
 
@@ -42,7 +42,7 @@ function load() {
         console,
         Promise, Blob, FormData, Response, Error, Object, Math, Number, String,
         Array, JSON, Date, RegExp, isFinite, parseInt, WeakMap, FileReader: class { },
-        Image: class { },
+        Image: options.ImageClass || class { },
         URL: URLShim,
         setTimeout,
         document: {
@@ -234,6 +234,67 @@ test('formatOf picks the output format from the input suffix', () => {
     assert.equal(L.image.formatOf('a.bmp'), 'jpg');
     assert.equal(L.image.formatOf('a.tiff'), 'jpg');
     assert.equal(L.image.formatOf('noext'), 'jpg');
+});
+
+test('local PNG to JPEG conversion flattens transparency onto white', async () => {
+    const canvases = [];
+    const canvasFactory = () => {
+        const ops = [];
+        const ctx = {
+            fillStyle: '',
+            fillRect(x, y, w, h) {
+                ops.push({ op: 'fillRect', fillStyle: this.fillStyle, x, y, w, h });
+            },
+            drawImage() {
+                ops.push({ op: 'drawImage', args: Array.from(arguments).length });
+            },
+        };
+        const canvas = {
+            width: 0,
+            height: 0,
+            ops,
+            getContext: () => ctx,
+            toBlob(callback, mime) {
+                callback(new Blob([JSON.stringify({ width: this.width, height: this.height, ops })], {
+                    type: mime,
+                }));
+            },
+        };
+        canvases.push(canvas);
+        return canvas;
+    };
+
+    class ImageMock {
+        constructor() {
+            this.naturalWidth = 2;
+            this.naturalHeight = 2;
+            this.onload = null;
+            this.onerror = null;
+        }
+
+        set src(_value) {
+            setTimeout(() => this.onload && this.onload(), 0);
+        }
+    }
+
+    const { sandbox, L } = load({ canvasFactory, ImageClass: ImageMock });
+    const fd = new FormData();
+    fd.append('target_format', 'jpg');
+    fd.append('quality', '90');
+    fd.append('file', new Blob(['transparent-png'], { type: 'image/png' }), 'transparent.png');
+
+    const body = await (await sandbox.window.ffProcess('/api/image/convert', fd)).json();
+    assert.equal(body.status, 'success');
+    assert.equal(body.filename, 'transparent_forgefiles.org.jpg');
+
+    const payload = JSON.parse(await L.resolve(body.download_token).blob.text());
+    assert.equal(payload.width, 2);
+    assert.equal(payload.height, 2);
+    assert.deepEqual(payload.ops.slice(0, 2), [
+        { op: 'fillRect', fillStyle: '#fff', x: 0, y: 0, w: 2, h: 2 },
+        { op: 'drawImage', args: 5 },
+    ]);
+    assert.equal(canvases.length >= 1, true);
 });
 
 // ── FormData coercion ─────────────────────────────────────────────────────

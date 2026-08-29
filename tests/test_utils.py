@@ -60,6 +60,46 @@ class TestUtils:
         assert res == out / "test.pdf"
         assert res.exists()
 
+    def test_libreoffice_to_pdf_locks_down_macros_and_recovery_flags(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/libreoffice")
+        profile = tmp_path / "lo-profile"
+        monkeypatch.setattr("tempfile.mkdtemp", lambda prefix: str(profile))
+        monkeypatch.setattr("shutil.rmtree", lambda path, ignore_errors=True: None)
+
+        out = tmp_path / "out"
+        out.mkdir()
+        doc = tmp_path / "macro.doc"
+        doc.write_text("dummy")
+        captured = {}
+
+        def fake_run(cmd, capture_output, text, timeout):
+            captured["cmd"] = cmd
+            produced = out / "macro.pdf"
+            produced.write_text("%PDF-1.4 simulated")
+            class Res:
+                returncode = 0
+                stderr = ""
+            return Res()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        res = libreoffice_to_pdf(doc, out)
+
+        assert res == out / "macro.pdf"
+        registry = profile / "user" / "registrymodifications.xcu"
+        assert registry.exists()
+        xcu = registry.read_text(encoding="utf-8")
+        assert 'oor:name="MacroSecurityLevel"' in xcu
+        assert "<value>3</value>" in xcu
+
+        cmd = captured["cmd"]
+        assert "--headless" in cmd
+        assert "--norestore" in cmd
+        assert "--nolockcheck" in cmd
+        assert "--nodefault" in cmd
+        assert "--nologo" in cmd
+        assert f"-env:UserInstallation={profile.resolve().as_uri()}" in cmd
+        assert cmd[cmd.index("--convert-to") + 1] == "pdf"
+
     def test_libreoffice_to_pdf_subprocess_error(self, tmp_path, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/libreoffice")
         out = tmp_path / "out"

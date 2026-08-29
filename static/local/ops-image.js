@@ -88,16 +88,21 @@
     }
 
     /** Draw a decoded image onto a fresh canvas at the given size. */
-    function render(img, w, h, drawer) {
+    function render(img, w, h, drawer, background) {
         var canvas = canvasOf(w, h);
         var ctx = canvas.getContext('2d');
         if (!ctx) throw new L.Unsupported('2d canvas context unavailable');
-        // A transparent source encoded as JPEG composites onto black here, which
-        // is also where Pillow's RGBA->RGB conversion lands for fully
-        // transparent pixels — so the two agree without special-casing.
+        if (background) {
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
         if (drawer) drawer(ctx, canvas);
         else ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         return canvas;
+    }
+
+    function renderForFormat(img, w, h, fmt, drawer) {
+        return render(img, w, h, drawer, fmt === 'jpg' ? '#fff' : null);
     }
 
     function only(fd) {
@@ -148,7 +153,7 @@
         if (mode === 'target_size') {
             blob = await toTargetSize(img, ow, oh, targetKb * 1024);
         } else {
-            blob = await encode(render(img, nw, nh), 'jpg', 95);
+            blob = await encode(renderForFormat(img, nw, nh, 'jpg'), 'jpg', 95);
         }
 
         return {
@@ -164,7 +169,7 @@
      * until it fits (stopping before either side goes under 10px).
      */
     async function toTargetSize(img, w, h, targetBytes) {
-        var canvas = render(img, w, h);
+        var canvas = renderForFormat(img, w, h, 'jpg');
         var best = await encode(canvas, 'jpg', 95);
         if (best.size <= targetBytes) return best;
 
@@ -185,7 +190,7 @@
             cw = Math.trunc(cw * 0.9);
             ch = Math.trunc(ch * 0.9);
             if (cw < 10 || ch < 10) break;
-            canvas = render(img, cw, ch);
+            canvas = renderForFormat(img, cw, ch, 'jpg');
             out = await encode(canvas, 'jpg', bestQuality);
         }
         return out;
@@ -216,7 +221,11 @@
         }
 
         var canvas = canvasOf(cw, ch);
-        canvas.getContext('2d').drawImage(img, x, y, cw, ch, 0, 0, cw, ch);
+        var ctx = canvas.getContext('2d');
+        if (!ctx) throw new L.Unsupported('2d canvas context unavailable');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, x, y, cw, ch, 0, 0, cw, ch);
 
         return {
             blob: await encode(canvas, 'jpg', 95),
@@ -244,7 +253,7 @@
         var bw = Math.round(w * cos + h * sin);
         var bh = Math.round(w * sin + h * cos);
 
-        var canvas = render(img, bw, bh, function (ctx) {
+        var canvas = renderForFormat(img, bw, bh, fmt, function (ctx) {
             ctx.translate(bw / 2, bh / 2);
             ctx.rotate(rad);
             ctx.drawImage(img, -w / 2, -h / 2);
@@ -268,7 +277,7 @@
         var file = only(fd);
         var fmt = formatOf(file.name);
         var img = await decode(file);
-        var blob = await encode(render(img, img.naturalWidth, img.naturalHeight), fmt, quality);
+        var blob = await encode(renderForFormat(img, img.naturalWidth, img.naturalHeight, fmt), fmt, quality);
 
         return {
             blob: blob,
@@ -298,7 +307,7 @@
         var file = only(fd);
         var img = await decode(file);
         var fmt = FORMAT_EXT[target];
-        var canvas = render(img, img.naturalWidth, img.naturalHeight);
+        var canvas = renderForFormat(img, img.naturalWidth, img.naturalHeight, fmt);
 
         return {
             blob: await encode(canvas, fmt, quality),
@@ -345,7 +354,7 @@
         var fontSize = Math.max(20, Math.trunc(Math.min(w, h) / 20));
         var margin = Math.max(10, Math.trunc(Math.min(w, h) * 0.02));
 
-        var canvas = render(img, w, h, function (ctx) {
+        var canvas = renderForFormat(img, w, h, fmt, function (ctx) {
             ctx.drawImage(img, 0, 0);
             ctx.globalAlpha = opacity;
             ctx.fillStyle = color;
