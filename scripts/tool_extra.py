@@ -109,7 +109,7 @@ EXTRA: Dict[str, str] = {
             one page out of a long document.</p>
         <h2>Split, extract, or organize?</h2>
         <ul>
-            <li><a href="/split-pdf">Split PDF</a>: carve out pages/ranges into a new file.</li>
+            <li><a href="/split-pdf">Split PDF</a>: create separate PDFs for pages or ranges inside one ZIP.</li>
             <li><a href="/extract-pdf-pages">Extract PDF pages</a>: pick specific pages to keep.</li>
             <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
         </ul>
@@ -174,7 +174,7 @@ EXTRA: Dict[str, str] = {
         <h2>Extract, split, or organize?</h2>
         <ul>
             <li><a href="/extract-pdf-pages">Extract PDF pages</a>: keep specific pages by number.</li>
-            <li><a href="/split-pdf">Split PDF</a>: carve pages/ranges into a separate file.</li>
+            <li><a href="/split-pdf">Split PDF</a>: create separate PDFs inside one ZIP.</li>
             <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
         </ul>
         <p>Want the pieces back together afterwards? <a href="/merge-pdf">Merge PDF</a>
@@ -191,6 +191,28 @@ EXTRA: Dict[str, str] = {
             character recognition) fallback, running fully offline on our server, reads
             the pixels and recovers the text. Need to keep layout and edit it instead of
             plain text? Use <a href="/pdf-to-word">PDF to Word</a>.</p>""",
+
+    "ocr-pdf": """
+        <h2>Add search to scanned PDFs</h2>
+        <p>OCR PDF keeps the scanned page image and adds an invisible text layer behind
+            it. That means the file still looks like the original scan, but PDF viewers
+            can search for names, invoice numbers, dates, and phrases. Use it for
+            scanned applications, college documents, bank paperwork, and receipts where
+            a plain text export would lose too much context.</p>
+        <h2>PDF output, not a text dump</h2>
+        <p>Use <a href="/pdf-to-text">PDF to Text</a> when you want a <code>.txt</code>
+            file. Use OCR PDF when the job is “make this PDF searchable” and the output
+            should still be a PDF.</p>""",
+
+    "make-pdf-searchable": """
+        <h2>Keep the document as a PDF</h2>
+        <p>Make PDF Searchable runs OCR on scanned pages and writes recognized words
+            back into the PDF as hidden text. The visual page remains the source scan:
+            no watermark, no layout remake, and no forced Word conversion.</p>
+        <h2>When to use it</h2>
+        <p>It is best for scanned PDFs where Ctrl+F finds nothing today. After OCR,
+            regular viewers can search the document and often let you select recognized
+            text, while the original page image stays intact.</p>""",
 
     "rotate-pdf": """
         <h2>Fix sideways and upside-down pages for good</h2>
@@ -306,7 +328,7 @@ EXTRA: Dict[str, str] = {
         <h2>How it compares</h2>
         <ul>
             <li><a href="/organize-pdf">Organize PDF</a>: reorder, delete, duplicate visually.</li>
-            <li><a href="/split-pdf">Split PDF</a> / <a href="/extract-pdf-pages">Extract pages</a>: pull pages into a new file.</li>
+            <li><a href="/split-pdf">Split PDF</a>: create a ZIP of separate PDFs; <a href="/extract-pdf-pages">Extract pages</a>: pull selected pages into one file.</li>
             <li><a href="/merge-pdf">Merge PDF</a>: join separate files together.</li>
             <li><a href="/rotate-pdf">Rotate PDF</a>: fix page orientation.</li>
         </ul>""",

@@ -48,6 +48,8 @@
 
     var FORMAT_EXT = { jpg: 'jpg', jpeg: 'jpg', png: 'png', webp: 'webp' };
     var MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    var MAX_RESIZE_DIMENSION = 8192;
+    var MAX_RESIZE_PIXELS = 20000000;
 
     /** scripts/image_utils.py picks the output format from the input suffix,
      *  falling back to jpg for anything it doesn't recognise. */
@@ -62,6 +64,18 @@
         c.width = Math.max(1, Math.round(w));
         c.height = Math.max(1, Math.round(h));
         return c;
+    }
+
+    function validateResize(w, h) {
+        if (!(w >= 1 && h >= 1)) {
+            throw new L.Error('Resize output dimensions must be at least 1 pixel.');
+        }
+        if (w > MAX_RESIZE_DIMENSION || h > MAX_RESIZE_DIMENSION) {
+            throw new L.Error('Resize output width and height must be <= ' + MAX_RESIZE_DIMENSION + 'px.');
+        }
+        if (w * h > MAX_RESIZE_PIXELS) {
+            throw new L.Error('Resize output must be <= ' + MAX_RESIZE_PIXELS + ' pixels.');
+        }
     }
 
     /**
@@ -118,8 +132,8 @@
         if (['dimensions', 'percentage', 'target_size'].indexOf(mode) < 0) {
             throw new L.Error('mode must be one of: dimensions, percentage, target_size');
         }
-        var width = L.range('width', L.int(fd, 'width', null), 1);
-        var height = L.range('height', L.int(fd, 'height', null), 1);
+        var width = L.range('width', L.int(fd, 'width', null), 1, MAX_RESIZE_DIMENSION);
+        var height = L.range('height', L.int(fd, 'height', null), 1, MAX_RESIZE_DIMENSION);
         var percentage = L.range('percentage', L.int(fd, 'percentage', null), 1, 500);
         var targetKb = L.range('target_size_kb', L.int(fd, 'target_size_kb', null), 1);
 
@@ -147,6 +161,7 @@
             if (!targetKb) throw new L.Error('Target size must be provided for target_size mode.');
             nw = ow; nh = oh;
         }
+        validateResize(nw, nh);
 
         // resize_image() always writes JPEG, whatever went in.
         var blob;

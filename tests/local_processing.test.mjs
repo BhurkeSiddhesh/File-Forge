@@ -108,6 +108,13 @@ test('operations that need the server are deliberately not registered', () => {
     }
 });
 
+test('local image resize carries the same output caps as the server', () => {
+    const source = readFileSync(join(STATIC, 'ops-image.js'), 'utf8');
+    assert.match(source, /MAX_RESIZE_DIMENSION\s*=\s*8192/);
+    assert.match(source, /MAX_RESIZE_PIXELS\s*=\s*20000000/);
+    assert.match(source, /validateResize\(nw,\s*nh\)/);
+});
+
 // ── Output naming (scripts/utils.py::branded_filename) ────────────────────
 
 test('brandedName matches branded_filename()', () => {

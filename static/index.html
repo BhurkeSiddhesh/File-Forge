@@ -285,6 +285,13 @@
                                 <p>Cut selected pages into a new PDF</p>
                             </div>
                         </div>
+                        <div class="action-card" id="split-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-copy"></i>
+                            <div class="action-text">
+                                <h4>Split PDF</h4>
+                                <p>Create a ZIP of separate PDFs</p>
+                            </div>
+                        </div>
                         <div class="action-card" id="compress-pdf-btn" role="button" tabindex="0">
                             <i class="fas fa-file-archive"></i>
                             <div class="action-text">
@@ -339,6 +346,13 @@
                             <div class="action-text">
                                 <h4>Extract Text</h4>
                                 <p>Export all text to .txt file</p>
+                            </div>
+                        </div>
+                        <div class="action-card" id="ocr-pdf-btn" role="button" tabindex="0">
+                            <i class="fas fa-search"></i>
+                            <div class="action-text">
+                                <h4>OCR PDF</h4>
+                                <p>Add a searchable text layer</p>
                             </div>
                         </div>
                         <div class="action-card" id="organize-pdf-btn" role="button" tabindex="0">
@@ -459,6 +473,19 @@
                         <button id="process-extract-btn" class="primary-btn">Extract Pages</button>
                     </div>
 
+                    <!-- Split PDF Options -->
+                    <div id="split-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Choose how to create separate PDFs inside a ZIP:</p>
+                        <select id="split-pdf-mode" aria-label="Split mode">
+                            <option value="each" selected>Every page</option>
+                            <option value="every_n">Every N pages</option>
+                            <option value="ranges">Custom ranges</option>
+                        </select>
+                        <input type="number" id="split-pdf-n" min="1" value="1" aria-label="Pages per split">
+                        <input type="text" id="split-pdf-ranges" placeholder="Ranges, e.g. 1-2,3-5" aria-label="Split ranges">
+                        <button id="process-split-btn" class="primary-btn">Split PDF</button>
+                    </div>
+
                     <!-- Merge PDFs Options -->
                     <div id="merge-area" class="password-area hidden">
                         <p class="helper-text">Select 2 or more PDFs (use the upload area above, multi-select enabled).</p>
@@ -541,6 +568,15 @@
                         <label><input type="checkbox" id="extract-text-layout"> Preserve layout structure</label>
                         <small class="helper-text" style="display:block; margin-top:0.4rem; color:var(--text-muted, #888);">Note: OCR text extraction is optimized for English-language text.</small>
                         <button id="process-extract-text-btn" class="primary-btn">Extract Text</button>
+                    </div>
+
+                    <!-- OCR PDF Options -->
+                    <div id="ocr-pdf-area" class="password-area hidden">
+                        <p class="helper-text">Create a searchable PDF from a scanned/image PDF:</p>
+                        <select id="ocr-pdf-lang" aria-label="OCR language">
+                            <option value="en" selected>English</option>
+                        </select>
+                        <button id="process-ocr-pdf-btn" class="primary-btn">Create Searchable PDF</button>
                     </div>
 
                     <!-- Organize PDF Options -->

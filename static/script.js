@@ -521,6 +521,7 @@ function hidePdfActionAreas() {
     document.getElementById('password-input-area').classList.add('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('extract-pages-area')?.classList.add('hidden');
+    document.getElementById('split-pdf-area')?.classList.add('hidden');
     document.getElementById('compress-area')?.classList.add('hidden');
     document.getElementById('merge-area')?.classList.add('hidden');
     document.getElementById('watermark-area')?.classList.add('hidden');
@@ -529,6 +530,7 @@ function hidePdfActionAreas() {
     document.getElementById('rotate-pdf-area')?.classList.add('hidden');
     document.getElementById('protect-pdf-area')?.classList.add('hidden');
     document.getElementById('extract-text-area')?.classList.add('hidden');
+    document.getElementById('ocr-pdf-area')?.classList.add('hidden');
     document.getElementById('organize-pdf-area')?.classList.add('hidden');
     document.getElementById('page-numbers-area')?.classList.add('hidden');
     document.getElementById('repair-pdf-area')?.classList.add('hidden');
@@ -552,6 +554,7 @@ const PDF_AREA_CARD = {
     'password-input-area': 'remove-password-btn',
     'convert-password-area': 'convert-word-btn',
     'extract-pages-area': 'extract-pages-btn',
+    'split-pdf-area': 'split-pdf-btn',
     'compress-area': 'compress-pdf-btn',
     'merge-area': 'merge-pdf-btn',
     'watermark-area': 'watermark-pdf-btn',
@@ -560,6 +563,7 @@ const PDF_AREA_CARD = {
     'rotate-pdf-area': 'rotate-pdf-btn',
     'protect-pdf-area': 'protect-pdf-btn',
     'extract-text-area': 'extract-text-btn',
+    'ocr-pdf-area': 'ocr-pdf-btn',
     'organize-pdf-area': 'organize-pdf-btn',
     'page-numbers-area': 'page-numbers-btn',
     'repair-pdf-area': 'repair-pdf-btn',
@@ -660,6 +664,12 @@ document.getElementById('extract-pages-btn').onclick = () => {
     openPdfArea('extract-pages-area');
 };
 
+document.getElementById('split-pdf-btn').onclick = () => {
+    setMergeMode(false);
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
+    openPdfArea('split-pdf-area');
+};
+
 document.getElementById('compress-pdf-btn').onclick = () => {
     setMergeMode(false);
     if (!selectedFile) { ffNotify('Please select a file first.'); return; }
@@ -688,6 +698,12 @@ document.getElementById('sign-pdf-btn').onclick = () => {
     setMergeMode(false);
     if (!selectedFile) { ffNotify('Please select a file first.'); return; }
     openPdfArea('sign-area');
+};
+
+document.getElementById('ocr-pdf-btn').onclick = () => {
+    setMergeMode(false);
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
+    openPdfArea('ocr-pdf-area');
 };
 
 document.querySelectorAll('input[name="compress-level"]').forEach(function (radio) {
@@ -933,6 +949,29 @@ document.getElementById('process-extract-btn').onclick = () => {
     formData.append('pages', pages);
 
     processAction('/api/pdf/extract-pages', 'Extracting selected pages...', formData);
+};
+
+document.getElementById('process-split-btn').onclick = () => {
+    const mode = document.getElementById('split-pdf-mode').value;
+    const ranges = document.getElementById('split-pdf-ranges').value.trim();
+    const n = document.getElementById('split-pdf-n').value;
+    if (!selectedFile) { ffNotify('Please select a file first.'); return; }
+    if (mode === 'ranges' && !ranges) {
+        ffNotify('Please enter ranges to split (e.g., 1-2,3-5).');
+        return;
+    }
+    if (mode === 'every_n' && (!n || Number(n) < 1)) {
+        ffNotify('Please enter a valid page count per split.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('mode', mode);
+    if (mode === 'ranges') formData.append('ranges', ranges);
+    if (mode === 'every_n') formData.append('n', n);
+
+    processAction('/api/pdf/split', 'Splitting PDF into a ZIP...', formData);
 };
 
 document.getElementById('process-merge-btn').onclick = () => {
@@ -1200,6 +1239,7 @@ function resetUI() {
     document.getElementById('password-input-area').classList.add('hidden');
     document.getElementById('convert-password-area').classList.add('hidden');
     document.getElementById('extract-pages-area')?.classList.add('hidden');
+    document.getElementById('split-pdf-area')?.classList.add('hidden');
     document.getElementById('compress-area')?.classList.add('hidden');
     document.getElementById('merge-area')?.classList.add('hidden');
     document.getElementById('watermark-area')?.classList.add('hidden');
@@ -1208,6 +1248,7 @@ function resetUI() {
     document.getElementById('rotate-pdf-area')?.classList.add('hidden');
     document.getElementById('protect-pdf-area')?.classList.add('hidden');
     document.getElementById('extract-text-area')?.classList.add('hidden');
+    document.getElementById('ocr-pdf-area')?.classList.add('hidden');
     document.getElementById('organize-pdf-area')?.classList.add('hidden');
     document.getElementById('page-numbers-area')?.classList.add('hidden');
     document.getElementById('repair-pdf-area')?.classList.add('hidden');
@@ -1221,6 +1262,10 @@ function resetUI() {
     document.getElementById('result-display').classList.add('hidden');
     const extractInput = document.getElementById('extract-pages-input');
     if (extractInput) extractInput.value = '';
+    const splitRanges = document.getElementById('split-pdf-ranges');
+    if (splitRanges) splitRanges.value = '';
+    const splitN = document.getElementById('split-pdf-n');
+    if (splitN) splitN.value = '1';
 
     // Reset image tools
     const imageFileInput = document.getElementById('image-file-input');
@@ -2970,6 +3015,18 @@ document.getElementById('process-extract-text-btn')?.addEventListener('click', (
     processAction('/api/pdf/extract-text', 'Extracting text...', fd);
 });
 
+// --- OCR PDF ---
+document.getElementById('ocr-pdf-btn')?.addEventListener('click', () => {
+    showPdfOptionPanel('ocr-pdf-area');
+});
+document.getElementById('process-ocr-pdf-btn')?.addEventListener('click', () => {
+    if (!selectedFile) { ffNotify('Please select a PDF file first.'); return; }
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('lang', document.getElementById('ocr-pdf-lang').value || 'en');
+    processAction('/api/pdf/ocr', 'Creating searchable PDF...', fd);
+});
+
 // --- Organize PDF ---
 document.getElementById('organize-pdf-btn')?.addEventListener('click', () => {
     showPdfOptionPanel('organize-pdf-area');
@@ -3270,8 +3327,10 @@ const DEEP_LINK_OPS = {
     'pdf-to-word': { card: 'convert-word-btn' },
     'compress-pdf': { card: 'compress-pdf-btn' },
     'extract-pdf-pages': { card: 'extract-pages-btn' },
-    'split-pdf': { card: 'extract-pages-btn' },
+    'split-pdf': { card: 'split-pdf-btn' },
     'pdf-to-text': { card: 'extract-text-btn' },
+    'ocr-pdf': { card: 'ocr-pdf-btn' },
+    'make-pdf-searchable': { card: 'ocr-pdf-btn' },
     'merge-pdf': { card: 'merge-pdf-btn' },
     'rotate-pdf': { card: 'rotate-pdf-btn' },
     'protect-pdf': { card: 'protect-pdf-btn' },

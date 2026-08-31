@@ -4,7 +4,7 @@ Tests for image resize functionality in image_utils.py.
 import pytest
 from pathlib import Path
 from PIL import Image
-from scripts.image_utils import resize_image
+from scripts.image_utils import resize_image, validate_resize_dimensions
 import os
 
 @pytest.fixture(scope="session")
@@ -145,6 +145,19 @@ def test_resize_target_size_no_target_raises(sample_image, tmp_path):
 
     with pytest.raises(ValueError, match="Target size"):
         resize_image(str(sample_image), str(output_dir), mode='target_size')
+
+
+def test_resize_rejects_excessive_absolute_dimensions(sample_image, tmp_path):
+    output_dir = tmp_path / "output_huge"
+    output_dir.mkdir()
+
+    with pytest.raises(ValueError, match="8192"):
+        resize_image(str(sample_image), str(output_dir), mode='dimensions', width=10000, height=100)
+
+
+def test_resize_rejects_excessive_total_pixels():
+    with pytest.raises(ValueError, match="20,000,000"):
+        validate_resize_dimensions(6000, 4000)
 
 
 def test_resize_only_height_provided(sample_image, tmp_path):

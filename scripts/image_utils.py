@@ -11,6 +11,9 @@ from scripts.utils import branded_filename, original_stem, try_font
 # Register HEIF opener with Pillow
 pillow_heif.register_heif_opener()
 
+MAX_RESIZE_DIMENSION = 8192
+MAX_RESIZE_PIXELS = 20_000_000
+
 
 def _flatten_to_rgb(img: Image.Image, background=(255, 255, 255)) -> Image.Image:
     """
@@ -74,6 +77,16 @@ def _prepare_image(img: Image.Image) -> Image.Image:
         img = _flatten_to_rgb(img)
 
     return img
+
+
+def validate_resize_dimensions(width: int, height: int) -> None:
+    """Reject resize outputs large enough to exhaust memory."""
+    if width < 1 or height < 1:
+        raise ValueError("Resize output dimensions must be at least 1 pixel.")
+    if width > MAX_RESIZE_DIMENSION or height > MAX_RESIZE_DIMENSION:
+        raise ValueError(f"Resize output width and height must be <= {MAX_RESIZE_DIMENSION}px.")
+    if width * height > MAX_RESIZE_PIXELS:
+        raise ValueError(f"Resize output must be <= {MAX_RESIZE_PIXELS:,} pixels.")
 
 
 # EXIF Orientation tag id.
@@ -204,6 +217,7 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                 new_width = width
                 new_height = height
 
+            validate_resize_dimensions(new_width, new_height)
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
 
@@ -215,6 +229,7 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             new_width = int(original_width * scale)
             new_height = int(original_height * scale)
 
+            validate_resize_dimensions(new_width, new_height)
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
 

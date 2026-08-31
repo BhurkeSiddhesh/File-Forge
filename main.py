@@ -43,6 +43,7 @@ from scripts.pdf_utils import (
     pdf_to_docx,
     pdf_to_word_ai,
     extract_pdf_pages,
+    split_pdf_to_zip,
     compress_pdf,
     merge_pdfs,
     add_watermark,
@@ -57,6 +58,7 @@ from scripts.pdf_utils import (
     pdf_to_pptx,
     pdf_to_epub,
     extract_text_from_pdf,
+    ocr_pdf_to_searchable_pdf,
     organize_pdf,
     add_page_numbers,
     repair_pdf,
@@ -72,6 +74,7 @@ from scripts.image_utils import (
     compress_image,
     convert_image_format,
     watermark_image,
+    MAX_RESIZE_DIMENSION,
 )
 from scripts.excel_utils import (
     excel_to_pdf,
@@ -1233,9 +1236,25 @@ async def rate_limit_middleware(request: Request, call_next):
             headers={"Retry-After": "5"},
         )
     try:
-        return await call_next(request)
-    finally:
+        response = await call_next(request)
+    except Exception:
         gate.release()
+        raise
+
+    body_iterator = getattr(response, "body_iterator", None)
+    if body_iterator is None:
+        gate.release()
+        return response
+
+    async def release_after_body():
+        try:
+            async for chunk in body_iterator:
+                yield chunk
+        finally:
+            gate.release()
+
+    response.body_iterator = release_after_body()
+    return response
 
 
 # --- Anonymous operation-event context (server-side analytics, no tracking script) ---
@@ -1541,7 +1560,7 @@ async def api_convert_to_word_stream(
                     break
                 yield f"data: {json.dumps(item)}\n\n"
         finally:
-            if temp_path.exists():
+            if not thread.is_alive() and temp_path.exists():
                 try:
                     os.remove(temp_path)
                 except PermissionError:
@@ -1578,6 +1597,42 @@ async def api_extract_pages(
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
         logger.exception("Page extraction failed for %s", safe_filename)
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/split")
+async def api_split_pdf(
+    file: UploadFile = File(...),
+    mode: str = Form("each"),
+    ranges: str = Form(None),
+    n: Optional[int] = Form(None),
+    password: str = Form(None),
+):
+    safe_filename = secure_filename(file.filename)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
+    logger.debug("Splitting PDF: %s, mode=%s, password=%s", safe_filename, mode, '***' if password else 'None')
+    try:
+        result = await event_log.timed(
+            "pdf_split",
+            run_in_threadpool(split_pdf_to_zip, str(temp_path), str(result_dir), mode, ranges, n, password),
+        )
+        return {
+            "status": "success",
+            "message": f"PDF split into {result['file_count']} file(s)",
+            **download_fields(result["output_path"]),
+            "file_count": result["file_count"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    except Exception as e:
+        logger.exception("PDF split failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():
@@ -1848,8 +1903,8 @@ async def api_resize_image(
     """Resize image based on parameters."""
     if mode not in ("dimensions", "percentage", "target_size"):
         raise HTTPException(status_code=422, detail="mode must be one of: dimensions, percentage, target_size")
-    validate_range("width", width, 1)
-    validate_range("height", height, 1)
+    validate_range("width", width, 1, MAX_RESIZE_DIMENSION)
+    validate_range("height", height, 1, MAX_RESIZE_DIMENSION)
     validate_range("percentage", percentage, 1, 500)
     validate_range("target_size_kb", target_size_kb, 1)
     # Sanitize filename to prevent path traversal
@@ -2305,6 +2360,7 @@ async def execute_workflow(
                     password = config.get('password', '')
                     if not password:
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'Password required for unlock step'})}\n\n"
+                        step_started = None
                         return
                     output_path = await run_in_threadpool(remove_pdf_password, str(current_file), password, str(result_dir))
                     current_file = Path(output_path)
@@ -2418,6 +2474,7 @@ async def execute_workflow(
                     user_pw = config.get('user_password', '')
                     if not user_pw:
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'user_password required for protect_pdf step'})}\n\n"
+                        step_started = None
                         return
                     output_path = await run_in_threadpool(
                         protect_pdf, str(current_file), str(result_dir),
@@ -2460,6 +2517,7 @@ async def execute_workflow(
                     page_order = config.get('page_order', [])
                     if not page_order:
                         yield f"data: {json.dumps({'event': 'error', 'detail': 'page_order required for organize_pdf step'})}\n\n"
+                        step_started = None
                         return
                     password = config.get('password') or None
                     output_path = await run_in_threadpool(organize_pdf, str(current_file), str(result_dir), page_order, password)
@@ -2498,6 +2556,7 @@ async def execute_workflow(
 
                 else:
                     yield f"data: {json.dumps({'event': 'error', 'detail': f'Unknown step type: {step_type}'})}\n\n"
+                    step_started = None
                     return
 
                 log_step(step_type, True, step_started, config)
@@ -2529,10 +2588,13 @@ async def execute_workflow(
         except Exception as e:
             if step_started is not None:
                 log_step(step_type, False, step_started, config, err=e)
+                step_started = None
             logger.exception("Workflow failed for %s", safe_filename)
             yield f"data: {json.dumps({'event': 'error', 'detail': event_log.scrub_paths(str(e))})}\n\n"
         
         finally:
+            if step_started is not None:
+                return
             # Clean up the upload plus every intermediate step output. The final
             # deliverable is never renamed into intermediate_files, so it stays
             # for the client's follow-up download; only the throwaway temps go.
@@ -2821,6 +2883,42 @@ async def api_extract_text(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     except Exception as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    finally:
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except PermissionError:
+                pass
+
+
+@app.post("/api/pdf/ocr")
+async def api_ocr_pdf(
+    file: UploadFile = File(...),
+    lang: str = Form("en"),
+    password: str = Form(None),
+):
+    """Create a searchable PDF by adding an invisible OCR text layer."""
+    safe_filename = secure_filename(file.filename)
+    temp_path = await save_upload(file, PDF_EXTENSIONS)
+    result_dir = new_result_dir()
+    try:
+        result = await event_log.timed(
+            "pdf_ocr",
+            run_in_threadpool(
+                ocr_pdf_to_searchable_pdf, str(temp_path), str(result_dir), password or None, lang
+            ),
+        )
+        return {
+            "status": "success",
+            "message": f"Searchable PDF created from {result['page_count']} page(s)",
+            **download_fields(result["output_path"]),
+            "page_count": result["page_count"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
+    except Exception as e:
+        logger.exception("Searchable PDF OCR failed for %s", safe_filename)
         raise HTTPException(status_code=400, detail=event_log.scrub_paths(str(e)))
     finally:
         if temp_path.exists():

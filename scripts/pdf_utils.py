@@ -241,6 +241,81 @@ def extract_pdf_pages(input_path: str, output_dir: str, pages: str, password: st
     return str(output_file)
 
 
+def _split_pdf_groups(total_pages: int, mode: str, ranges: str = None, n: int = None) -> List[List[int]]:
+    """Return zero-based page groups for split-to-ZIP modes."""
+    if total_pages > MAX_PDF_RENDER_PAGES:
+        raise ValueError(f"PDF has too many pages to split at once (max {MAX_PDF_RENDER_PAGES}).")
+
+    mode = (mode or "each").strip().lower()
+    if mode == "each":
+        return [[i] for i in range(total_pages)]
+
+    if mode == "every_n":
+        try:
+            group_size = int(n or 0)
+        except (TypeError, ValueError):
+            group_size = 0
+        if group_size < 1:
+            raise ValueError("Split size must be at least 1 page.")
+        return [list(range(start, min(start + group_size, total_pages))) for start in range(0, total_pages, group_size)]
+
+    if mode == "ranges":
+        if not ranges or not ranges.strip():
+            raise ValueError("Provide one or more page ranges to split.")
+        groups: List[List[int]] = []
+        for segment in ranges.split(","):
+            segment = segment.strip()
+            if segment:
+                groups.append(_parse_page_selection(segment, total_pages))
+        if not groups:
+            raise ValueError("Provide one or more page ranges to split.")
+        return groups
+
+    raise ValueError("mode must be one of: each, every_n, ranges")
+
+
+def _split_pdf_member_name(indices: List[int]) -> str:
+    start = indices[0] + 1
+    end = indices[-1] + 1
+    if len(indices) == 1:
+        return f"page-{start:03d}.pdf"
+    return f"pages-{start:03d}-{end:03d}.pdf"
+
+
+def split_pdf_to_zip(
+    input_path: str,
+    output_dir: str,
+    mode: str = "each",
+    ranges: str = None,
+    n: int = None,
+    password: str = None,
+) -> dict:
+    """Split a PDF into several PDFs and package them in a ZIP."""
+    import io
+    import zipfile
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / branded_filename(input_file, "zip")
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+
+    try:
+        with pikepdf.open(decrypted_path) as pdf:
+            groups = _split_pdf_groups(len(pdf.pages), mode, ranges, n)
+            with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for indices in groups:
+                    out_pdf = pikepdf.Pdf.new()
+                    for idx in indices:
+                        out_pdf.pages.append(pdf.pages[idx])
+                    buf = io.BytesIO()
+                    out_pdf.save(buf)
+                    zf.writestr(_split_pdf_member_name(indices), buf.getvalue())
+    finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return {"output_path": str(output_file), "file_count": len(groups)}
+
+
 def _normalize_extracted_text(text: str) -> str:
     """Collapse page text into readable plain text without preserving layout spacing."""
     lines = [" ".join(line.split()) for line in text.splitlines()]
@@ -251,6 +326,31 @@ def _normalize_extracted_text(text: str) -> str:
 TEXT_LAYER_MIN_CHARS_PER_PAGE = 40
 TEXT_LAYER_MIN_WORDS_PER_PAGE = 6
 TEXT_LAYER_MIN_PAGE_FRACTION = 0.8  # doc-level: fraction of pages that must qualify
+MAX_PDF_RENDER_PIXELS = 20_000_000
+MAX_PDF_RENDER_PAGES = 200
+
+
+def _page_render_pixels(page, dpi: int) -> float:
+    rect = getattr(page, "rect", None)
+    if rect is None:
+        return 0.0
+    scale = float(dpi) / 72.0
+    return float(rect.width) * float(rect.height) * scale * scale
+
+
+def _validate_page_render_budget(page, dpi: int) -> None:
+    pixels = _page_render_pixels(page, dpi)
+    if pixels > MAX_PDF_RENDER_PIXELS:
+        raise ValueError(
+            f"Page render would exceed {MAX_PDF_RENDER_PIXELS:,} pixels at {dpi} DPI."
+        )
+
+
+def _validate_pdf_render_plan(doc, dpi: int) -> None:
+    if len(doc) > MAX_PDF_RENDER_PAGES:
+        raise ValueError(f"PDF has too many pages to render at once (max {MAX_PDF_RENDER_PAGES}).")
+    for page in doc:
+        _validate_page_render_budget(page, dpi)
 
 
 def _page_has_usable_text(page) -> bool:
@@ -262,6 +362,13 @@ def _page_has_usable_text(page) -> bool:
         non_ws_chars >= TEXT_LAYER_MIN_CHARS_PER_PAGE
         and len(words) >= TEXT_LAYER_MIN_WORDS_PER_PAGE
     )
+
+
+def _page_has_images(page) -> bool:
+    try:
+        return bool(page.get_images(full=True))
+    except Exception:
+        return False
 
 
 def _inspect_text_layer(doc: "fitz.Document") -> dict:
@@ -284,6 +391,7 @@ def _inspect_text_layer(doc: "fitz.Document") -> dict:
 
 def _render_page_bgr(page, dpi: int = 200):
     """Render a PDF page to a BGR numpy image for OCR."""
+    _validate_page_render_budget(page, dpi)
     pix = page.get_pixmap(dpi=dpi)
     img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
 
@@ -921,6 +1029,7 @@ def pdf_to_images_zip(
     try:
         doc = fitz.open(decrypted_path)
         try:
+            _validate_pdf_render_plan(doc, dpi)
             page_count = len(doc)
             with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(doc, start=1):
@@ -1927,6 +2036,7 @@ def pdf_to_pptx(
 
     try:
         doc = fitz.open(decrypted_path)
+        _validate_pdf_render_plan(doc, dpi)
         prs = Presentation()
 
         # PowerPoint supports only ONE slide size for the whole deck (a hard limit
@@ -2036,8 +2146,12 @@ def extract_text_from_pdf(
                 text = page.get_text().strip()
             native_page_text.append(text)
 
+        needs_ocr = [
+            not text and _page_has_images(doc[i])
+            for i, text in enumerate(native_page_text)
+        ]
         engine = None
-        if any(not text for text in native_page_text):
+        if any(needs_ocr):
             from scripts.ocr_engine import get_ocr_engine
             engine = get_ocr_engine()
 
@@ -2045,7 +2159,7 @@ def extract_text_from_pdf(
         for i, page in enumerate(doc):
             page_text = native_page_text[i]
 
-            if not page_text and engine is not None:
+            if not page_text and needs_ocr[i] and engine is not None:
                 img = _render_page_bgr(page)
                 items = engine.recognize(img)
                 page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
@@ -2058,6 +2172,87 @@ def extract_text_from_pdf(
         full_text = "\n\n".join(all_text) if all_text else "(No text found in document)"
         output_file.write_text(full_text, encoding="utf-8")
     finally:
+        if needs_cleanup:
+            Path(decrypted_path).unlink(missing_ok=True)
+
+    return {"output_path": str(output_file), "page_count": page_count}
+
+
+def _ocr_item_rect(item: dict, page, image_width: int, image_height: int):
+    bbox = item.get("bbox") or []
+    try:
+        xs = [float(pt[0]) for pt in bbox]
+        ys = [float(pt[1]) for pt in bbox]
+    except (TypeError, ValueError, IndexError):
+        return None
+    if not xs or not ys or image_width <= 0 or image_height <= 0:
+        return None
+
+    scale_x = float(page.rect.width) / float(image_width)
+    scale_y = float(page.rect.height) / float(image_height)
+    x0 = max(0.0, min(xs) * scale_x)
+    x1 = min(float(page.rect.width), max(xs) * scale_x)
+    y0 = max(0.0, min(ys) * scale_y)
+    y1 = min(float(page.rect.height), max(ys) * scale_y)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return fitz.Rect(x0, y0, x1, y1)
+
+
+def ocr_pdf_to_searchable_pdf(
+    input_path: str,
+    output_dir: str,
+    password: str = None,
+    lang: str = "en",
+) -> dict:
+    """Add an invisible OCR text layer to an image-only PDF."""
+    if (lang or "en").strip().lower() != "en":
+        raise ValueError("Only English OCR is available in the free searchable PDF tool.")
+
+    from scripts.ocr_engine import get_ocr_engine
+
+    engine = get_ocr_engine()
+    if engine is None:
+        raise ValueError("OCR is not configured on this deployment.")
+
+    input_file = Path(input_path)
+    output_file = Path(output_dir) / branded_filename(input_file, "pdf")
+    decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
+    doc = None
+    page_count = 0
+    inserted = 0
+
+    try:
+        doc = fitz.open(decrypted_path)
+        page_count = len(doc)
+        _validate_pdf_render_plan(doc, 200)
+        for page in doc:
+            img = _render_page_bgr(page)
+            height, width = img.shape[:2]
+            for item in engine.recognize(img):
+                text = (item.get("text") or "").strip()
+                if not text:
+                    continue
+                rect = _ocr_item_rect(item, page, width, height)
+                if rect is None:
+                    continue
+                font_size = max(4.0, min(12.0, rect.height * 0.85))
+                page.insert_textbox(
+                    rect,
+                    text,
+                    fontname="helv",
+                    fontsize=font_size,
+                    render_mode=3,
+                    overlay=True,
+                )
+                inserted += 1
+
+        if inserted == 0:
+            raise ValueError("No text could be recognized in this PDF.")
+        doc.save(str(output_file), garbage=4, deflate=True)
+    finally:
+        if doc is not None:
+            doc.close()
         if needs_cleanup:
             Path(decrypted_path).unlink(missing_ok=True)
 
@@ -2225,6 +2420,7 @@ def pdf_to_epub(
         if len(doc) > 0:
             try:
                 cover_page = doc[0]
+                _validate_page_render_budget(cover_page, 150)
                 pix = cover_page.get_pixmap(dpi=150)
                 cover_bytes = pix.tobytes("jpeg")
                 book.set_cover("cover.jpg", cover_bytes)

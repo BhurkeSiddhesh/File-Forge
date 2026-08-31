@@ -1,4 +1,5 @@
 from pathlib import Path
+import zipfile
 import pytest
 import pikepdf
 import fitz
@@ -7,7 +8,7 @@ from reportlab.pdfgen import canvas
 from scripts.pdf_utils import (
     remove_pdf_password, pdf_to_docx, extract_pdf_pages, compress_pdf, extract_pdf_text,
     extract_text_from_pdf, _parse_page_selection, _inspect_text_layer, pdf_to_word_ai,
-    pdf_to_epub,
+    pdf_to_epub, split_pdf_to_zip, ocr_pdf_to_searchable_pdf,
 )
 import scripts.pdf_utils as pdf_utils_module
 import scripts.ocr_engine as ocr_engine
@@ -37,6 +38,17 @@ def test_pdf_to_docx(sample_pdf, tmp_path):
     assert output_path.suffix == ".docx"
     assert output_path.stem == f"{sample_pdf.stem}_forgefiles.org"
 
+
+def test_pdf_render_budget_rejects_huge_page_before_rasterizing():
+    doc = fitz.open()
+    try:
+        doc.new_page(width=20000, height=20000)
+        with pytest.raises(ValueError, match="20,000,000"):
+            pdf_utils_module._validate_pdf_render_plan(doc, 150)
+    finally:
+        doc.close()
+
+
 def test_extract_pdf_pages(multi_page_pdf, tmp_path):
     """Test extracting selected pages from a PDF."""
     output_path_str = extract_pdf_pages(str(multi_page_pdf), str(tmp_path), "1,3-4")
@@ -47,6 +59,31 @@ def test_extract_pdf_pages(multi_page_pdf, tmp_path):
 
     with pikepdf.open(output_path) as pdf:
         assert len(pdf.pages) == 3
+
+
+def test_split_pdf_each_page_creates_zip_members(multi_page_pdf, tmp_path):
+    result = split_pdf_to_zip(str(multi_page_pdf), str(tmp_path), mode="each")
+    output_path = Path(result["output_path"])
+
+    assert output_path.name == "multi_sample_forgefiles.org.zip"
+    assert result["file_count"] == 4
+    with zipfile.ZipFile(output_path) as zf:
+        assert zf.namelist() == ["page-001.pdf", "page-002.pdf", "page-003.pdf", "page-004.pdf"]
+        for name in zf.namelist():
+            with pikepdf.open(zf.open(name)) as pdf:
+                assert len(pdf.pages) == 1
+
+
+def test_split_pdf_custom_ranges_creates_expected_page_counts(multi_page_pdf, tmp_path):
+    result = split_pdf_to_zip(str(multi_page_pdf), str(tmp_path), mode="ranges", ranges="1-2,3-4")
+
+    with zipfile.ZipFile(result["output_path"]) as zf:
+        assert zf.namelist() == ["pages-001-002.pdf", "pages-003-004.pdf"]
+        counts = []
+        for name in zf.namelist():
+            with pikepdf.open(zf.open(name)) as pdf:
+                counts.append(len(pdf.pages))
+    assert counts == [2, 2]
 
 
 def test_extract_pdf_text_creates_txt_file(sample_pdf, tmp_path):
@@ -506,6 +543,30 @@ def test_extract_text_from_pdf_scanned_pdf_no_ocr_engine_stays_placeholder(scann
     result = extract_text_from_pdf(str(scanned_like_pdf), str(tmp_path))
     text = Path(result["output_path"]).read_text(encoding="utf-8")
     assert "No text found" in text
+
+
+def test_ocr_pdf_to_searchable_pdf_adds_invisible_text_layer(scanned_like_pdf, tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+
+    fake_engine = MagicMock()
+    fake_engine.recognize.return_value = [
+        {
+            "text": "Recognized searchable phrase",
+            "bbox": [[200, 200], [1400, 200], [1400, 360], [200, 360]],
+        }
+    ]
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: fake_engine)
+
+    with fitz.open(scanned_like_pdf) as before_doc:
+        before_pixels = before_doc[0].get_pixmap(dpi=72).samples
+
+    result = ocr_pdf_to_searchable_pdf(str(scanned_like_pdf), str(tmp_path))
+    output_path = Path(result["output_path"])
+
+    assert output_path.name == "scanned_forgefiles.org.pdf"
+    with fitz.open(output_path) as after_doc:
+        assert "Recognized searchable phrase" in after_doc[0].get_text()
+        assert after_doc[0].get_pixmap(dpi=72).samples == before_pixels
 
 
 def test_pdf_to_epub_ocrs_scanned_pdf(scanned_like_pdf, tmp_path, monkeypatch):

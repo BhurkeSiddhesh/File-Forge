@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 import os
 import pikepdf
+import zipfile
 
 # Removed global client = TestClient(app)
 
@@ -85,6 +86,24 @@ def test_api_extract_pages(multi_page_pdf, mock_dirs, auth_client):
 
     with pikepdf.open(output_path) as pdf:
         assert len(pdf.pages) == 2
+
+
+def test_api_split_pdf_returns_zip(multi_page_pdf, mock_dirs, auth_client):
+    with open(multi_page_pdf, "rb") as f:
+        files = {"file": (multi_page_pdf.name, f, "application/pdf")}
+        response = auth_client.post(
+            "/api/pdf/split",
+            files=files,
+            data={"mode": "ranges", "ranges": "1-2,3-4"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["file_count"] == 2
+    output_path = result_path(mock_dirs["output"], data)
+    with zipfile.ZipFile(output_path) as zf:
+        assert zf.namelist() == ["pages-001-002.pdf", "pages-003-004.pdf"]
 
 def test_download_file(sample_pdf, mock_dirs, auth_client):
     # First generate the file
@@ -293,6 +312,29 @@ def test_api_extract_text_path_traversal_sanitized(sample_pdf, mock_dirs, auth_c
     filename = response.json()["filename"]
     assert "/" not in filename
     assert "\\" not in filename
+
+
+def test_api_ocr_pdf_creates_searchable_pdf(scanned_like_pdf, mock_dirs, auth_client, monkeypatch):
+    import scripts.ocr_engine as ocr_engine
+
+    class FakeEngine:
+        def recognize(self, image):
+            return [{
+                "text": "Endpoint searchable phrase",
+                "bbox": [[200, 200], [1400, 200], [1400, 360], [200, 360]],
+            }]
+
+    monkeypatch.setattr(ocr_engine, "get_ocr_engine", lambda *a, **k: FakeEngine())
+    with open(scanned_like_pdf, "rb") as f:
+        files = {"file": (scanned_like_pdf.name, f, "application/pdf")}
+        response = auth_client.post("/api/pdf/ocr", files=files)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    output_path = result_path(mock_dirs["output"], data)
+    with pikepdf.open(output_path) as pdf:
+        assert len(pdf.pages) == 1
 
 
 # ---------------------------------------------------------------------------
