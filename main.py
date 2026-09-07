@@ -90,6 +90,7 @@ from scripts.ppt_utils import (
 from scripts import seo_content
 from scripts import blog_content
 from scripts import event_log
+from scripts import ga4_mp
 
 PROD = os.environ.get("ENV") == "production"
 
@@ -1314,11 +1315,14 @@ async def event_context_middleware(request: Request, call_next):
     # request body, not the file — close enough to answer "are the slow runs
     # just the big files?", which is the question p95 alone can't.
     bytes_token = event_log.set_request_bytes(_content_length(request))
+    ga_cid = ga4_mp.extract_client_id(request)
+    ga_token = ga4_mp.set_request_client_id(ga_cid)
     try:
         response = await call_next(request)
     finally:
         event_log.reset_request_context(token)
         event_log.reset_request_bytes(bytes_token)
+        ga4_mp.reset_request_client_id(ga_token)
     if is_new_session:
         response.set_cookie(
             SESSION_COOKIE_NAME,

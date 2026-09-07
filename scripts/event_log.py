@@ -28,6 +28,14 @@ from urllib.parse import urlsplit
 
 logger = logging.getLogger("file_forge.event_log")
 
+try:
+    from scripts import ga4_mp
+except ImportError:
+    try:
+        import ga4_mp
+    except ImportError:
+        ga4_mp = None
+
 _BASE_DIR = Path(__file__).resolve().parent.parent
 
 _SCHEMA = """
@@ -330,6 +338,14 @@ def log_event(
         ),
         f"operation event for {operation}",
     )
+    if ga4_mp is not None:
+        try:
+            if success:
+                ga4_mp.send_processing_completed(operation, duration_ms=duration_ms)
+            else:
+                ga4_mp.send_processing_failed(operation, error=error, duration_ms=duration_ms)
+        except Exception:
+            logger.debug("Failed to dispatch GA4 MP event from log_event", exc_info=True)
 
 
 async def alog_event(operation: str, **kwargs) -> None:
@@ -348,6 +364,11 @@ async def timed(operation: str, awaitable: Awaitable, use_ai: bool = False):
     endpoint in main.py, so a synchronous SQLite write here landed on the event
     loop and stalled every *other* in-flight request too.
     """
+    if ga4_mp is not None:
+        try:
+            ga4_mp.send_processing_started(operation)
+        except Exception:
+            pass
     started = time.perf_counter()
     try:
         result = await awaitable
@@ -384,6 +405,11 @@ def timed_call(
     Raw worker threads don't inherit contextvars, so callers there pass
     country/session_id/request_bytes explicitly — same reason for all three.
     """
+    if ga4_mp is not None:
+        try:
+            ga4_mp.send_processing_started(operation)
+        except Exception:
+            pass
     started = time.perf_counter()
     try:
         result = fn(*args, **kwargs)
