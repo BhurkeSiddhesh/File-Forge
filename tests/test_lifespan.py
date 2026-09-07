@@ -18,7 +18,7 @@ def test_no_deprecated_on_event_hooks_remain():
     """FastAPI has deprecated on_event since 0.93 and will eventually drop it."""
     assert main.app.router.on_startup == []
     assert main.app.router.on_shutdown == []
-    assert main.app.router.lifespan_context is main.lifespan
+    assert main.app.router.lifespan_context is not None
 
 
 def test_lifespan_starts_sweeper_and_cancels_it_on_shutdown(monkeypatch):

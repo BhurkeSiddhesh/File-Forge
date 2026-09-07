@@ -6,9 +6,9 @@ import threading
 
 try:
     import paddleocr  # noqa: F401
-except ImportError:
+except Exception:
     # paddleocr is a heavy optional dependency; stub it so PPStructure can be
-    # patched in environments where it isn't installed (e.g. lightweight CI).
+    # patched when it is absent or incompatible with the local Python stack.
     sys.modules["paddleocr"] = MagicMock()
 
 class TestPdfUtilsSingleton(unittest.TestCase):
