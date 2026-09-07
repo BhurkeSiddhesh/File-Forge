@@ -100,3 +100,51 @@ def test_frontend_mirrors_safe_intent_events_to_ga4():
     assert "file_processed" in script
     assert "file_downloaded" in script
     assert "filename" not in script.partition("function ffTrackGoogleAnalytics")[2].partition("function ffTrackPageView")[0]
+
+
+def test_ga_disabled_when_configuration_absent(client):
+    main.GA_MEASUREMENT_ID = ""
+    main.GA_ANALYTICS_HTML = ""
+    main._render_page.cache_clear()
+
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "googletagmanager.com/gtag/js" not in res.text
+    assert "window.ffAnalytics" not in res.text
+
+
+def test_build_ga_analytics_supports_structured_parameters(ga_enabled):
+    ga_html = main._build_ga_analytics()
+    assert "var p=(label&&typeof label==='object')" in ga_html
+    assert "window.gtag('event',name,p);" in ga_html
+
+
+def test_frontend_script_contains_canonical_events():
+    script = (main.BASE_DIR / "static" / "script.js").read_text(encoding="utf-8")
+
+    assert "file_selected" in script
+    assert "processing_cancelled" in script
+    assert "file_downloaded" in script
+    assert "tool_open" in script
+    assert "page_view" in script
+    assert "function ffSanitizeAnalyticsParams(params)" in script
+    assert "function ffExtractFileType(file)" in script
+
+
+def test_first_party_api_track_remains_compatible(client):
+    # Old legacy payload with string label
+    res1 = client.post("/api/track", json={"event": "page_view", "label": "/"})
+    assert res1.status_code == 204
+
+    # Funnel event with tool label
+    res2 = client.post("/api/track", json={"event": "tool_open", "label": "pdf_to_word"})
+    assert res2.status_code == 204
+
+    # Unknown event (should be ignored safely with 204)
+    res3 = client.post("/api/track", json={"event": "unknown_test_event", "label": "foo"})
+    assert res3.status_code == 204
+
+    # Malformed payload (should answer 204 without crashing)
+    res4 = client.post("/api/track", content=b"not-json", headers={"Content-Type": "application/json"})
+    assert res4.status_code == 204
+

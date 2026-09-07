@@ -456,9 +456,12 @@ def _build_ga_analytics() -> str:
         'page_location:locationHref||window.location.href,'
         "transport_type:'beacon'});}catch(e){}}\n"
         '      function event(name,label){try{'
-        "if(name==='page_view'){pageView(label||window.location.pathname||'/');return;}"
-        "window.gtag('event',name,{event_category:'intent',event_label:label||'',"
-        "tool_label:label||'',transport_type:'beacon'});"
+        "if(name==='page_view'){"
+        "var p=(label&&typeof label==='object')?(label.page_path||window.location.pathname||'/'):(label||window.location.pathname||'/');"
+        "pageView(p);return;}"
+        "var p=(label&&typeof label==='object')?Object.assign({},label):{event_category:'intent',event_label:label||'',tool_label:label||'',tool_name:label||''};"
+        "if(!p.transport_type){p.transport_type='beacon';}"
+        "window.gtag('event',name,p);"
         '}catch(e){}}\n'
         '      window.ffAnalytics={pageView:pageView,event:event};\n'
         '      if(!window.FF_GA_MANUAL_PAGEVIEW){pageView(window.location.pathname||\'/\');}\n'

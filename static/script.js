@@ -15,9 +15,68 @@
 // server-side (never stored as a full URL). It has to come from here: the
 // Referer header on the beacon itself is our own page, so the server has no
 // other way to see which site sent the visitor.
+// Valid coarse error categories
+const FF_ERROR_CATEGORIES = new Set([
+    'timeout', 'unsupported_file', 'invalid_file', 'libreoffice',
+    'ocr', 'conversion_error', 'rate_limited', 'server_error', 'cancelled'
+]);
+
+// Forbidden keys that must never be sent to analytics
+const FF_FORBIDDEN_ANALYTICS_KEYS = new Set([
+    'filename', 'file_name', 'file', 'files', 'file_content', 'content', 'contents',
+    'text', 'ocr_text', 'document_text', 'email', 'user_id', 'userid', 'supabase_id',
+    'request_id', 'requestid', 'order_id', 'orderid', 'stack_trace', 'stacktrace',
+    'traceback', 'path', 'temp_path', 'filepath', 'file_path', 'exception',
+    'exception_message', 'raw_error', 'ip', 'ip_address', 'password', 'token'
+]);
+
+function ffExtractFileType(file) {
+    if (!file) return null;
+    let name = (typeof file === 'string') ? file : (file.name || file.type || '');
+    if (name.indexOf('/') !== -1) name = name.split('/').pop().split('+')[0];
+    if (name.indexOf('.') !== -1) name = name.split('.').pop();
+    name = String(name).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
+    if (name === 'jpeg') name = 'jpg';
+    return name || null;
+}
+
+function ffSanitizeAnalyticsParams(params) {
+    if (!params || typeof params !== 'object') return {};
+    const sanitized = {};
+    for (const key in params) {
+        if (!Object.prototype.hasOwnProperty.call(params, key)) continue;
+        const k = String(key).toLowerCase().trim();
+        if (FF_FORBIDDEN_ANALYTICS_KEYS.has(k)) continue;
+        const val = params[key];
+        if (val === null || val === undefined) continue;
+
+        if (k === 'tool_name') {
+            const s = String(val).toLowerCase().replace(/[-_](?:btn|button|card|action)$/, '').replace(/[- /]/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 50);
+            if (s) sanitized.tool_name = s;
+        } else if (k === 'file_type') {
+            const cleanType = ffExtractFileType(val);
+            if (cleanType) sanitized.file_type = cleanType;
+        } else if (k === 'error_category') {
+            const s = String(val).toLowerCase();
+            sanitized.error_category = FF_ERROR_CATEGORIES.has(s) ? s : 'conversion_error';
+        } else if (k === 'processing_duration_ms') {
+            const n = Number(val);
+            if (!isNaN(n) && n >= 0 && n <= 86400000) sanitized.processing_duration_ms = Math.round(n);
+        } else if (k === 'page_path' || k === 'page_title') {
+            sanitized[k] = String(val).slice(0, 120);
+        }
+    }
+    return sanitized;
+}
+
 function ffTrackGoogleAnalytics(event, label) {
     try {
         if (!window.ffAnalytics || typeof window.ffAnalytics.event !== 'function') return;
+        if (label && typeof label === 'object') {
+            const sanitized = ffSanitizeAnalyticsParams(label);
+            window.ffAnalytics.event(event, sanitized);
+            return;
+        }
         window.ffAnalytics.event(event, label || '');
     } catch (e) { /* third-party analytics must never break the app */ }
 }
@@ -33,9 +92,15 @@ function ffTrackPageView(path, title) {
 function ffTrack(event, label) {
     ffTrackGoogleAnalytics(event, label);
     try {
+        let firstPartyLabel = null;
+        if (label && typeof label === 'object') {
+            firstPartyLabel = label.tool_name || label.file_type || label.label || null;
+        } else if (label) {
+            firstPartyLabel = String(label);
+        }
         const payload = JSON.stringify({
             event: event,
-            label: label || null,
+            label: firstPartyLabel,
             ref: event === 'page_view' ? (document.referrer || '') : undefined,
         });
         const url = (typeof apiUrl === 'function') ? apiUrl('/api/track') : '/api/track';
@@ -51,6 +116,8 @@ function ffTrack(event, label) {
 }
 window.ffTrack = ffTrack;
 window.ffTrackPageView = ffTrackPageView;
+window.ffSanitizeAnalyticsParams = ffSanitizeAnalyticsParams;
+window.ffExtractFileType = ffExtractFileType;
 
 // One page_view per app load. The home app is a single page (tool drill-downs
 // don't change the URL), so this fires once; the server-rendered landing pages
@@ -174,6 +241,7 @@ function ffCancelInflight() {
         ffInflightAbort = null;
         ffSetCancelVisible(false);
         ffNotify('Conversion cancelled.');
+        try { ffTrack('processing_cancelled', { tool_name: ffFunnelLabel() }); } catch (e) { }
     }
 }
 
@@ -268,7 +336,8 @@ function updateDownloadLink(element, token, filename) {
         element.setAttribute('download', filename || local.filename);
 
         element.onclick = async (e) => {
-            ffTrack('file_downloaded', ffFunnelLabel());
+            const dlType = ffExtractFileType(local ? local.filename : filename) || 'pdf';
+            ffTrack('file_downloaded', { tool_name: ffFunnelLabel(), file_type: dlType });
             // Inside the app there is no download manager to hand a blob URL
             // to; write the bytes out and offer the system share sheet. On the
             // web (and in a build without the plugins) this is a no-op and the
@@ -308,7 +377,8 @@ function updateDownloadLink(element, token, filename) {
 
             // If OK, let the browser proceed with the native download via element.href.
             // This avoids loading the entire file into memory as a Blob.
-            ffTrack('file_downloaded', ffFunnelLabel());
+            const dlType = ffExtractFileType(filename || element.getAttribute('download')) || 'pdf';
+            ffTrack('file_downloaded', { tool_name: ffFunnelLabel(), file_type: dlType });
             return true;
 
         } catch (error) {
@@ -349,7 +419,7 @@ document.addEventListener('click', (e) => {
     // Funnel step at tool granularity. The category-level tool_open from
     // showDrillDown() still fires; the global funnel counts distinct sessions
     // per stage, so the extra row can't inflate it.
-    ffTrack('tool_open', currentOp);
+    ffTrack('tool_open', { tool_name: currentOp });
 });
 
 // Highlights the action card the visitor picked and clears the previous pick
@@ -432,7 +502,7 @@ function showDrillDown(tool, instant) {
     ffUpdateStepTracker(tool, 1);
 
     // Funnel step: visitor opened a tool category from the home grid.
-    ffTrack('tool_open', tool);
+    ffTrack('tool_open', { tool_name: tool });
     ffTrackPageView('/app/' + encodeURIComponent(tool), document.title);
 
     const reveal = () => {
@@ -623,6 +693,7 @@ function handleFiles(files) {
     document.getElementById('status-display').classList.add('hidden');
     ffUpdateStepTracker('pdf', 2);
     ffConsumePendingOp();
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'pdf', file_type: 'pdf' }); } catch (e) { }
 }
 
 function handleFile(file) {
@@ -643,6 +714,7 @@ function handleFile(file) {
     if (extractInput) extractInput.value = '';
     ffUpdateStepTracker('pdf', 2);
     ffConsumePendingOp();
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'pdf', file_type: 'pdf' }); } catch (e) { }
 }
 
 // Actions
@@ -1337,6 +1409,7 @@ function handleImageFile(file) {
     selectedImageFile = file;
     imageFilenameDisplay.textContent = file.name;
     imageFileInfo.classList.remove('hidden');
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'image', file_type: ffExtractFileType(file) || 'jpg' }); } catch (e) { }
     if (qualitySlider) {
         ffPreviewJpegQuality(file, qualitySlider.value,
             'jpeg-quality-preview-img', 'jpeg-quality-preview-label', 'jpeg-quality-preview');
@@ -2707,6 +2780,7 @@ function handleExcelFiles(files) {
     document.getElementById('excel-result-display').classList.add('hidden');
     ffUpdateStepTracker('excel', 2);
     ffConsumePendingOp();
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'excel', file_type: ffExtractFileType(files && files[0]) || 'xlsx' }); } catch (e) { }
 }
 
 if (excelDropZone) {
@@ -2859,6 +2933,7 @@ function handlePptFiles(files) {
     document.getElementById('ppt-result-display').classList.add('hidden');
     ffUpdateStepTracker('ppt', 2);
     ffConsumePendingOp();
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'ppt', file_type: ffExtractFileType(files && files[0]) || 'pptx' }); } catch (e) { }
 }
 
 if (pptDropZone) {
@@ -3211,6 +3286,7 @@ function handleWordFile(file) {
     document.getElementById('word-result-display').classList.add('hidden');
     ffUpdateStepTracker('word', 2);
     ffConsumePendingOp();
+    try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'word', file_type: ffExtractFileType(file) || 'docx' }); } catch (e) { }
 }
 
 if (wordDropZone) {
