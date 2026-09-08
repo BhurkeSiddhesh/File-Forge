@@ -25,6 +25,19 @@ def test_set_result_marks_the_job_done():
     assert entry["event"] == {"event": "complete", "download_token": "tok123"}
 
 
+def test_progress_is_available_while_pending_and_retained_at_completion():
+    registry = main.JobRegistry()
+    job_id = registry.create()
+    progress = {"event": "step_start", "step": 1, "total": 3}
+    registry.set_progress(job_id, progress)
+
+    assert registry.get(job_id)["progress"] == progress
+    registry.set_result(job_id, {"event": "complete"})
+    entry = registry.get(job_id)
+    assert entry["status"] == "done"
+    assert entry["progress"] == progress
+
+
 def test_get_returns_none_for_unknown_job():
     registry = main.JobRegistry()
     assert registry.get("never-created") is None

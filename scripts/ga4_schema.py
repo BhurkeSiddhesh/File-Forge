@@ -208,16 +208,21 @@ EVENT_DEFINITIONS: Dict[CanonicalEvent, EventDefinition] = {
     ),
     CanonicalEvent.PROCESSING_COMPLETED: EventDefinition(
         name=CanonicalEvent.PROCESSING_COMPLETED,
-        owner=EventOwner.BACKEND,
-        description="File processing completed successfully. Primary authoritative conversion success event.",
+        owner=EventOwner.DUAL,
+        description=(
+            "File processing completed successfully. Primary authoritative conversion success event. "
+            "Server-side operations: emitted by backend Measurement Protocol only (never double-counted by frontend). "
+            "Local/on-device operations: emitted by frontend gtag directly (no backend MP path available). "
+            "A single conversion must produce exactly one processing_completed event."
+        ),
         allowed_parameters=["tool_name", "file_type", "processing_duration_ms"],
         candidate_key_event=True,
     ),
     CanonicalEvent.PROCESSING_FAILED: EventDefinition(
         name=CanonicalEvent.PROCESSING_FAILED,
-        owner=EventOwner.BACKEND,
-        description="File processing failed with an error, categorized coarsely.",
-        allowed_parameters=["tool_name", "file_type", "error_category"],
+        owner=EventOwner.DUAL,
+        description="File processing failed with an error, categorized coarsely. processing_duration_ms records how long the failed operation ran (useful for 'which tools fail after long attempts?' analysis).",
+        allowed_parameters=["tool_name", "file_type", "error_category", "processing_duration_ms"],
         candidate_key_event=False,
     ),
     CanonicalEvent.PROCESSING_CANCELLED: EventDefinition(

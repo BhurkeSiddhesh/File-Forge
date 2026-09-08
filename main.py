@@ -953,8 +953,22 @@ class JobRegistry:
     def set_result(self, job_id: str, event: dict) -> None:
         """Record the job's terminal SSE event (a 'complete' or 'error' payload)."""
         with self._lock:
-            created = self._entries.get(job_id, {}).get("created", time.monotonic())
-            self._entries[job_id] = {"status": "done", "event": event, "created": created}
+            previous = self._entries.get(job_id, {})
+            created = previous.get("created", time.monotonic())
+            self._entries[job_id] = {
+                "status": "done",
+                "event": event,
+                "progress": previous.get("progress"),
+                "created": created,
+            }
+
+    def set_progress(self, job_id: str, event: dict) -> None:
+        """Retain the most recent non-terminal event for reconnecting clients."""
+        with self._lock:
+            previous = self._entries.get(job_id)
+            if previous is None or previous.get("status") == "done":
+                return
+            previous["progress"] = event
 
     def get(self, job_id: str):
         with self._lock:
@@ -968,6 +982,18 @@ class JobRegistry:
 
 
 app.state.jobs = JobRegistry()
+
+# Strong references for work deliberately detached from an HTTP stream. Python
+# keeps running tasks weakly; without this set, a dropped SSE client could make
+# the only application-level reference to its still-useful workflow disappear.
+_DETACHED_TASKS = set()
+
+
+def _start_detached(coro):
+    task = asyncio.create_task(coro)
+    _DETACHED_TASKS.add(task)
+    task.add_done_callback(_DETACHED_TASKS.discard)
+    return task
 
 
 @app.get("/api/jobs/{job_id}")
@@ -1255,7 +1281,25 @@ async def rate_limit_middleware(request: Request, call_next):
             async for chunk in body_iterator:
                 yield chunk
         finally:
-            gate.release()
+            job_id = response.headers.get("X-FF-Job-ID")
+            if not job_id:
+                gate.release()
+            else:
+                # The client can disconnect while a recoverable SSE job keeps
+                # running. Keep its capacity slot until the underlying job, not
+                # merely the response body, reaches a terminal state (#171).
+                async def release_after_job():
+                    try:
+                        deadline = time.monotonic() + FILE_TTL_SECONDS
+                        while time.monotonic() < deadline:
+                            entry = state.jobs.get(job_id)
+                            if entry is None or entry.get("status") == "done":
+                                break
+                            await asyncio.sleep(0.1)
+                    finally:
+                        gate.release()
+
+                _start_detached(release_after_job())
 
     response.body_iterator = release_after_body()
     return response
@@ -1517,9 +1561,12 @@ async def api_convert_to_word_stream(
         events = queue_mod.Queue()
 
         def progress_cb(page_done, total_pages):
-            events.put({"event": "progress", "page": page_done, "total": total_pages})
+            progress_event = {"event": "progress", "page": page_done, "total": total_pages}
+            app.state.jobs.set_progress(job_id, progress_event)
+            events.put(progress_event)
 
         def worker():
+            terminal_event = None
             try:
                 if use_ai:
                     ai_method = {}
@@ -1547,31 +1594,36 @@ async def api_convert_to_word_stream(
                     "method": method,
                     **download_fields(output_path, ctx_session),
                 }
-                app.state.jobs.set_result(job_id, complete_event)
+                terminal_event = complete_event
                 events.put(complete_event)
             except Exception as e:
                 logger.exception("Streaming conversion failed for %s", safe_filename)
                 error_event = {"event": "error", "detail": event_log.scrub_paths(str(e))}
-                app.state.jobs.set_result(job_id, error_event)
+                terminal_event = error_event
                 events.put(error_event)
             finally:
+                # Cleanup belongs to the worker, not the SSE consumer. A client
+                # disconnect must not unlink a file the conversion still reads
+                # or leave it behind until the periodic sweeper (#172).
+                if temp_path.exists():
+                    try:
+                        os.remove(temp_path)
+                    except (PermissionError, OSError):
+                        pass
+                app.state.jobs.set_result(job_id, terminal_event or {
+                    "event": "error",
+                    "detail": "Conversion ended without a result",
+                })
                 events.put(None)  # sentinel: stream finished
 
         yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename, 'job_id': job_id})}\n\n"
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-        try:
-            while True:
-                item = await run_in_threadpool(events.get)
-                if item is None:
-                    break
-                yield f"data: {json.dumps(item)}\n\n"
-        finally:
-            if not thread.is_alive() and temp_path.exists():
-                try:
-                    os.remove(temp_path)
-                except PermissionError:
-                    pass
+        while True:
+            item = await run_in_threadpool(events.get)
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -1580,6 +1632,7 @@ async def api_convert_to_word_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-FF-Job-ID": job_id,
         },
     )
 
@@ -2320,6 +2373,8 @@ async def execute_workflow(
     # Captured here because generate_progress runs while the response streams,
     # outside the middleware's request context.
     wf_country, wf_session = event_log.get_request_context()
+    job_id = app.state.jobs.create()
+    workflow_events = asyncio.Queue()
 
     async def generate_progress():
         """Generator for SSE progress events."""
@@ -2618,13 +2673,57 @@ async def execute_workflow(
             with suppress(OSError):
                 result_dir.rmdir()  # refuses to remove a non-empty directory
 
+    async def run_workflow_job():
+        """Run independently of the SSE consumer and retain the terminal event."""
+        terminal_event = None
+        try:
+            async for chunk in generate_progress():
+                await workflow_events.put(chunk)
+                if chunk.startswith("data: "):
+                    event = json.loads(chunk[6:].strip())
+                    if event.get("event") in {"complete", "error"}:
+                        terminal_event = event
+                    else:
+                        app.state.jobs.set_progress(job_id, event)
+        except Exception as exc:
+            logger.exception("Detached workflow failed for %s", safe_filename)
+            terminal_event = {
+                "event": "error",
+                "detail": event_log.scrub_paths(str(exc)),
+            }
+            await workflow_events.put(f"data: {json.dumps(terminal_event)}\n\n")
+        finally:
+            if terminal_event is None:
+                terminal_event = {
+                    "event": "error",
+                    "detail": "Workflow ended without a result",
+                }
+                await workflow_events.put(f"data: {json.dumps(terminal_event)}\n\n")
+            # generate_progress has completed its own cleanup before this result
+            # becomes visible to polling clients or releases the heavy-job gate.
+            app.state.jobs.set_result(job_id, terminal_event)
+            await workflow_events.put(None)
+
+    async def stream_workflow_events():
+        yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename, 'job_id': job_id})}\n\n"
+        while True:
+            chunk = await workflow_events.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    # Start before returning the response: processing must not depend on the
+    # client reading even the first byte of the SSE stream (#202).
+    _start_detached(run_workflow_job())
+
     return StreamingResponse(
-        generate_progress(),
+        stream_workflow_events(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
+            "X-FF-Job-ID": job_id,
         }
     )
 

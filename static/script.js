@@ -325,7 +325,29 @@ function updateDownloadLink(element, token, filename) {
     // A result is ready for download — the successful end of the processing
     // funnel. Fired once per result, across every tool type, since every
     // success path funnels through updateDownloadLink().
+    //
+    // file_processed → first-party /api/track → /admin/stats only (unchanged)
+    // processing_completed → GA4 canonical key event, but ONLY for local processing.
+    //   Server-side completions already fire processing_completed via backend
+    //   Measurement Protocol (ga4_mp.py). If we fired again here, a single server
+    //   conversion would produce two GA4 key events (double-count).
+    //   Local/on-device processing never hits the backend, so the frontend must
+    //   emit the canonical event — otherwise local conversions are invisible in GA4.
     ffTrack('file_processed', ffFunnelLabel());
+    if (local) {
+        // Local/on-device result: emit canonical processing_completed to GA4.
+        // The backend has no knowledge of this conversion.
+        try {
+            const dlType = ffExtractFileType(local ? local.filename : null) || null;
+            const localParams = ffSanitizeAnalyticsParams({
+                tool_name: ffFunnelLabel(),
+                file_type: dlType,
+            });
+            ffTrackGoogleAnalytics('processing_completed', localParams);
+        } catch (e) { /* analytics must never break the app */ }
+    }
+    // For server-side results (local === null), processing_completed was already
+    // fired by the backend Measurement Protocol — do NOT fire it here.
     ffShowSuccessUpsell(element);
 
     if (local) {
@@ -870,11 +892,11 @@ function formatElapsed(seconds) {
 // it dropped (issue #95) — the worker on the server keeps running and
 // records its outcome under jobId regardless of whether anyone is still
 // listening on the stream.
-async function pollJobStatus(jobId, statusText, maxWaitMs = 6 * 60 * 1000) {
+async function pollJobStatus(jobId, statusText, maxWaitMs = 6 * 60 * 1000, jobLabel = 'conversion') {
     const deadline = Date.now() + maxWaitMs;
     let delay = 1500;
     while (Date.now() < deadline) {
-        if (statusText) statusText.textContent = 'Connection lost — checking whether the conversion finished...';
+        if (statusText) statusText.textContent = `Connection lost — checking whether the ${jobLabel} finished...`;
         try {
             const resp = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`));
             if (resp.ok) {
@@ -2452,6 +2474,18 @@ async function runWorkflow() {
     }))));
 
     const abort = ffStartInflight();
+    let jobId = null;
+    let terminalSeen = false;
+
+    const acceptWorkflowEvent = (data) => {
+        if (data.event === 'start') {
+            jobId = data.job_id || jobId;
+            return;
+        }
+        if (data.event === 'complete' || data.event === 'error') terminalSeen = true;
+        handleWorkflowEvent(data, statusDisplay, resultDisplay);
+    };
+
     try {
         const response = await fetch(apiUrl('/api/workflow/execute'), {
             method: 'POST',
@@ -2468,27 +2502,39 @@ async function runWorkflow() {
         const decoder = new TextDecoder();
         let buffer = '';
 
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+        let streamError = null;
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
+                buffer += decoder.decode(value, { stream: true });
 
-            // Process complete SSE messages
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // Keep incomplete message in buffer
+                // Process complete SSE messages
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep incomplete message in buffer
 
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.substring(6));
-                        console.log("Workflow Event:", data); // Debug log
-                        handleWorkflowEvent(data, statusDisplay, resultDisplay);
-                    } catch (e) {
-                        console.error('Failed to parse SSE data:', e);
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            acceptWorkflowEvent(JSON.parse(line.substring(6)));
+                        } catch (e) {
+                            console.error('Failed to parse SSE data:', e);
+                        }
                     }
                 }
             }
+        } catch (error) {
+            streamError = error;
+        }
+
+        if (!terminalSeen && !(abort && abort.signal.aborted)) {
+            if (!jobId) throw streamError || new Error('The workflow stream ended before it started.');
+            const finalEvent = await pollJobStatus(jobId, statusText, 6 * 60 * 1000, 'workflow');
+            if (!finalEvent) {
+                throw streamError || new Error('The workflow did not complete in time. Please try again.');
+            }
+            acceptWorkflowEvent(finalEvent);
         }
     } catch (error) {
         console.error('Error:', error);

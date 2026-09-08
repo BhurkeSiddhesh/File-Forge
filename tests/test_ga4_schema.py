@@ -59,13 +59,15 @@ def test_candidate_key_events():
 
 
 def test_source_ownership():
+    # Pure frontend events
     assert EVENT_DEFINITIONS[CanonicalEvent.PAGE_VIEW].owner == EventOwner.FRONTEND
     assert EVENT_DEFINITIONS[CanonicalEvent.TOOL_OPEN].owner == EventOwner.FRONTEND
     assert EVENT_DEFINITIONS[CanonicalEvent.FILE_SELECTED].owner == EventOwner.FRONTEND
     assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_CANCELLED].owner == EventOwner.FRONTEND
     assert EVENT_DEFINITIONS[CanonicalEvent.FILE_DOWNLOADED].owner == EventOwner.FRONTEND
-    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_COMPLETED].owner == EventOwner.BACKEND
-    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_FAILED].owner == EventOwner.BACKEND
+    # DUAL: backend MP for server-side; frontend gtag for local on-device processing
+    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_COMPLETED].owner == EventOwner.DUAL
+    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_FAILED].owner == EventOwner.DUAL
     assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_STARTED].owner == EventOwner.DUAL
 
 
@@ -197,3 +199,89 @@ def test_schema_manifest_export():
     loaded = json.loads(json_str)
     assert loaded["version"] == "1.0.0"
     assert "processing_completed" in loaded["events"]
+
+
+# ---------------------------------------------------------------------------
+# Audit fix: processing_duration_ms must survive sanitization in processing_failed
+# ---------------------------------------------------------------------------
+
+def test_processing_failed_allows_duration_ms():
+    """BUG FIX: processing_duration_ms must not be stripped from processing_failed.
+
+    Before this fix, send_processing_failed() added processing_duration_ms to params
+    but PROCESSING_FAILED allowed only ['tool_name', 'file_type', 'error_category'].
+    sanitize_event_params() correctly stripped any key not in allowed_parameters, so
+    the duration was silently discarded. This test verifies the schema was fixed.
+    """
+    raw_params = {
+        'tool_name': 'pdf-to-word',
+        'file_type': 'pdf',
+        'error_category': 'timeout',
+        'processing_duration_ms': 45000,
+    }
+    sanitized = sanitize_event_params('processing_failed', raw_params)
+    assert 'processing_duration_ms' in sanitized, (
+        'processing_duration_ms must survive sanitization in processing_failed events '
+        "to enable 'which tools fail after long processing?' analysis"
+    )
+    assert sanitized['processing_duration_ms'] == 45000
+
+
+def test_processing_failed_duration_ms_is_integer():
+    """Duration stored as integer (rounded ms), not float."""
+    raw_params = {
+        'tool_name': 'compress-pdf',
+        'file_type': 'pdf',
+        'error_category': 'server_error',
+        'processing_duration_ms': '12345.7',
+    }
+    sanitized = sanitize_event_params('processing_failed', raw_params)
+    assert isinstance(sanitized['processing_duration_ms'], int)
+    assert sanitized['processing_duration_ms'] == 12346
+
+
+def test_processing_failed_strips_pii_even_with_duration():
+    """PII must still be stripped from processing_failed even with duration present."""
+    raw_params = {
+        'tool_name': 'ocr-pdf',
+        'file_type': 'pdf',
+        'error_category': 'ocr',
+        'processing_duration_ms': 8000,
+        'filename': 'my_document.pdf',
+        'user_id': 'usr_12345',
+        'stack_trace': 'Traceback...',
+    }
+    sanitized = sanitize_event_params('processing_failed', raw_params)
+    assert sanitized.get('processing_duration_ms') == 8000
+    assert 'filename' not in sanitized
+    assert 'user_id' not in sanitized
+    assert 'stack_trace' not in sanitized
+
+
+def test_processing_completed_allows_duration_ms():
+    """processing_completed already allowed duration -- regression guard."""
+    raw_params = {
+        'tool_name': 'compress-pdf',
+        'file_type': 'pdf',
+        'processing_duration_ms': 3200,
+    }
+    sanitized = sanitize_event_params('processing_completed', raw_params)
+    assert sanitized['processing_duration_ms'] == 3200
+
+
+def test_processing_failed_is_not_key_event():
+    """Only processing_completed is a key event; processing_failed is not."""
+    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_COMPLETED].candidate_key_event is True
+    assert EVENT_DEFINITIONS[CanonicalEvent.PROCESSING_FAILED].candidate_key_event is False
+
+
+def test_required_custom_definitions_marked_in_schema():
+    """All custom-dimension/metric params are flagged requires_custom_definition=True."""
+    for param_name in ('tool_name', 'file_type', 'error_category', 'processing_duration_ms'):
+        assert PARAMETER_DEFINITIONS[param_name].requires_custom_definition is True
+
+
+def test_page_path_and_title_are_built_in_not_custom():
+    """page_path and page_title are built-in GA4 dimensions -- no custom definition needed."""
+    assert PARAMETER_DEFINITIONS['page_path'].requires_custom_definition is False
+    assert PARAMETER_DEFINITIONS['page_title'].requires_custom_definition is False

@@ -198,11 +198,16 @@ async def _dispatch_http(payload: Dict[str, Any], measurement_id: str, api_secre
             )
             if resp.status_code >= 400:
                 logger.warning(
-                    "GA4 Measurement Protocol rejected payload: HTTP %d",
+                    "GA4 Measurement Protocol rejected payload: HTTP %d (reason=rejected)",
+                    resp.status_code,
+                )
+            else:
+                logger.debug(
+                    "GA4 Measurement Protocol event delivered: HTTP %d (reason=success)",
                     resp.status_code,
                 )
     except Exception as exc:
-        logger.warning("GA4 Measurement Protocol delivery failed: %s", type(exc).__name__)
+        logger.warning("GA4 Measurement Protocol delivery failed: %s (reason=network_failure)", type(exc).__name__)
 
 
 def send_ga4_mp_event(
@@ -212,6 +217,10 @@ def send_ga4_mp_event(
 ) -> None:
     """Dispatch a backend GA4 event non-blockingly."""
     if not is_ga4_mp_enabled():
+        logger.debug(
+            "GA4 MP dispatch skipped for '%s': disabled configuration (reason=disabled)",
+            event_name,
+        )
         return
 
     m_id = get_measurement_id()
@@ -220,7 +229,7 @@ def send_ga4_mp_event(
     cid = client_id or get_request_client_id()
     if not cid:
         logger.debug(
-            "Skipping GA4 MP dispatch for '%s': no client_id available for session correlation",
+            "Skipping GA4 MP dispatch for '%s': no client_id available for session correlation (reason=no_client_id)",
             event_name,
         )
         return
@@ -228,7 +237,7 @@ def send_ga4_mp_event(
     try:
         payload = build_mp_payload(event_name, params, cid)
     except Exception as exc:
-        logger.warning("Failed to build GA4 MP payload: %s", exc)
+        logger.warning("Failed to build GA4 MP payload: %s (reason=payload_build_error)", exc)
         return
 
     try:
