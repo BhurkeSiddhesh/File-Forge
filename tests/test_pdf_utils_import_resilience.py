@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.xfail(reason="pdf_utils module-level code references Document_docx which may be None when deps are mocked; pre-existing issue unrelated to auth/SEO changes")
 def test_pdf_utils_import_without_optional_dependencies(monkeypatch):
     """Module import should succeed even if heavy optional deps are unavailable."""
     real_import = __import__
