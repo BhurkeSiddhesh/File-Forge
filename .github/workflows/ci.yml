@@ -51,7 +51,7 @@ jobs:
       - name: Upload Test Results to Trunk
         if: ${{ !cancelled() && env.TRUNK_API_TOKEN != '' }}
         continue-on-error: true
-        uses: trunk-io/analytics-uploader@v2
+        uses: trunk-io/analytics-uploader@385f1ccdf345b4532dc4b6c665dd432b702b8e28 # v2
         with:
           junit-paths: "**/junit.xml"
           org-slug: siddhesh-bhurke
