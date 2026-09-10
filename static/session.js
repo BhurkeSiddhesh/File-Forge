@@ -28,7 +28,7 @@
   // Treat a token expiring within a minute as already expired — the /api/me
   // round trip has to finish inside the window.
   var CLOCK_SKEW_SECONDS = 60;
-  var AD_FREE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  var AD_FREE_TTL_MS = 1 * 60 * 60 * 1000; // 1 hour short-TTL cache (#182)
 
   function readJson(key) {
     try {

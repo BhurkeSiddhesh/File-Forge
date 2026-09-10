@@ -310,6 +310,88 @@ function ffShowSuccessUpsell(downloadEl) {
     downloadEl.parentNode.insertBefore(a, downloadEl.nextSibling);
 }
 
+function ffShowSuccessShare(downloadEl, filename, local) {
+    // Sharing loop (#187): WhatsApp & Web Share API on conversion completion
+    if (!downloadEl || !downloadEl.parentNode) return;
+    let shareContainer = downloadEl.parentNode.querySelector('.ff-share-container');
+    const docName = filename || (local && local.filename ? local.filename : 'document');
+    if (!shareContainer) {
+        shareContainer = document.createElement('div');
+        shareContainer.className = 'ff-share-container';
+        shareContainer.style.marginTop = '8px';
+        shareContainer.style.display = 'flex';
+        shareContainer.style.gap = '8px';
+        shareContainer.style.alignItems = 'center';
+        shareContainer.style.justifyContent = 'center';
+        shareContainer.style.flexWrap = 'wrap';
+
+        // Native Web Share API button
+        const shareBtn = document.createElement('button');
+        shareBtn.type = 'button';
+        shareBtn.className = 'btn secondary-btn ff-share-btn';
+        shareBtn.style.padding = '6px 14px';
+        shareBtn.style.fontSize = '0.85rem';
+        shareBtn.style.cursor = 'pointer';
+        shareBtn.textContent = 'Share';
+
+        shareBtn.onclick = async () => {
+            const shareText = `Converted "${docName}" using Forge Files:`;
+            const shareUrl = window.location.origin;
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Forge Files',
+                        text: shareText,
+                        url: shareUrl,
+                    });
+                    ffTrack('file_shared', { tool_name: ffFunnelLabel(), channel: 'native_share' });
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                }
+            }
+            // Fallback: open WhatsApp
+            const waUrl = 'https://wa.me/?text=' + encodeURIComponent(shareText + ' ' + shareUrl);
+            window.open(waUrl, '_blank', 'noopener,noreferrer');
+            ffTrack('file_shared', { tool_name: ffFunnelLabel(), channel: 'whatsapp_fallback' });
+        };
+
+        // WhatsApp direct link button
+        const waLink = document.createElement('a');
+        waLink.className = 'btn secondary-btn ff-wa-share-btn';
+        waLink.style.padding = '6px 14px';
+        waLink.style.fontSize = '0.85rem';
+        waLink.style.textDecoration = 'none';
+        waLink.style.cursor = 'pointer';
+        waLink.textContent = 'WhatsApp';
+        waLink.target = '_blank';
+        waLink.rel = 'noopener noreferrer';
+        const waText = `Converted "${docName}" using Forge Files: ${window.location.origin}`;
+        waLink.href = 'https://wa.me/?text=' + encodeURIComponent(waText);
+        waLink.onclick = () => {
+            ffTrack('file_shared', { tool_name: ffFunnelLabel(), channel: 'whatsapp' });
+        };
+
+        shareContainer.appendChild(shareBtn);
+        shareContainer.appendChild(waLink);
+
+        const upsell = downloadEl.parentNode.querySelector('.ff-success-upsell');
+        if (upsell && upsell.nextSibling) {
+            downloadEl.parentNode.insertBefore(shareContainer, upsell.nextSibling);
+        } else if (downloadEl.nextSibling) {
+            downloadEl.parentNode.insertBefore(shareContainer, downloadEl.nextSibling);
+        } else {
+            downloadEl.parentNode.appendChild(shareContainer);
+        }
+    } else {
+        const waLink = shareContainer.querySelector('.ff-wa-share-btn');
+        if (waLink) {
+            const waText = `Converted "${docName}" using Forge Files: ${window.location.origin}`;
+            waLink.href = 'https://wa.me/?text=' + encodeURIComponent(waText);
+        }
+    }
+}
+
 function updateDownloadLink(element, token, filename) {
     if (!element) return;
 
@@ -349,6 +431,7 @@ function updateDownloadLink(element, token, filename) {
     // For server-side results (local === null), processing_completed was already
     // fired by the backend Measurement Protocol — do NOT fire it here.
     ffShowSuccessUpsell(element);
+    ffShowSuccessShare(element, filename, local);
 
     if (local) {
         ffHeldLocalTokens.set(element, token);
