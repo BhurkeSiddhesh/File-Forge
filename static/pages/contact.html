@@ -17,6 +17,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/style.css?v=20260824">
     <meta name="theme-color" content="#ffffff">
+    {{ADSENSE_HEAD}}
     {{CF_ANALYTICS}}
     {{GA_ANALYTICS}}
     <script
@@ -60,6 +61,7 @@
         </footer>
     </main>
     <script>(function(){try{var p=JSON.stringify({event:'page_view',label:location.pathname||'/',ref:document.referrer||''});var u='/api/track';if(navigator.sendBeacon){navigator.sendBeacon(u,new Blob([p],{type:'application/json'}));}else{fetch(u,{method:'POST',body:p,keepalive:true,headers:{'Content-Type':'application/json'},credentials:'same-origin'});}}catch(e){}})();</script>
+    {{CONSENT_BANNER}}
 </body>
 
 </html>
