@@ -207,11 +207,11 @@ TOOL_PAGES: Dict[str, dict] = {
         "benefits": [
             "<strong>No Acrobat Pro needed:</strong> compression runs on our free server, nothing to install.",
             "<strong>Verifiably private:</strong> your file is deleted right after download. The <a href=\"" + GITHUB + "\" target=\"_blank\" rel=\"noopener\">code is open source</a>, so this is checkable, not just a claim.",
-            "<strong>Free with no limits:</strong> no daily quota, no watermark, no signup.",
+            "<strong>Free to use:</strong> no watermark or signup. Upload and processing limits apply.",
         ],
         "faqs": [
-            ("How much smaller will my PDF get?", "PDFs full of photos or scanned pages often shrink by 50–90% at the High level. Text-only PDFs are already efficient and may shrink only slightly. You'll see the exact before/after numbers on screen."),
-            ("Will compression make my PDF blurry?", "Text always stays sharp: compression mainly resamples images. Use Low if image quality matters most, High if file size matters most."),
+            ("How much smaller will my PDF get?", "Savings depend on the PDF and the compression level. Image-heavy files may have more room to shrink; an already optimized file may change very little. Compare the original and downloaded file sizes."),
+            ("Will compression make my PDF blurry?", "Compression can reduce image detail, including words in scanned pages. Use Low when readability and fine detail matter, then inspect the downloaded PDF before sharing."),
             ("Can I compress a password-protected PDF?", "Yes, first <a href=\"/unlock-pdf\">remove the password</a> (you'll need to know it), then compress the unlocked file."),
         ],
         "related": ["merge-pdf", "pdf-to-word", "extract-pdf-pages", "unlock-pdf", "compress-image"],

@@ -21,6 +21,11 @@ from typing import Dict
 EXTRA: Dict[str, str] = {
     # ---- PDF: high-traffic ------------------------------------------------
     "merge-pdf": """
+        <h2>Can I merge PDFs without a watermark or account?</h2>
+        <p>Yes. Forge Files combines PDF files without adding a watermark and
+            without requiring registration. Select at least two PDFs, check their
+            order, and download the combined document. Upload and processing limits
+            still apply; no signup does not mean unlimited file sizes.</p>
         <h2>What you can merge</h2>
         <p>Combine any number of PDF files into a single document: reports and
             their appendices, scanned pages, invoices, or chapters exported
@@ -42,9 +47,18 @@ EXTRA: Dict[str, str] = {
             down.</p>""",
 
     "compress-pdf": """
+        <h2>How do I compress a PDF before emailing it?</h2>
+        <p>Upload the PDF to Forge Files, select a compression level, and download
+            the result. Start with Low when fine detail matters, then try Medium
+            or High if the file is still too large. Compare the output size with
+            your email service's attachment limit and inspect the pages before sending.</p>
+        <p>A target size is not guaranteed: an already optimized PDF may shrink
+            very little. If it is still too large, <a href="/extract-pdf-pages">keep
+            only the required pages</a> or share it using an appropriate file link.</p>
         <h2>How compression works here</h2>
         <p>Compress PDF re-samples oversized embedded images and strips redundant
-            data while keeping text as sharp vector glyphs, so words never blur. Most
+            data. Selectable text and text inside scanned images are different: image
+            compression can soften scanned words as well as photos. Most
             savings come from images and scans; a text-only PDF is already small.
             Pick a level to trade size against image fidelity: screen-resolution
             output is ideal for email and web uploads, while you should keep the
@@ -80,6 +94,11 @@ EXTRA: Dict[str, str] = {
             Word for free</a>.</p>""",
 
     "unlock-pdf": """
+        <h2>Can I unlock a PDF if I do not know its password?</h2>
+        <p>If a PDF requires a password to open, you need the correct password.
+            This tool does not recover a forgotten opening password. Use it for
+            documents you own or are authorized to modify, then download the
+            unlocked copy for editing, printing, or conversion.</p>
         <h2>What "unlock" means</h2>
         <p>Unlock PDF removes the open/permissions password from a PDF <strong>you
             own</strong> so you can view, copy, print, or convert it freely. Use it on
@@ -132,6 +151,11 @@ EXTRA: Dict[str, str] = {
 
     # ---- Image: high-traffic ---------------------------------------------
     "heic-to-jpeg": """
+        <h2>Can I convert HEIC to JPG online for free?</h2>
+        <p>Yes. Open Forge Files' HEIC to JPG tool, choose your HEIC photo,
+            convert it, and download the JPG without registering. JPG and JPEG
+            refer to the same image format. Keep the original HEIC if you may
+            need it later: conversion to JPEG can lose some image detail.</p>
         <h2>Why iPhone photos need converting</h2>
         <p>Modern iPhones save photos as HEIC, which stores the same quality at about
             half the size of JPG, great for your phone, but many Windows apps, older
@@ -166,6 +190,11 @@ EXTRA: Dict[str, str] = {
 
     # ---- PDF: remaining ---------------------------------------------------
     "extract-pdf-pages": """
+        <h2>Can I extract specific PDF pages without signing up?</h2>
+        <p>Yes. Forge Files lets you select pages without an account. For example,
+            <code>1,3,5-7</code> selects five pages: 1, 3, 5, 6, and 7.
+            The result is one new PDF. Use <a href="/split-pdf">Split PDF</a>
+            instead when you want separate files in a ZIP.</p>
         <h2>Pull out exactly the pages you need</h2>
         <p>Type the pages you want: a single page, a range like <code>5-10</code>, or a
             mix such as <code>1,3,5-10</code>, and download them as a new PDF. Your
@@ -335,6 +364,16 @@ EXTRA: Dict[str, str] = {
 
     # ---- Image: remaining -------------------------------------------------
     "resize-image": """
+        <h2>Can I resize an image online without registration?</h2>
+        <p>Yes. Forge Files lets you resize an image without creating an account.
+            Choose pixels for a width-and-height requirement, percentage for scaling,
+            or target KB for a file-size limit. Check both the downloaded file's
+            dimensions and its size before submitting it to a form.</p>
+        <h2>Example: a photo for an application form</h2>
+        <p>If the form asks for 800 by 600 pixels and a file under 200 KB, first
+            crop to the required proportions, then resize. Check the output size and
+            use <a href="/compress-image">image compression</a> if needed.
+            A smaller file alone does not guarantee the right dimensions.</p>
         <h2>Three ways to resize</h2>
         <p>Resize an image by exact <strong>width/height in pixels</strong>, by
             <strong>percentage</strong> to scale it up or down, or to a
@@ -374,6 +413,12 @@ EXTRA: Dict[str, str] = {
         </ul>""",
 
     "crop-image": """
+        <h2>How do I crop an image and convert its format?</h2>
+        <p>Crop the image first and download the result. Then open
+            <a href="/convert-image">Convert Image</a>, upload the cropped file,
+            and choose JPG, PNG, or WebP. These are separate operations.
+            Choose PNG when transparency matters, or JPG for a widely supported
+            photo format. Keep the original so you can revise the crop later.</p>
         <h2>Trim a photo to exactly what you want</h2>
         <p>Crop Image gives you a visual drag-and-drop editor to cut away everything
             outside the part you care about: straighten a document scan, remove a
@@ -462,10 +507,17 @@ EXTRA: Dict[str, str] = {
 
     # ---- PowerPoint / Word ------------------------------------------------
     "powerpoint-to-pdf": """
+        <h2>Can I convert PowerPoint to PDF without a watermark?</h2>
+        <p>Yes. Forge Files converts a PPTX presentation to PDF without adding
+            a watermark or requiring signup. Download and review the PDF before
+            sharing, especially slides containing unusual fonts, charts, or SmartArt.</p>
+        <h2>What changes when slides become a PDF?</h2>
+        <p>A PDF is a static document. Animations, transitions, and interactive
+            presentation behavior are not retained. Layout and font fidelity can
+            vary with the source deck and the conversion engine.</p>
         <h2>Send slides that open anywhere</h2>
         <p>PowerPoint to PDF converts a <code>.pptx</code> deck into a clean PDF, so anyone
-            can view or print it without PowerPoint and without fonts or animations
-            shifting on their machine. It's the standard way to share a finished
+            can view or print the resulting static pages without PowerPoint. It's the standard way to share a finished
             presentation as a handout or for review.</p>
         <h2>Related</h2>
         <ul>
