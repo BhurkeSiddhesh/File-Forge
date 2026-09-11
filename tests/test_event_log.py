@@ -436,6 +436,21 @@ def test_writer_connection_is_reused_across_events(event_db):
     assert len(opened) <= 2, opened
 
 
+def test_all_event_log_connections_use_wal_and_busy_timeout(event_db):
+    event_log.log_event("pragma_check", success=True, duration_ms=1)
+
+    reader = event_log.get_connection()
+    try:
+        assert reader.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        assert reader.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+    finally:
+        reader.close()
+
+    writer = event_log._writer[1]
+    assert writer.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    assert writer.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+
+
 def test_timed_does_not_write_on_the_event_loop(event_db):
     """timed() must hand the SQLite write to a worker thread."""
     writer_threads = []

@@ -7,7 +7,13 @@ import pytest
 # Put public/ on sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.fix_models import download_and_extract, convert_to_onnx, _safe_extract
+from scripts.fix_models import (
+    MODELS,
+    _safe_extract,
+    convert_to_onnx,
+    download_and_extract,
+    provision_models,
+)
 
 
 class TestFixModels:
@@ -27,7 +33,8 @@ class TestFixModels:
             with pytest.raises(ValueError, match="Refusing to extract non-regular member"):
                 _safe_extract(tar, out_dir)
 
-    def test_download_and_extract_already_exists(self, tmp_path, capsys):
+    def test_download_and_extract_already_exists(self, tmp_path, caplog):
+        caplog.set_level("INFO")
         model_dir = tmp_path / "test_model"
         model_dir.mkdir(parents=True)
         (model_dir / "inference.pdmodel").write_text("dummy model")
@@ -39,10 +46,9 @@ class TestFixModels:
         }
         res = download_and_extract("test", info)
         assert res == model_dir
-        captured = capsys.readouterr()
-        assert "already exists" in captured.out
+        assert "already exists" in caplog.text
 
-    def test_download_and_extract_successful_flow(self, tmp_path, monkeypatch, capsys):
+    def test_download_and_extract_successful_flow(self, tmp_path, monkeypatch):
         dest_dir = tmp_path / "dest"
         dest_dir.mkdir()
         
@@ -72,7 +78,7 @@ class TestFixModels:
         assert res == dest_dir / "dummy_model"
         assert (dest_dir / "dummy_model" / "inference.pdmodel").exists()
 
-    def test_download_and_extract_network_failure(self, tmp_path, monkeypatch, capsys):
+    def test_download_and_extract_network_failure(self, tmp_path, monkeypatch, caplog):
         dest_dir = tmp_path / "dest_fail"
         dest_dir.mkdir()
         
@@ -88,10 +94,10 @@ class TestFixModels:
         }
         res = download_and_extract("fail", info)
         assert res is None
-        captured = capsys.readouterr()
-        assert "Failed to download/extract" in captured.out
+        assert "Failed to download/extract" in caplog.text
+        assert not (dest_dir / "fail_model.tar").exists()
 
-    def test_convert_to_onnx_empty_or_missing(self, tmp_path, capsys):
+    def test_convert_to_onnx_empty_or_missing(self, tmp_path, caplog):
         # When model_dir is None
         convert_to_onnx(None)
         
@@ -99,20 +105,20 @@ class TestFixModels:
         empty_dir = tmp_path / "empty_model"
         empty_dir.mkdir()
         convert_to_onnx(empty_dir)
-        captured = capsys.readouterr()
-        assert "No .pdmodel found" in captured.out
+        assert "No .pdmodel found" in caplog.text
 
-    def test_convert_to_onnx_already_exists(self, tmp_path, capsys):
+    def test_convert_to_onnx_already_exists(self, tmp_path, caplog):
+        caplog.set_level("INFO")
         model_dir = tmp_path / "existing_onnx"
         model_dir.mkdir()
         (model_dir / "model.pdmodel").write_text("pdmodel")
         (model_dir / "model.onnx").write_text("onnx")
         
         convert_to_onnx(model_dir)
-        captured = capsys.readouterr()
-        assert "ONNX model already exists" in captured.out
+        assert "ONNX model already exists" in caplog.text
 
-    def test_convert_to_onnx_run_subprocess(self, tmp_path, monkeypatch, capsys):
+    def test_convert_to_onnx_run_subprocess(self, tmp_path, monkeypatch, caplog):
+        caplog.set_level("INFO")
         model_dir = tmp_path / "convert_model"
         model_dir.mkdir()
         (model_dir / "inference.pdmodel").write_text("pdmodel")
@@ -124,10 +130,9 @@ class TestFixModels:
             
         monkeypatch.setattr("subprocess.run", fake_run)
         convert_to_onnx(model_dir)
-        captured = capsys.readouterr()
-        assert "Conversion successful" in captured.out
+        assert "Conversion successful" in caplog.text
 
-    def test_convert_to_onnx_subprocess_error(self, tmp_path, monkeypatch, capsys):
+    def test_convert_to_onnx_subprocess_error(self, tmp_path, monkeypatch, caplog):
         import subprocess
         model_dir = tmp_path / "convert_fail"
         model_dir.mkdir()
@@ -139,6 +144,29 @@ class TestFixModels:
             
         monkeypatch.setattr("subprocess.run", fake_run_fail)
         convert_to_onnx(model_dir)
-        captured = capsys.readouterr()
-        assert "Conversion failed" in captured.out
+        assert "Conversion failed" in caplog.text
+
+    def test_provision_models_uses_runtime_layout_and_renames_table(self, tmp_path, monkeypatch):
+        def fake_download(key, info):
+            source = info["dir"] / info["name"]
+            source.mkdir(parents=True)
+            (source / "inference.pdmodel").write_text("paddle")
+            return source
+
+        def fake_convert(model_dir):
+            (model_dir / "model.onnx").write_text("onnx")
+
+        monkeypatch.setattr("scripts.fix_models.download_and_extract", fake_download)
+        monkeypatch.setattr("scripts.fix_models.convert_to_onnx", fake_convert)
+
+        assert provision_models(tmp_path) == tmp_path.resolve()
+        for spec in MODELS.values():
+            expected = tmp_path / spec["relative_dir"] / spec["target_name"] / "model.onnx"
+            assert expected.is_file()
+
+    def test_provision_models_fails_closed_when_conversion_is_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("scripts.fix_models.download_and_extract", lambda key, info: None)
+
+        with pytest.raises(RuntimeError, match="provisioning incomplete"):
+            provision_models(tmp_path)
 

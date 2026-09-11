@@ -38,11 +38,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # mirror to bypass PyPI resolution issues on some Linux distros.
 RUN if [ "$OCR_BACKEND" = "paddle" ]; then \
         pip install --no-cache-dir paddlepaddle==2.6.2 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ && \
-        pip install --no-cache-dir "paddleocr>=2.6,<3.0"; \
+        pip install --no-cache-dir "paddleocr>=2.6,<3.0" "paddle2onnx==1.3.1"; \
     fi
 
 # Copy the rest of the application
 COPY . .
+
+# Paddle model binaries are intentionally not stored in git. Provision the
+# exact runtime layout during the optional x86 Paddle image build instead.
+RUN if [ "$OCR_BACKEND" = "paddle" ]; then \
+        python scripts/fix_models.py --output-dir models; \
+    fi
 
 # Optional build-time warm-up / smoke test of the configured OCR backend.
 # NOTE: this must run *after* `COPY . .`, not right after pip install — the

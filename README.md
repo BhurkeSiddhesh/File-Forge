@@ -236,7 +236,7 @@ docker build --build-arg OCR_BACKEND=paddle --build-arg WARMUP_AI=1 -t file-forg
 docker build --build-arg OCR_BACKEND=none -t file-forge-lite .
 ```
 
-The **Paddle backend** (PDF→Word via PPStructure) uses four ONNX models that are **vendored directly in the repository** under `models/`:
+The **Paddle backend** (PDF→Word via PPStructure) uses four ONNX models under `models/`:
 
 | Model | Path in `models/` | Purpose |
 |---|---|---|
@@ -245,7 +245,12 @@ The **Paddle backend** (PDF→Word via PPStructure) uses four ONNX models that a
 | Layout | `layout/picodet_lcnet_x1_0_fgd_layout_infer/` | Page layout analysis |
 | Table | `table/en_ppstructure_mobile_v2.0_SLANet_inference/` | Table structure recovery |
 
-Both backends work fully offline: the Paddle models are vendored in the repo, and RapidOCR bundles its default PP-OCR models inside the wheel — **no internet access is needed at runtime** and conversion is fully offline/private.
+The model binaries are not tracked in git. Paddle Docker builds run
+`python scripts/fix_models.py --output-dir models` to download, safely extract,
+convert, and validate them before the image is published. For a non-Docker
+Paddle setup, run the same command once during installation. Network access is
+required only while provisioning; both Paddle and RapidOCR work fully offline
+at runtime, so document conversion remains private.
 
 To enable AI mode on Render:
 1. Upgrade your service to **Starter** in the Render dashboard (RapidOCR is much lighter than Paddle, but 512 MB free-tier RAM is still tight for OCR on real documents).

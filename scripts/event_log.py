@@ -157,6 +157,13 @@ def _db_path() -> Path:
     return Path(os.environ.get("EVENT_DB_PATH") or str(_BASE_DIR / "data" / "events.db"))
 
 
+def _configure_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
+    """Apply the concurrency policy to every event-log connection."""
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
 def _ensure_schema(path: Path) -> None:
     key = str(path)
     if key in _initialized_paths:
@@ -167,7 +174,9 @@ def _ensure_schema(path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path, timeout=5)
         try:
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(_SCHEMA)
             _migrate_columns(conn)
             conn.commit()
@@ -197,8 +206,7 @@ def _connect(path: Path) -> sqlite3.Connection:
     # WAL + synchronous=NORMAL is SQLite's recommended durable-enough mode: it
     # drops the per-commit fsync at the price of losing at most the last few
     # analytics rows on an OS crash — fine for droppable event data.
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+    return _configure_connection(conn)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -237,8 +245,9 @@ def _writer_connection(path: Path) -> sqlite3.Connection:
     # Only one is ever live, so drop the old handle rather than accumulating.
     _close_writer_locked()
     _ensure_schema(path)
-    conn = sqlite3.connect(path, timeout=5, check_same_thread=False)
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn = _configure_connection(
+        sqlite3.connect(path, timeout=5, check_same_thread=False)
+    )
     _writer = (key, conn)
     return conn
 
