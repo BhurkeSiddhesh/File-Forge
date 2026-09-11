@@ -195,7 +195,7 @@ def provision_models(output_dir=DEFAULT_OUTPUT_DIR):
         if source is not None and source != target and (source / "model.onnx").is_file():
             if target.exists():
                 raise RuntimeError(f"Refusing to replace existing model directory: {target}")
-            source.rename(target)
+            shutil.move(str(source), str(target))
         if not target_onnx.is_file():
             missing.append(str(target_onnx))
 

@@ -130,7 +130,20 @@ try { ffTrack('page_view', location.pathname || '/'); } catch (e) { }
 // have made anyway, so a missing local layer costs nothing instead of breaking
 // half the tools with "ffProcess is not defined".
 const FF_MAX_UPLOAD_MB = 50;
+let ffUploadLimitMb = FF_MAX_UPLOAD_MB;
 let ffInflightAbort = null;
+
+function ffSetUploadLimit(limitMb) {
+    const parsed = Number(limitMb);
+    ffUploadLimitMb = Number.isFinite(parsed)
+        ? Math.max(FF_MAX_UPLOAD_MB, Math.min(200, Math.floor(parsed)))
+        : FF_MAX_UPLOAD_MB;
+}
+
+ffSetUploadLimit(window.__ffUploadLimitMbHint);
+window.addEventListener('ff-entitlements', function (event) {
+    ffSetUploadLimit(event && event.detail && event.detail.maxUploadMb);
+});
 
 function ffSanitizeMessage(msg) {
     const s = String(msg == null ? '' : msg);
@@ -170,8 +183,8 @@ function ffCheckUploadSize(fileOrList) {
         ? Array.from(fileOrList)
         : (fileOrList ? [fileOrList] : []);
     for (const f of files) {
-        if (f && typeof f.size === 'number' && f.size > FF_MAX_UPLOAD_MB * 1024 * 1024) {
-            ffNotify('This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.');
+        if (f && typeof f.size === 'number' && f.size > ffUploadLimitMb * 1024 * 1024) {
+            ffNotify('This file is too large (limit ' + ffUploadLimitMb + ' MB). Try a smaller file.');
             return false;
         }
     }
@@ -180,7 +193,7 @@ function ffCheckUploadSize(fileOrList) {
 
 async function ffMessageFromResponse(response) {
     if (response.status === 413) {
-        return 'This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.';
+        return 'This file is too large (limit ' + ffUploadLimitMb + ' MB). Try a smaller file.';
     }
     if (response.status === 429) {
         const ra = response.headers.get('Retry-After');
@@ -257,6 +270,7 @@ function ffFormDataFiles(formData) {
 window.ffNotify = ffNotify;
 window.ffSanitizeMessage = ffSanitizeMessage;
 window.ffCheckUploadSize = ffCheckUploadSize;
+window.__ffSetUploadLimit = ffSetUploadLimit;
 window.ffMessageFromResponse = ffMessageFromResponse;
 window.ffCancelInflight = ffCancelInflight;
 window.ffIsAbort = ffIsAbort;
@@ -265,16 +279,21 @@ window.ffStartInflight = ffStartInflight;
 const _ffProcessFallback = (path, formData, init) => {
     if (!ffCheckUploadSize(ffFormDataFiles(formData))) {
         return Promise.resolve(new Response(JSON.stringify({
-            detail: 'This file is too large (limit ' + FF_MAX_UPLOAD_MB + ' MB). Try a smaller file.',
+            detail: 'This file is too large (limit ' + ffUploadLimitMb + ' MB). Try a smaller file.',
         }), { status: 413, headers: { 'Content-Type': 'application/json' } }));
     }
     const abort = (init && init.signal) ? null : ffStartInflight();
     ffSetCancelVisible(true);
-    return fetch(apiUrl(path), Object.assign({
+    const requestInit = Object.assign({
         method: 'POST',
         body: formData,
         signal: (init && init.signal) || (abort && abort.signal) || (ffInflightAbort && ffInflightAbort.signal) || undefined,
-    }, init || {})).finally(function () { ffSetCancelVisible(false); });
+    }, init || {});
+    requestInit.headers = Object.assign({}, requestInit.headers || {});
+    if (window.__ffSession && window.__ffSession.access_token && !requestInit.headers.Authorization) {
+        requestInit.headers.Authorization = 'Bearer ' + window.__ffSession.access_token;
+    }
+    return fetch(apiUrl(path), requestInit).finally(function () { ffSetCancelVisible(false); });
 };
 const ffProcess = window.ffProcess
     || _ffProcessFallback;

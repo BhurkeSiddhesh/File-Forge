@@ -658,6 +658,13 @@
       "seo_slugs": []
     }
   ],
+  "shared_capabilities": [
+    {
+      "id": "max_upload_mb",
+      "web": "Authenticated server tools accept the backend-authorized limit.",
+      "mobile": "The shared web bundle forwards the session and applies the same /api/me limit."
+    }
+  ],
   "mobile_exemptions": [
     {"id": "admin_stats", "reason": "Internal operations only"},
     {"id": "adsense", "reason": "Web monetization only; mobile uses no ads"},

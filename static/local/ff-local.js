@@ -203,7 +203,11 @@
             }
         }
 
-        return fetch(window.apiUrl(path), { method: 'POST', body: formData });
+        var headers = {};
+        if (window.__ffSession && window.__ffSession.access_token) {
+            headers.Authorization = 'Bearer ' + window.__ffSession.access_token;
+        }
+        return fetch(window.apiUrl(path), { method: 'POST', body: formData, headers: headers });
     }
 
     // ── FormData helpers ──────────────────────────────────────────────────

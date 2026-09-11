@@ -77,6 +77,7 @@
     };
     writeJson(SESSION_KEY, record);
     window.__ffSession = { access_token: record.access_token };
+    refreshFeatures();
   };
 
   window.__ffClearSession = function () {
@@ -85,6 +86,7 @@
     // browser may be a different person, and an ad-free site is not theirs.
     writeJson(AD_FREE_KEY, null);
     window.__ffSession = null;
+    publishUploadLimit(50);
   };
 
   /* ---- Ad-free answer cache ---------------------------------------------- */
@@ -102,6 +104,33 @@
   window.__ffCacheAdFree = function (adFree) {
     writeJson(AD_FREE_KEY, adFree ? { v: true, exp: Date.now() + AD_FREE_TTL_MS } : null);
   };
+
+  function publishUploadLimit(limitMb) {
+    var parsed = Number(limitMb);
+    var limit = Number.isFinite(parsed) ? parsed : 50;
+    window.__ffUploadLimitMbHint = limit;
+    if (typeof window.__ffSetUploadLimit === "function") window.__ffSetUploadLimit(limit);
+    try {
+      window.dispatchEvent(new CustomEvent("ff-entitlements", {
+        detail: { maxUploadMb: limit },
+      }));
+    } catch (e) {}
+  }
+
+  function refreshFeatures() {
+    if (!window.__ffSession || !window.__ffSession.access_token) {
+      publishUploadLimit(50);
+      return Promise.resolve();
+    }
+    return fetch((window.apiUrl || function (p) { return p; })("/api/me"), {
+      headers: { Authorization: "Bearer " + window.__ffSession.access_token },
+    })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (me) {
+        publishUploadLimit(me && me.features && me.features.max_upload_mb);
+      })
+      .catch(function () { publishUploadLimit(50); });
+  }
 
   /* ---- One-time adoption of a session the SDK already had ----------------- */
 
@@ -168,7 +197,11 @@
   // on its first pass and a paying customer never gets an ad flash.
   window.__ffSession = isFresh(stored) ? { access_token: stored.access_token } : null;
 
-  if (window.__ffSession || !stored || !stored.refresh_token) return;
+  if (window.__ffSession) {
+    refreshFeatures();
+    return;
+  }
+  if (!stored || !stored.refresh_token) return;
 
   // The stored access token has expired. Supabase refresh tokens are long-lived
   // and this is the documented GoTrue REST call the SDK itself makes, so we can

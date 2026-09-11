@@ -21,6 +21,7 @@ import hmac
 import json
 import logging
 from contextlib import asynccontextmanager, suppress
+from contextvars import ContextVar, Token
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -589,7 +590,29 @@ def _total_upload_budget_mb() -> int:
     """Whole-request byte budget for the multi-file endpoints, in MB."""
     # Resolved per call rather than at import so MAX_UPLOAD_MB stays the single
     # knob when MAX_UPLOAD_TOTAL_MB is unset.
-    return int(MAX_UPLOAD_TOTAL_MB_ENV) if MAX_UPLOAD_TOTAL_MB_ENV else MAX_UPLOAD_MB
+    request_limit = current_upload_limit_mb()
+    return int(MAX_UPLOAD_TOTAL_MB_ENV) if MAX_UPLOAD_TOTAL_MB_ENV else request_limit
+
+
+_request_upload_limit_mb: ContextVar[Optional[int]] = ContextVar(
+    "file_forge_upload_limit_mb", default=None
+)
+
+
+def current_upload_limit_mb() -> int:
+    """Return this request's server-authorized cap, or the public default."""
+    limit = _request_upload_limit_mb.get()
+    return int(limit) if limit is not None else MAX_UPLOAD_MB
+
+
+def set_request_upload_limit_mb(limit_mb: int) -> Token:
+    """Set an authenticated deployment override without coupling public code to plans."""
+    return _request_upload_limit_mb.set(max(MAX_UPLOAD_MB, int(limit_mb)))
+
+
+def reset_request_upload_limit_mb(token: Token) -> None:
+    """Reset a request override after the response has been produced."""
+    _request_upload_limit_mb.reset(token)
 
 
 def _upload_dest(file: UploadFile, allowed: set) -> Path:
@@ -660,7 +683,10 @@ async def save_upload(file: UploadFile, allowed: Optional[set] = None) -> Path:
     for the duration of the write.
     """
     dest = _upload_dest(file, ALLOWED_EXTENSIONS if allowed is None else allowed)
-    await run_in_threadpool(_stream_to_disk, file, dest, MAX_UPLOAD_MB * 1024 * 1024, MAX_UPLOAD_MB)
+    limit_mb = current_upload_limit_mb()
+    await run_in_threadpool(
+        _stream_to_disk, file, dest, limit_mb * 1024 * 1024, limit_mb
+    )
     return dest
 
 
