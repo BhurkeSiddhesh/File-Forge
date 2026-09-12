@@ -81,6 +81,11 @@ def test_ads_txt_endpoint(client, monkeypatch):
     assert res.headers["content-type"].startswith("text/plain")
     assert res.text.strip() == EXPECTED_ADS_TXT
 
+    # HEAD request support for crawler verification
+    res_head = client.head("/ads.txt")
+    assert res_head.status_code == 200
+    assert res_head.headers["content-type"].startswith("text/plain")
+
 
 def test_adsense_clean_when_disabled(client, monkeypatch):
     monkeypatch.setattr(main, "ADSENSE_CLIENT", "")

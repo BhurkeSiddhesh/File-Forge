@@ -3546,7 +3546,7 @@ async def llms_txt():
     return PlainTextResponse("\n".join(lines))
 
 
-@app.get("/ads.txt", response_class=PlainTextResponse)
+@app.api_route("/ads.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 async def ads_txt():
     line = os.environ.get("ADSENSE_ADS_TXT", "").strip()
     if not line:
