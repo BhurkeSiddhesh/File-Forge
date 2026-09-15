@@ -111,7 +111,7 @@
       "output": "PDF",
       "auth": false,
       "premium": false,
-      "seo_slugs": ["ocr-pdf", "make-pdf-searchable"]
+      "seo_slugs": ["ocr-pdf", "make-pdf-searchable", "ocr-hindi", "ocr-marathi", "ocr-tamil", "ocr-telugu"]
     },
     {
       "id": "merge_pdf",

@@ -1,3 +1,4 @@
+import hashlib
 import argparse
 import logging
 import os
@@ -203,13 +204,95 @@ def provision_models(output_dir=DEFAULT_OUTPUT_DIR):
         raise RuntimeError("Paddle model provisioning incomplete: " + ", ".join(missing))
     return output_dir
 
+
+INDIC_MODELS = {
+    "devanagari": {
+        "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/rec/devanagari_PP-OCRv4_rec_mobile.onnx",
+        "name": "devanagari_PP-OCRv4_rec_mobile.onnx",
+        "sha256": "a62b6148303187907aa0b0d3a0125bdc62557d07966468cab9056949e36035e8",
+    },
+    "ta": {
+        "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/rec/ta_PP-OCRv4_rec_mobile.onnx",
+        "name": "ta_PP-OCRv4_rec_mobile.onnx",
+        "sha256": "f78d752148873c5fa6e4294002bfd162dbba54236e406a39665ebbda766161b5",
+    },
+    "te": {
+        "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/rec/te_PP-OCRv4_rec_mobile.onnx",
+        "name": "te_PP-OCRv4_rec_mobile.onnx",
+        "sha256": "e608c3be00c8a9ea2f5c667d90f379403e2568bd5c8183308a49ca093def8eff",
+    },
+}
+
+def _get_rapidocr_model_dir() -> Path:
+    try:
+        import rapidocr
+        return Path(rapidocr.__file__).resolve().parent / "models"
+    except (ImportError, AttributeError):
+        return DEFAULT_OUTPUT_DIR / "rapidocr"
+
+def download_file_verified(url: str, dest_path: Path, expected_sha256: str = None) -> bool:
+    dest_path = Path(dest_path)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    if dest_path.is_file():
+        if expected_sha256:
+            hasher = hashlib.sha256()
+            with open(dest_path, "rb") as f:
+                while chunk := f.read(65536):
+                    hasher.update(chunk)
+            if hasher.hexdigest() == expected_sha256:
+                logger.info("%s already provisioned with valid SHA256", dest_path.name)
+                return True
+            logger.warning("Checksum mismatch for %s, re-downloading", dest_path.name)
+        else:
+            return True
+
+    tmp_path = dest_path.with_suffix(".tmp")
+    logger.info("Downloading %s to %s", url, dest_path)
+    try:
+        resp = requests.get(url, stream=True, timeout=90)
+        resp.raise_for_status()
+        hasher = hashlib.sha256()
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                hasher.update(chunk)
+                f.write(chunk)
+        if expected_sha256 and hasher.hexdigest() != expected_sha256:
+            tmp_path.unlink(missing_ok=True)
+            raise ValueError(f"Checksum verification failed for {dest_path.name}")
+        tmp_path.replace(dest_path)
+        logger.info("Successfully provisioned %s", dest_path.name)
+        return True
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        logger.exception("Failed downloading %s", url)
+        return False
+
+def provision_indic_models(output_dir=None):
+    """Download and verify the RapidOCR Indic recognition models."""
+    target_dir = Path(output_dir).resolve() if output_dir else _get_rapidocr_model_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    missing = []
+    for key, spec in INDIC_MODELS.items():
+        dest = target_dir / spec["name"]
+        ok = download_file_verified(spec["url"], dest, spec["sha256"])
+        if not ok or not dest.is_file():
+            missing.append(spec["name"])
+    if missing:
+        raise RuntimeError("Indic model provisioning incomplete: " + ", ".join(missing))
+    return target_dir
+
+
 if __name__ == "__main__":  # pragma: no cover
-    parser = argparse.ArgumentParser(description="Provision Paddle ONNX models")
+    parser = argparse.ArgumentParser(description="Provision OCR ONNX models")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--indic", action="store_true", help="Provision Indic language models for RapidOCR")
     args = parser.parse_args()
     logging.basicConfig(
         level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
     )
-    provision_models(args.output_dir)
-    logger.info("All Paddle ONNX models are ready in %s", args.output_dir)
-
+    if args.indic:
+        provision_indic_models(args.output_dir / "rapidocr" if args.output_dir != DEFAULT_OUTPUT_DIR else None)
+        logger.info("All Indic OCR models are ready")
+    else:
+        provision_models(args.output_dir)
+        logger.info("All Paddle ONNX models are ready in %s", args.output_dir)

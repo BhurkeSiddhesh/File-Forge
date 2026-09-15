@@ -404,7 +404,7 @@ def _render_page_bgr(page, dpi: int = 200):
     return cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
 
 
-def _extract_text_with_ocr(doc: fitz.Document) -> str:
+def _extract_text_with_ocr(doc: fitz.Document, lang: str = 'en') -> str:
     """Extract text from rendered PDF pages using the configured OCR backend.
 
     Returns an empty string when no OCR backend is available (DISABLE_AI=1),
@@ -420,7 +420,7 @@ def _extract_text_with_ocr(doc: fitz.Document) -> str:
     page_text: List[str] = []
     for page in doc:
         img = _render_page_bgr(page)
-        items = ocr_engine.recognize(img)
+        items = ocr_engine.recognize(img, lang=lang)
         page_text.append("\n".join(item["text"] for item in items if item.get("text")))
 
     return "\n\n".join(text for text in page_text if text.strip())
@@ -433,6 +433,7 @@ def extract_pdf_text(
     preserve_formatting: bool = True,
     use_ocr: bool = True,
     min_text_chars: int = 20,
+    lang: str = "en",
 ) -> str:
     """Extract text from a PDF and save it as a .txt file."""
     input_file = Path(input_path)
@@ -454,7 +455,7 @@ def extract_pdf_text(
         extracted_text = "\n\n".join(text for text in page_text if text)
 
         if len(extracted_text.strip()) < min_text_chars and use_ocr:
-            extracted_text = _extract_text_with_ocr(doc)
+            extracted_text = _extract_text_with_ocr(doc, lang=lang)
 
         if not extracted_text.strip():
             raise ValueError("No text could be extracted from this PDF.")
@@ -2108,6 +2109,7 @@ def extract_text_from_pdf(
     output_dir: str,
     preserve_layout: bool = False,
     password: str = None,
+    lang: str = "en",
 ) -> dict:
     """Extract all text content from a PDF to a .txt file.
 
@@ -2126,6 +2128,7 @@ def extract_text_from_pdf(
             pages; otherwise plain text. OCR'd pages always use the OCR
             engine's recognized line order regardless of this flag.
         password: PDF password if encrypted.
+        lang: OCR language code ('en', 'hi', 'mr', 'ta', 'te').
 
     Returns:
         dict with output_path and page_count.
@@ -2163,7 +2166,7 @@ def extract_text_from_pdf(
 
             if not page_text and needs_ocr[i] and engine is not None:
                 img = _render_page_bgr(page)
-                items = engine.recognize(img)
+                items = engine.recognize(img, lang=lang)
                 page_text = "\n".join(item["text"] for item in items if item.get("text")).strip()
 
             if page_text:
@@ -2201,6 +2204,38 @@ def _ocr_item_rect(item: dict, page, image_width: int, image_height: int):
     return fitz.Rect(x0, y0, x1, y1)
 
 
+def _get_fontfile_for_lang(lang: str) -> Optional[str]:
+    """Find a system or local font capable of rendering Unicode Indic scripts."""
+    custom = os.environ.get("INDIC_FONT_PATH")
+    if custom and os.path.isfile(custom):
+        return custom
+
+    candidates = [
+        # Windows
+        "C:/Windows/Fonts/Nirmala.ttc",
+        "C:/Windows/Fonts/mangal.ttf",
+        "C:/Windows/Fonts/aparaj.ttf",
+        "C:/Windows/Fonts/latha.ttf",
+        "C:/Windows/Fonts/gautami.ttf",
+        # Linux (Debian / Ubuntu / Oracle Linux)
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansTelugu-Regular.ttf",
+        "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
+        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
+        "/usr/share/fonts/truetype/lohit-telugu/Lohit-Telugu.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # macOS
+        "/System/Library/Fonts/Kohinoor.ttc",
+        "/System/Library/Fonts/Supplemental/Nirmala.ttf",
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def ocr_pdf_to_searchable_pdf(
     input_path: str,
     output_dir: str,
@@ -2208,10 +2243,14 @@ def ocr_pdf_to_searchable_pdf(
     lang: str = "en",
 ) -> dict:
     """Add an invisible OCR text layer to an image-only PDF."""
-    if (lang or "en").strip().lower() != "en":
-        raise ValueError("Only English OCR is available in the free searchable PDF tool.")
+    norm_lang = (lang or "en").strip().lower()
+    from scripts.ocr_engine import SUPPORTED_OCR_LANGUAGES, get_ocr_engine
 
-    from scripts.ocr_engine import get_ocr_engine
+    if norm_lang not in SUPPORTED_OCR_LANGUAGES:
+        raise ValueError(
+            f"Unsupported OCR language: {lang!r}. Supported languages are: "
+            f"{', '.join(sorted(SUPPORTED_OCR_LANGUAGES))}."
+        )
 
     engine = get_ocr_engine()
     if engine is None:
@@ -2224,6 +2263,8 @@ def ocr_pdf_to_searchable_pdf(
     page_count = 0
     inserted = 0
 
+    indic_fontfile = _get_fontfile_for_lang(norm_lang) if norm_lang != "en" else None
+
     try:
         doc = fitz.open(decrypted_path)
         page_count = len(doc)
@@ -2231,7 +2272,7 @@ def ocr_pdf_to_searchable_pdf(
         for page in doc:
             img = _render_page_bgr(page)
             height, width = img.shape[:2]
-            for item in engine.recognize(img):
+            for item in engine.recognize(img, lang=norm_lang):
                 text = (item.get("text") or "").strip()
                 if not text:
                     continue
@@ -2239,14 +2280,20 @@ def ocr_pdf_to_searchable_pdf(
                 if rect is None:
                     continue
                 font_size = max(4.0, min(12.0, rect.height * 0.85))
-                page.insert_textbox(
-                    rect,
-                    text,
-                    fontname="helv",
-                    fontsize=font_size,
-                    render_mode=3,
-                    overlay=True,
-                )
+                insert_kwargs = {
+                    "fontsize": font_size,
+                    "render_mode": 3,
+                    "overlay": True,
+                }
+                if indic_fontfile:
+                    insert_kwargs["fontname"] = "indic"
+                    insert_kwargs["fontfile"] = indic_fontfile
+                else:
+                    insert_kwargs["fontname"] = "helv"
+                rc = page.insert_textbox(rect, text, **insert_kwargs)
+                if rc < 0:
+                    point_kwargs = dict(insert_kwargs)
+                    page.insert_text(fitz.Point(rect.x0, rect.y1 - 1), text, **point_kwargs)
                 inserted += 1
 
         if inserted == 0:

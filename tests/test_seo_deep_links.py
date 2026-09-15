@@ -20,9 +20,8 @@ STATIC = Path(__file__).resolve().parent.parent / "static"
 SCRIPT_JS = (STATIC / "script.js").read_text(encoding="utf-8")
 INDEX_HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 
-# `'slug': { card: 'some-btn' ... }` entries in script.js's DEEP_LINK_OPS.
-_OP_RE = re.compile(r"^    '([a-z0-9-]+)': \{ card: '([a-z0-9-]+)'(?:, mode: '([a-z0-9-]+)')? \},$", re.M)
-DEEP_LINK_OPS = {m.group(1): {"card": m.group(2), "mode": m.group(3)} for m in _OP_RE.finditer(SCRIPT_JS)}
+_OP_RE = re.compile(r"^    '([a-z0-9-]+)': \{ card: '([a-z0-9-]+)'(?:, mode: '([a-z0-9-]+)')?(?:, lang: '([a-z0-9-]+)')? \},$", re.M)
+DEEP_LINK_OPS = {m.group(1): {"card": m.group(2), "mode": m.group(3), "lang": m.group(4)} for m in _OP_RE.finditer(SCRIPT_JS)}
 
 ACTION_CARD_IDS = set(re.findall(r'class="action-card[^"]*" id="([a-z0-9-]+)"', INDEX_HTML))
 ELEMENT_IDS = set(re.findall(r'id="([a-z0-9-]+)"', INDEX_HTML))

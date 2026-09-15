@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 from fastapi import FastAPI, BackgroundTasks
 from fastapi import UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -328,7 +328,7 @@ def _build_consent_banner() -> str:
         return ""
     return (
         '<div id="ff-consent" role="dialog" aria-live="polite" aria-label="Cookie consent" hidden'
-        ' style="position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;flex-wrap:wrap;'
+        ' style="position:fixed;left:0;right:0;bottom:0;z-index:9999;display:none;flex-wrap:wrap;'
         'gap:12px;align-items:center;justify-content:center;padding:14px 18px;'
         'background:#181b22;color:#e8eaed;border-top:1px solid #262b35;'
         'font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">'
@@ -342,13 +342,14 @@ def _build_consent_banner() -> str:
         '</span></div>\n'
         '<script>(function(){'
         "var K='ff_consent',b=document.getElementById('ff-consent');if(!b)return;"
-        'if(!localStorage.getItem(K)){b.hidden=false;}'
-        'function choose(v){localStorage.setItem(K,v);b.hidden=true;'
+        'var c=null;try{c=localStorage.getItem(K);}catch(e){}'
+        'if(!c){b.hidden=false;b.style.display="flex";}'
+        'function choose(v){try{localStorage.setItem(K,v);}catch(e){}b.hidden=true;b.style.display="none";'
         "if(v==='granted'){try{gtag('consent','update',{ad_storage:'granted',ad_user_data:'granted',"
         "ad_personalization:'granted',analytics_storage:'granted'});}catch(e){}"
         'if(window.__ffConsentInit)window.__ffConsentInit();}}'
-        "document.getElementById('ff-consent-accept').onclick=function(){choose('granted');};"
-        "document.getElementById('ff-consent-decline').onclick=function(){choose('denied');};"
+        "var a=document.getElementById('ff-consent-accept');if(a)a.onclick=function(){choose('granted');};"
+        "var d=document.getElementById('ff-consent-decline');if(d)d.onclick=function(){choose('denied');};"
         '})();</script>'
     )
 
@@ -1222,36 +1223,157 @@ def client_identity(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-class _InFlightGate:
-    """Counts concurrent requests in a tier, and refuses past a ceiling.
+QUEUE_ESTIMATED_SECONDS_PER_JOB = int(os.environ.get("QUEUE_ESTIMATED_SECONDS_PER_JOB", "5"))
+MAX_QUEUE_DEPTH = int(os.environ.get("MAX_QUEUE_DEPTH", "50"))
+SSE_QUEUE_MANAGED_PATHS = {"/api/pdf/convert-to-word-stream"}
+
+
+class _GatePermit:
+    def __init__(self, gate: "_InFlightQueueGate", counted: bool = True):
+        self._gate = gate
+        self._counted = counted
+        self._released = False
+
+    def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        if self._counted:
+            self._gate.release()
+
+
+class _GateTicket:
+    def __init__(
+        self,
+        gate: "_InFlightQueueGate",
+        future: asyncio.Future,
+        waiter: Optional[dict[str, Any]] = None,
+    ):
+        self._gate = gate
+        self.future = future
+        self._waiter = waiter
+
+    async def wait(self) -> _GatePermit:
+        return await self.future
+
+    def cancel(self) -> None:
+        self._gate.cancel(self)
+
+
+class _InFlightQueueGate:
+    """Counts active heavy requests and buffers excess work in FIFO order.
 
     The per-identity limits above are only as good as the identity. This gate
     is deliberately identity-free: however many buckets an attacker mints, the
     box still runs at most `limit` OCR / pdf2docx / LibreOffice jobs at once,
-    which is what stops a spoofed flood from taking the single worker down with
-    it. It bounds concurrency, not rate, so ordinary bursty use is unaffected —
-    a legitimate visitor is only ever refused while the machine is genuinely
-    saturated, and can retry a second later.
+    which is what stops a spoofed flood from taking the single worker down.
+    Excess requests wait in a bounded FIFO queue instead of being dropped until
+    `max_queue_depth` is reached.
     """
 
-    def __init__(self, limit: int):
+    def __init__(self, limit: int, max_queue_depth: int = MAX_QUEUE_DEPTH):
         self.limit = limit
+        self.max_queue_depth = max_queue_depth
         self._active = 0
+        self._queue = deque()
         self._lock = threading.Lock()
 
     def acquire(self) -> bool:
+        """Immediate, non-queued acquire kept for legacy tests and probes."""
+        if self.limit <= 0:
+            return True
         with self._lock:
-            if self.limit > 0 and self._active >= self.limit:
+            if self._active >= self.limit:
                 return False
             self._active += 1
             return True
 
+    def reserve(
+        self,
+        on_update: Optional[Callable[[dict[str, int]], None]] = None,
+    ) -> Optional[_GateTicket]:
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        with self._lock:
+            if self.limit <= 0:
+                future.set_result(_GatePermit(self, counted=False))
+                return _GateTicket(self, future)
+            if self._active < self.limit:
+                self._active += 1
+                future.set_result(_GatePermit(self))
+                return _GateTicket(self, future)
+            if len(self._queue) >= self.max_queue_depth:
+                return None
+
+            waiter = {"future": future, "loop": loop, "on_update": on_update}
+            self._queue.append(waiter)
+            ticket = _GateTicket(self, future, waiter)
+            self._broadcast_locked()
+            return ticket
+
+    async def wait(self) -> Optional[_GatePermit]:
+        ticket = self.reserve()
+        if ticket is None:
+            return None
+        try:
+            return await ticket.wait()
+        except asyncio.CancelledError:
+            ticket.cancel()
+            raise
+
+    def cancel(self, ticket: _GateTicket) -> None:
+        waiter = ticket._waiter
+        if waiter is None:
+            return
+        with self._lock:
+            try:
+                self._queue.remove(waiter)
+            except ValueError:
+                return
+            future = waiter["future"]
+            if not future.done():
+                waiter["loop"].call_soon_threadsafe(future.cancel)
+            self._broadcast_locked()
+
     def release(self) -> None:
+        to_wake = None
         with self._lock:
             self._active = max(0, self._active - 1)
+            if self.limit > 0 and self._queue and self._active < self.limit:
+                to_wake = self._queue.popleft()
+                self._active += 1
+            self._broadcast_locked()
+        if to_wake:
+            future = to_wake["future"]
+            if not future.done():
+                to_wake["loop"].call_soon_threadsafe(
+                    future.set_result,
+                    _GatePermit(self),
+                )
+
+    @property
+    def queued_count(self) -> int:
+        with self._lock:
+            return len(self._queue)
+
+    def _broadcast_locked(self) -> None:
+        total = len(self._queue)
+        for index, waiter in enumerate(self._queue, start=1):
+            callback = waiter.get("on_update")
+            if not callback:
+                continue
+            payload = {
+                "position": index,
+                "total_queued": total,
+                "estimated_wait_seconds": index * QUEUE_ESTIMATED_SECONDS_PER_JOB,
+            }
+            waiter["loop"].call_soon_threadsafe(callback, payload)
 
 
-app.state.heavy_gate = _InFlightGate(app.state.rate_limit_heavy_concurrency)
+_InFlightGate = _InFlightQueueGate
+
+
+app.state.heavy_gate = _InFlightQueueGate(app.state.rate_limit_heavy_concurrency)
 
 
 @app.middleware("http")
@@ -1284,7 +1406,10 @@ async def rate_limit_middleware(request: Request, call_next):
     gate = getattr(state, "heavy_gate", None)
     if gate is None:
         return await call_next(request)
-    if not gate.acquire():
+    if path in SSE_QUEUE_MANAGED_PATHS:
+        return await call_next(request)
+    permit = await gate.wait()
+    if permit is None:
         logger.warning("Heavy-tier capacity reached; refusing %s", path)
         return JSONResponse(
             status_code=503,
@@ -1294,12 +1419,12 @@ async def rate_limit_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
     except Exception:
-        gate.release()
+        permit.release()
         raise
 
     body_iterator = getattr(response, "body_iterator", None)
     if body_iterator is None:
-        gate.release()
+        permit.release()
         return response
 
     async def release_after_body():
@@ -1309,7 +1434,7 @@ async def rate_limit_middleware(request: Request, call_next):
         finally:
             job_id = response.headers.get("X-FF-Job-ID")
             if not job_id:
-                gate.release()
+                permit.release()
             else:
                 # The client can disconnect while a recoverable SSE job keeps
                 # running. Keep its capacity slot until the underlying job, not
@@ -1323,7 +1448,7 @@ async def rate_limit_middleware(request: Request, call_next):
                                 break
                             await asyncio.sleep(0.1)
                     finally:
-                        gate.release()
+                        permit.release()
 
                 _start_detached(release_after_job())
 
@@ -1552,6 +1677,7 @@ async def api_convert_to_word(
 
 @app.post("/api/pdf/convert-to-word-stream")
 async def api_convert_to_word_stream(
+    request: Request,
     file: UploadFile = File(...),
     use_ai: bool = Form(False),
     password: str = Form(None)
@@ -1582,9 +1708,29 @@ async def api_convert_to_word_stream(
     # GET /api/jobs/{job_id} even though the 'complete' event it's about to
     # put on `events` was never read by anyone.
     job_id = app.state.jobs.create()
+    queue_updates: asyncio.Queue = asyncio.Queue()
+    gate = getattr(app.state, "heavy_gate", None)
+
+    def queue_update(payload: dict[str, int]) -> None:
+        queue_updates.put_nowait({"event": "queued", **payload})
+
+    ticket = gate.reserve(queue_update) if gate is not None else None
+    if gate is not None and ticket is None:
+        with suppress(OSError):
+            if temp_path.exists():
+                os.remove(temp_path)
+        with suppress(OSError):
+            result_dir.rmdir()
+        raise HTTPException(
+            status_code=503,
+            detail="The server is busy processing other files. Please retry shortly.",
+            headers={"Retry-After": "5"},
+        )
 
     async def event_stream():
         events = queue_mod.Queue()
+        permit = None
+        worker_started = False
 
         def progress_cb(page_done, total_pages):
             progress_event = {"event": "progress", "page": page_done, "total": total_pages}
@@ -1640,16 +1786,47 @@ async def api_convert_to_word_stream(
                     "event": "error",
                     "detail": "Conversion ended without a result",
                 })
+                if permit is not None:
+                    permit.release()
                 events.put(None)  # sentinel: stream finished
 
-        yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename, 'job_id': job_id})}\n\n"
-        thread = threading.Thread(target=worker, daemon=True)
-        thread.start()
-        while True:
-            item = await run_in_threadpool(events.get)
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
+        try:
+            if ticket is not None:
+                while not ticket.future.done():
+                    if await request.is_disconnected():
+                        ticket.cancel()
+                        app.state.jobs.set_result(job_id, {
+                            "event": "error",
+                            "detail": "Conversion was cancelled before it started.",
+                        })
+                        return
+                    try:
+                        queued = await asyncio.wait_for(queue_updates.get(), timeout=0.25)
+                    except asyncio.TimeoutError:
+                        continue
+                    yield f"data: {json.dumps(queued)}\n\n"
+                permit = await ticket.wait()
+
+            yield f"data: {json.dumps({'event': 'start', 'filename': safe_filename, 'job_id': job_id})}\n\n"
+            worker_started = True
+            thread = threading.Thread(target=worker, daemon=True)
+            thread.start()
+            while True:
+                item = await run_in_threadpool(events.get)
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
+        finally:
+            if not worker_started:
+                if ticket is not None:
+                    ticket.cancel()
+                if permit is not None:
+                    permit.release()
+                if temp_path.exists():
+                    with suppress(OSError):
+                        os.remove(temp_path)
+                with suppress(OSError):
+                    result_dir.rmdir()
 
     return StreamingResponse(
         event_stream(),

@@ -815,6 +815,24 @@ body {
     justify-content: center;
 }
 
+.result-panel .status-display.queue-status {
+    border: 1px solid rgba(0, 112, 243, 0.24);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--link) 8%, transparent);
+}
+
+.status-display.queue-status .loader {
+    border-top-color: var(--link);
+}
+
+.status-display.queue-status p {
+    color: var(--ink);
+    font-weight: 600;
+    max-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 .result-panel .result-display {
     margin-top: 0;
     padding: 1.25rem 0.5rem 0.5rem;

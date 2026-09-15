@@ -27,12 +27,22 @@ logger = logging.getLogger(__name__)
 # Abstract base
 # ---------------------------------------------------------------------------
 
+SUPPORTED_INDIC_LANGS = {
+    "hi": "devanagari",
+    "mr": "devanagari",
+    "ta": "ta",
+    "te": "te",
+}
+
+SUPPORTED_OCR_LANGUAGES = {"en", "hi", "mr", "ta", "te"}
+
+
 class OCREngine(ABC):
     """Common interface for OCR backends used by pdf_utils."""
 
     @abstractmethod
-    def recognize(self, image_path_or_array) -> List[Dict[str, Any]]:
-        """Run OCR on an image.
+    def recognize(self, image_path_or_array, lang: str = "en") -> List[Dict[str, Any]]:
+        """Run OCR on an image with optional language specification.
 
         Returns list of dicts:
             [{"text": str, "bbox": list, "confidence": float}, ...]
@@ -74,22 +84,96 @@ class RapidOCREngine(OCREngine):
         with .boxes / .txts / .scores attributes.
       - rapidocr_onnxruntime 1.x: engine(img) returns (result, elapse)
         where result is [[box, text, score], ...].
+
+    Maintains a strict single-language memory model: only one recognition
+    model is loaded at a time, evicting the previous model on language change.
     """
 
-    def __init__(self):
-        try:
-            from rapidocr import RapidOCR  # rapidocr >= 2.0
-        except ImportError:
-            from rapidocr_onnxruntime import RapidOCR  # legacy 1.x package
-        self._engine = RapidOCR()
-        logger.info("RapidOCR engine initialized")
+    def __init__(self, default_lang: str = "en"):
+        self._current_spec: Optional[str] = None
+        self._engine = None
+        self._lock = threading.Lock()
+        self._load_engine_for_spec(self._resolve_spec(default_lang))
 
     @property
     def name(self) -> str:
         return "rapidocr"
 
-    def recognize(self, image_path_or_array) -> List[Dict[str, Any]]:
-        raw = self._engine(image_path_or_array)
+    @property
+    def current_spec(self) -> Optional[str]:
+        return self._current_spec
+
+    def _resolve_spec(self, lang: str) -> str:
+        clean = (lang or "en").strip().lower()
+        if clean == "en":
+            return "en"
+        if clean in SUPPORTED_INDIC_LANGS:
+            return SUPPORTED_INDIC_LANGS[clean]
+        raise ValueError(
+            f"Unsupported OCR language: {lang!r}. Supported languages are: "
+            f"{', '.join(sorted(SUPPORTED_OCR_LANGUAGES))}."
+        )
+
+    def _load_engine_for_spec(self, spec: str):
+        if self._current_spec == spec and self._engine is not None:
+            return
+
+        # Evict existing model to strictly bound memory
+        if self._engine is not None:
+            logger.info("Evicting RapidOCR model for '%s' to load '%s'", self._current_spec, spec)
+            self._engine = None
+            import gc
+            gc.collect()
+
+        try:
+            from rapidocr import RapidOCR  # rapidocr >= 2.0
+        except ImportError:
+            from rapidocr_onnxruntime import RapidOCR  # legacy 1.x package
+
+        if spec == "en":
+            self._engine = RapidOCR()
+        else:
+            params = {}
+            try:
+                from rapidocr.utils.typings import OCRVersion, ModelType, LangRec
+                if spec == "devanagari":
+                    params = {
+                        "Global.use_cls": False,
+                        "Rec.ocr_version": OCRVersion.PPOCRV4,
+                        "Rec.model_type": ModelType.MOBILE,
+                        "Rec.lang_type": LangRec.DEVANAGARI,
+                    }
+                elif spec == "ta":
+                    params = {
+                        "Global.use_cls": False,
+                        "Rec.ocr_version": OCRVersion.PPOCRV4,
+                        "Rec.model_type": ModelType.MOBILE,
+                        "Rec.lang_type": LangRec.TA,
+                    }
+                elif spec == "te":
+                    params = {
+                        "Global.use_cls": False,
+                        "Rec.ocr_version": OCRVersion.PPOCRV4,
+                        "Rec.model_type": ModelType.MOBILE,
+                        "Rec.lang_type": LangRec.TE,
+                    }
+            except (ImportError, AttributeError):
+                logger.warning("RapidOCR typings not available; using default initialization for %s", spec)
+                params = {}
+
+            self._engine = RapidOCR(params=params) if params else RapidOCR()
+
+        self._current_spec = spec
+        logger.info("RapidOCR engine initialized for spec '%s'", spec)
+
+    def recognize(self, image_path_or_array, lang: str = "en") -> List[Dict[str, Any]]:
+        spec = self._resolve_spec(lang)
+        with self._lock:
+            if self._current_spec != spec or self._engine is None:
+                self._load_engine_for_spec(spec)
+            engine = self._engine
+
+        raw = engine(image_path_or_array)
 
         # rapidocr_onnxruntime 1.x: (result, elapse) tuple
         if isinstance(raw, tuple):
@@ -144,8 +228,9 @@ class PaddleOCREngine(OCREngine):
     def supports_layout(self) -> bool:
         return True
 
-    def recognize(self, image_path_or_array) -> List[Dict[str, Any]]:
+    def recognize(self, image_path_or_array, lang: str = "en") -> List[Dict[str, Any]]:
         result = self._engine(image_path_or_array)
+
         items: List[Dict[str, Any]] = []
         for block in (result or []):
             if not isinstance(block, dict):

@@ -1034,8 +1034,10 @@ async function convertToWordWithProgress(formData, useAI) {
     // (and roughly how long it's been) is what keeps people from giving up.
     const startedAt = Date.now();
     let ticker = null;
+    let queuedActive = false;
     if (!useAI) {
         ticker = setInterval(() => {
+            if (queuedActive) return;
             const elapsed = Math.round((Date.now() - startedAt) / 1000);
             statusText.textContent =
                 `Converting to Word... ${formatElapsed(elapsed)} elapsed. `
@@ -1046,15 +1048,32 @@ async function convertToWordWithProgress(formData, useAI) {
     let jobId = null;
 
     const handleEvent = (event) => {
-        if (event.event === 'progress') {
+        if (event.event === 'queued') {
+            queuedActive = true;
+            statusDisplay.classList.add('queue-status');
+            const wait = event.estimated_wait_seconds
+                ? ` Estimated wait: about ${formatElapsed(event.estimated_wait_seconds)}.`
+                : '';
+            statusText.textContent =
+                `In queue: position #${event.position} of ${event.total_queued}. `
+                + `High server activity; your file will convert automatically.${wait}`;
+        } else if (event.event === 'progress') {
+            queuedActive = false;
+            statusDisplay.classList.remove('queue-status');
             const pct = event.total > 0 ? Math.round((event.page / event.total) * 100) : 0;
             statusText.textContent = `AI conversion: page ${event.page}/${event.total} (${pct}%)`;
         } else if (event.event === 'start') {
+            queuedActive = false;
+            statusDisplay.classList.remove('queue-status');
             jobId = event.job_id || jobId;
             if (useAI) statusText.textContent = 'Analyzing layout with AI...';
         } else if (event.event === 'complete') {
+            queuedActive = false;
+            statusDisplay.classList.remove('queue-status');
             showResult(event.filename, event.message, event.download_token);
         } else if (event.event === 'error') {
+            queuedActive = false;
+            statusDisplay.classList.remove('queue-status');
             ffNotify('Error: ' + event.detail);
         }
     };
@@ -1283,7 +1302,14 @@ async function processAction(url, text, formData = null) {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 const data = await response.json();
-                ffNotify('Error: ' + data.detail);
+                if (response.status === 402 && data.detail && typeof data.detail === 'object') {
+                    const upgradeUrl = data.detail.upgrade_url || '/pricing';
+                    const msg = data.detail.message || 'Premium subscription required';
+                    ffNotify(`${msg}. Visit ${upgradeUrl} to upgrade.`);
+                } else {
+                    const msg = typeof data.detail === 'string' ? data.detail : (data.detail && data.detail.message ? data.detail.message : JSON.stringify(data.detail));
+                    ffNotify('Error: ' + msg);
+                }
             } else {
                 const text = await response.text();
                 ffNotify('Error: ' + text);
@@ -3555,6 +3581,10 @@ const DEEP_LINK_OPS = {
     'pdf-to-text': { card: 'extract-text-btn' },
     'ocr-pdf': { card: 'ocr-pdf-btn' },
     'make-pdf-searchable': { card: 'ocr-pdf-btn' },
+    'ocr-hindi': { card: 'ocr-pdf-btn', lang: 'hi' },
+    'ocr-marathi': { card: 'ocr-pdf-btn', lang: 'mr' },
+    'ocr-tamil': { card: 'ocr-pdf-btn', lang: 'ta' },
+    'ocr-telugu': { card: 'ocr-pdf-btn', lang: 'te' },
     'merge-pdf': { card: 'merge-pdf-btn' },
     'rotate-pdf': { card: 'rotate-pdf-btn' },
     'protect-pdf': { card: 'protect-pdf-btn' },
@@ -3610,12 +3640,24 @@ function ffHighlightCard(cardId) {
 // continuous motion with nothing to hunt for.
 function ffConsumePendingOp() {
     if (!ffPendingOp) return;
-    const cardId = ffPendingOp;
+    const pending = ffPendingOp;
     ffPendingOp = null;
+    const cardId = typeof pending === 'object' ? pending.card : pending;
+    const lang = typeof pending === 'object' ? pending.lang : null;
+    if (lang) {
+        const langSelect = document.getElementById('ocr-pdf-lang');
+        if (langSelect) langSelect.value = lang;
+    }
     const card = document.getElementById(cardId);
     if (!card) return;
     card.classList.remove('deep-link-target');
-    setTimeout(() => card.click(), 0);
+    setTimeout(() => {
+        card.click();
+        if (lang) {
+            const langSelect = document.getElementById('ocr-pdf-lang');
+            if (langSelect) langSelect.value = lang;
+        }
+    }, 0);
 }
 window.ffConsumePendingOp = ffConsumePendingOp;
 
@@ -3648,8 +3690,12 @@ window.ffConsumePendingOp = ffConsumePendingOp;
         const card = document.getElementById(op.card);
         if (card) setTimeout(() => card.click(), 0);
     } else {
-        ffPendingOp = op.card;
+        ffPendingOp = op.lang ? { card: op.card, lang: op.lang } : op.card;
         ffHighlightCard(op.card);
+        if (op.lang) {
+            const langSelect = document.getElementById('ocr-pdf-lang');
+            if (langSelect) langSelect.value = op.lang;
+        }
     }
 
     // ?handoff=1 means the visitor already chose a file on the SEO landing

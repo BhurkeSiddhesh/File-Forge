@@ -1,7 +1,9 @@
 """Tests for SSE progress streaming on PDF→Word conversion (Issue #46)."""
+import concurrent.futures
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -125,6 +127,51 @@ class TestConvertToWordStream:
         complete = next(e for e in events if e["event"] == "complete")
         assert complete["method"] == "text_layer"
         assert "AI Layout Recovery" not in complete["message"]
+
+    def test_stream_emits_queue_position_before_start(self, auth_client, sample_pdf, tmp_path, monkeypatch):
+        """A saturated heavy gate queues the SSE conversion instead of dropping it."""
+        from main import app, _InFlightGate
+
+        def fake_pdf_to_docx(_src, out_dir, _password, progress_callback=None, **_kwargs):
+            out = Path(out_dir) / "queued.docx"
+            out.write_bytes(b"docx")
+            if progress_callback:
+                progress_callback(1, 1)
+            return str(out)
+
+        monkeypatch.setattr("main.pdf_to_docx", fake_pdf_to_docx)
+        previous = app.state.heavy_gate
+        gate = _InFlightGate(1, max_queue_depth=5)
+        assert gate.acquire()
+        app.state.heavy_gate = gate
+
+        def post_conversion():
+            with open(sample_pdf, "rb") as f:
+                return auth_client.post(
+                    "/api/pdf/convert-to-word-stream",
+                    files={"file": ("sample.pdf", f, "application/pdf")},
+                    data={"use_ai": "false"},
+                )
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(post_conversion)
+                deadline = time.time() + 3
+                while gate.queued_count == 0 and time.time() < deadline:
+                    time.sleep(0.02)
+                assert gate.queued_count == 1
+                gate.release()
+                resp = future.result(timeout=5)
+        finally:
+            app.state.heavy_gate = previous
+
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        kinds = [event["event"] for event in events]
+        assert kinds.index("queued") < kinds.index("start")
+        queued = next(event for event in events if event["event"] == "queued")
+        assert queued["position"] == 1
+        assert queued["total_queued"] == 1
 
 
 class TestAiCapabilities:

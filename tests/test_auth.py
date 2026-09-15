@@ -205,6 +205,11 @@ def test_consent_banner_and_ads_are_consent_gated_when_adsense_on():
     assert 'id="ff-consent"' in banner
     assert "ff-consent-accept" in banner and "ff-consent-decline" in banner
     assert "'update'" in banner and "'granted'" in banner
+    assert 'display:none' in banner
+    assert 'b.style.display="flex"' in banner
+    assert 'b.style.display="none"' in banner
+    assert 'try{c=localStorage.getItem(K);}' in banner
+    assert 'try{localStorage.setItem(K,v);}' in banner
 
 
 def test_ad_free_gate_hides_slots_from_backend_feature_when_adsense_on():
@@ -255,6 +260,85 @@ def test_consent_banner_substitutes_into_served_page_when_adsense_on(monkeypatch
         assert "{{CONSENT_BANNER}}" not in body       # token substituted, not leaked
     finally:
         main._render_page.cache_clear()  # don't poison the cache for other tests
+
+
+def test_consent_banner_accept_click_dismisses_in_dom():
+    """Execute the consent banner script against a minimal DOM in node to verify
+    that clicking Accept or Decline immediately hides the banner with display:none,
+    updates hidden=true, and persists the choice in localStorage."""
+    import json
+    import re
+    import shutil
+    import subprocess
+    import main
+
+    node = shutil.which("node")
+    if not node:
+        return
+
+    saved = main.ADSENSE_CLIENT
+    try:
+        main.ADSENSE_CLIENT = "ca-pub-test"
+        banner = main._build_consent_banner()
+    finally:
+        main.ADSENSE_CLIENT = saved
+
+    scripts = re.findall(r"<script>(.*?)</script>", banner, re.S)
+    assert scripts, "Consent banner must contain inline script"
+    js_code = scripts[0]
+
+    # Node runner script testing initial state and Accept button click
+    test_harness = f"""
+    const store = new Map();
+    const localStorage = {{
+        getItem: (k) => store.get(k) || null,
+        setItem: (k, v) => store.set(k, String(v))
+    }};
+    const b = {{ id: 'ff-consent', hidden: true, style: {{ display: 'none' }} }};
+    const acceptBtn = {{ id: 'ff-consent-accept', onclick: null }};
+    const declineBtn = {{ id: 'ff-consent-decline', onclick: null }};
+    const document = {{
+        getElementById: (id) => {{
+            if (id === 'ff-consent') return b;
+            if (id === 'ff-consent-accept') return acceptBtn;
+            if (id === 'ff-consent-decline') return declineBtn;
+            return null;
+        }}
+    }};
+    const window = {{}};
+    let gtagCalls = [];
+    function gtag(...args) {{ gtagCalls.push(args); }}
+
+    // Run banner script
+    {js_code}
+
+    const initialHidden = b.hidden;
+    const initialDisplay = b.style.display;
+
+    // Click Accept
+    if (acceptBtn.onclick) acceptBtn.onclick();
+    const acceptedHidden = b.hidden;
+    const acceptedDisplay = b.style.display;
+    const savedConsent = localStorage.getItem('ff_consent');
+
+    console.log(JSON.stringify({{
+        initialHidden,
+        initialDisplay,
+        acceptedHidden,
+        acceptedDisplay,
+        savedConsent,
+        gtagCalled: gtagCalls.length > 0
+    }}));
+    """
+
+    res = subprocess.run([node, "-e", test_harness], capture_output=True, text=True, check=True)
+    out = json.loads(res.stdout.strip())
+    assert out["initialHidden"] is False, "Banner should be unhidden when no prior consent"
+    assert out["initialDisplay"] == "flex", "Banner should be set to display:flex when shown"
+    assert out["acceptedHidden"] is True, "Banner should be hidden when accepted"
+    assert out["acceptedDisplay"] == "none", "Banner must have display:none after clicking Accept"
+    assert out["savedConsent"] == "granted", "Consent should be granted in localStorage"
+    assert out["gtagCalled"] is True, "gtag consent update should be invoked"
 
 
 def test_consent_builders_are_empty_without_adsense():

@@ -1,4 +1,6 @@
 """Tests for per-IP rate limiting (Issue #47)."""
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -364,8 +366,9 @@ class TestHeavyTierIsCappedIndependentlyOfIdentity:
         from main import app, _InFlightGate
 
         previous = app.state.heavy_gate
-        app.state.heavy_gate = _InFlightGate(0)
-        app.state.heavy_gate.acquire = lambda: False    # pretend it is saturated
+        gate = _InFlightGate(1, max_queue_depth=0)
+        assert gate.acquire()
+        app.state.heavy_gate = gate
         try:
             resp = rate_limited_client.post(
                 "/api/pdf/convert-to-word",
@@ -377,6 +380,51 @@ class TestHeavyTierIsCappedIndependentlyOfIdentity:
 
         assert resp.status_code == 503
         assert resp.headers["Retry-After"] == "5"
+
+    @pytest.mark.anyio
+    async def test_gate_queues_and_admits_fifo(self):
+        from main import _InFlightGate
+
+        gate = _InFlightGate(1, max_queue_depth=2)
+        first = gate.reserve()
+        assert first is not None
+        first_permit = await first.wait()
+
+        updates = []
+        second = gate.reserve(lambda payload: updates.append(("second", payload)))
+        third = gate.reserve(lambda payload: updates.append(("third", payload)))
+        assert second is not None
+        assert third is not None
+        await asyncio.sleep(0)
+        assert second.future.done() is False
+        assert third.future.done() is False
+        assert any(name == "second" and payload["position"] == 1 for name, payload in updates)
+        assert any(name == "third" and payload["position"] == 2 for name, payload in updates)
+
+        first_permit.release()
+        second_permit = await second.wait()
+        await asyncio.sleep(0)
+        assert third.future.done() is False
+        assert any(name == "third" and payload["position"] == 1 for name, payload in updates)
+
+        second_permit.release()
+        third_permit = await third.wait()
+        third_permit.release()
+
+    @pytest.mark.anyio
+    async def test_gate_refuses_when_queue_is_full(self):
+        from main import _InFlightGate
+
+        gate = _InFlightGate(1, max_queue_depth=1)
+        first = gate.reserve()
+        assert first is not None
+        first_permit = await first.wait()
+        second = gate.reserve()
+        assert second is not None
+        assert gate.reserve() is None
+        first_permit.release()
+        second_permit = await second.wait()
+        second_permit.release()
 
     def test_light_requests_are_not_gated(self, rate_limited_client):
         from main import app, _InFlightGate
