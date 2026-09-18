@@ -1460,7 +1460,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
 # --- Anonymous operation-event context (server-side analytics, no tracking script) ---
 SESSION_COOKIE_NAME = "ff_sid"
-SESSION_COOKIE_MAX_AGE = 365 * 24 * 3600
+SESSION_COOKIE_MAX_AGE = 90 * 24 * 3600
 
 # Cloudflare sends an ISO-3166-1 alpha-2 code, plus "XX" (unknown) and "T1"
 # (Tor). Anything else is a client writing whatever it likes into
