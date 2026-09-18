@@ -541,3 +541,43 @@ def test_broken_connection_is_dropped_and_recovered(event_db):
 
     ops = [r["operation"] for r in read_rows(event_db)]
     assert "before" in ops and "after" in ops
+
+
+def test_prune_expired_events_removes_old_rows_and_keeps_recent(event_db):
+    """Old events past retention cutoff must be deleted; recent events preserved."""
+    from datetime import datetime, timezone, timedelta
+
+    event_log._ensure_schema(event_db)
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+
+    with sqlite3.connect(event_db) as conn:
+        conn.execute(
+            "INSERT INTO operation_events (timestamp, operation, success, duration_ms) VALUES (?, ?, ?, ?)",
+            (old_ts, "old_op", 1, 100),
+        )
+        conn.execute(
+            "INSERT INTO operation_events (timestamp, operation, success, duration_ms) VALUES (?, ?, ?, ?)",
+            (recent_ts, "recent_op", 1, 100),
+        )
+        conn.execute(
+            "INSERT INTO funnel_events (timestamp, event, label) VALUES (?, ?, ?)",
+            (old_ts, "page_view", "/old"),
+        )
+        conn.execute(
+            "INSERT INTO funnel_events (timestamp, event, label) VALUES (?, ?, ?)",
+            (recent_ts, "page_view", "/recent"),
+        )
+        conn.commit()
+
+    deleted = event_log.prune_expired_events(retention_days=90, path=event_db)
+    assert deleted == 2
+
+    op_rows = read_rows(event_db)
+    assert len(op_rows) == 1
+    assert op_rows[0]["operation"] == "recent_op"
+
+    funnel_rows = _read_funnel(event_db)
+    assert len(funnel_rows) == 1
+    assert funnel_rows[0]["label"] == "/recent"
+

@@ -562,6 +562,54 @@ EXTRA: Dict[str, str] = {
             <li>Combine with other PDFs: <a href="/merge-pdf">Merge PDF</a>.</li>
             <li>Lock it before sending: <a href="/protect-pdf">Protect PDF</a>.</li>
         </ul>""",
+
+    "ocr-hindi": """
+        <h2>Hindi PDF OCR and Text Recognition</h2>
+        <p>Extract Devanagari text from scanned Hindi PDFs, official forms, gazette notifications,
+            and certificates. Our Indic OCR pipeline recognizes conjunct characters and complex Devanagari
+            ligatures accurately, producing searchable PDFs or editable text.</p>
+        <h2>Related</h2>
+        <ul>
+            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
+            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
+            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
+        </ul>""",
+
+    "ocr-marathi": """
+        <h2>Marathi PDF OCR and Text Recognition</h2>
+        <p>Extract Devanagari script text from scanned Marathi documents, land records (7/12 utara),
+            government notices, and legal agreements. Built specifically to handle regional Devanagari
+            orthography and complex compound letters with high precision.</p>
+        <h2>Related</h2>
+        <ul>
+            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
+            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
+            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
+        </ul>""",
+
+    "ocr-tamil": """
+        <h2>Tamil PDF OCR and Text Recognition</h2>
+        <p>Extract Tamil script from scanned documents, Tamil Nadu government forms, certificates,
+            and literature. The model accurately identifies Tamil vowel markers, uyirmey characters,
+            and numerals without distorting sentence flow.</p>
+        <h2>Related</h2>
+        <ul>
+            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
+            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
+            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
+        </ul>""",
+
+    "ocr-telugu": """
+        <h2>Telugu PDF OCR and Text Recognition</h2>
+        <p>Extract Telugu script text from scanned PDFs, Andhra Pradesh and Telangana administrative
+            records, books, and affidavits. Captures round letterforms, secondary vowel signs (gunintalu),
+            and subjoined consonants cleanly.</p>
+        <h2>Related</h2>
+        <ul>
+            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
+            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
+            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
+        </ul>""",
 }
 
 

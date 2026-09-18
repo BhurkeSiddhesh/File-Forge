@@ -21,10 +21,12 @@ import re
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Awaitable, Optional, Tuple
 from urllib.parse import urlsplit
+
+DEFAULT_RETENTION_DAYS = 90
 
 logger = logging.getLogger("file_forge.event_log")
 
@@ -183,6 +185,53 @@ def _ensure_schema(path: Path) -> None:
         finally:
             conn.close()
         _initialized_paths.add(key)
+
+
+def _prune_expired_events_conn(
+    conn: sqlite3.Connection, retention_days: Optional[int] = None
+) -> int:
+    """Delete records older than retention_days on an open connection."""
+    if retention_days is None:
+        try:
+            retention_days = int(os.environ.get("EVENT_RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
+        except (ValueError, TypeError):
+            retention_days = DEFAULT_RETENTION_DAYS
+    if retention_days <= 0:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat(timespec="milliseconds")
+    deleted = 0
+    try:
+        cur1 = conn.execute("DELETE FROM operation_events WHERE timestamp < ?", (cutoff,))
+        deleted += cur1.rowcount if cur1.rowcount > 0 else 0
+        cur2 = conn.execute("DELETE FROM funnel_events WHERE timestamp < ?", (cutoff,))
+        deleted += cur2.rowcount if cur2.rowcount > 0 else 0
+    except Exception:
+        logger.warning("Failed to prune expired events older than %s", cutoff, exc_info=True)
+    return deleted
+
+
+def prune_expired_events(
+    retention_days: Optional[int] = None, path: Optional[Path] = None
+) -> int:
+    """Delete records older than retention_days (default 90 days or EVENT_RETENTION_DAYS).
+
+    Never raises. Returns count of deleted rows.
+    """
+    target_path = path or _db_path()
+    try:
+        conn = sqlite3.connect(target_path, timeout=5)
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            deleted = _prune_expired_events_conn(conn, retention_days=retention_days)
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("Failed to prune expired events", exc_info=True)
+        return 0
+
+
 
 
 def _migrate_columns(conn: sqlite3.Connection) -> None:

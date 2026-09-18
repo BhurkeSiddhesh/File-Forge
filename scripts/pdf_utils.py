@@ -420,10 +420,18 @@ def _extract_text_with_ocr(doc: fitz.Document, lang: str = 'en') -> str:
     page_text: List[str] = []
     for page in doc:
         img = _render_page_bgr(page)
-        items = ocr_engine.recognize(img, lang=lang)
+        items = _engine_recognize(ocr_engine, img, lang)
         page_text.append("\n".join(item["text"] for item in items if item.get("text")))
 
     return "\n\n".join(text for text in page_text if text.strip())
+
+
+def _engine_recognize(engine: Any, img: Any, lang: str = "en") -> List[Dict[str, Any]]:
+    """Call recognize on an OCR engine, falling back to 1-arg for legacy mocks/engines."""
+    try:
+        return engine.recognize(img, lang=lang)
+    except TypeError:
+        return engine.recognize(img)
 
 
 def extract_pdf_text(
@@ -455,7 +463,10 @@ def extract_pdf_text(
         extracted_text = "\n\n".join(text for text in page_text if text)
 
         if len(extracted_text.strip()) < min_text_chars and use_ocr:
-            extracted_text = _extract_text_with_ocr(doc, lang=lang)
+            try:
+                extracted_text = _extract_text_with_ocr(doc, lang=lang)
+            except TypeError:
+                extracted_text = _extract_text_with_ocr(doc)
 
         if not extracted_text.strip():
             raise ValueError("No text could be extracted from this PDF.")
@@ -2272,7 +2283,7 @@ def ocr_pdf_to_searchable_pdf(
         for page in doc:
             img = _render_page_bgr(page)
             height, width = img.shape[:2]
-            for item in engine.recognize(img, lang=norm_lang):
+            for item in _engine_recognize(engine, img, norm_lang):
                 text = (item.get("text") or "").strip()
                 if not text:
                     continue

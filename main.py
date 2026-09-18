@@ -557,6 +557,8 @@ async def cleanup_stale_files_loop():
         # more. The limiter's map would otherwise grow one entry per distinct
         # client seen since boot.
         app.state.rate_limiter.prune()
+        # Enforce the 90-day retention policy on funnel_events and operation_events.
+        await run_in_threadpool(event_log.prune_expired_events)
         await asyncio.sleep(900)
 
 # --- Upload intake ---

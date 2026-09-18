@@ -168,10 +168,14 @@ class RapidOCREngine(OCREngine):
 
     def recognize(self, image_path_or_array, lang: str = "en") -> List[Dict[str, Any]]:
         spec = self._resolve_spec(lang)
-        with self._lock:
-            if self._current_spec != spec or self._engine is None:
-                self._load_engine_for_spec(spec)
-            engine = self._engine
+        lock = getattr(self, "_lock", None)
+        if lock is not None:
+            with lock:
+                if getattr(self, "_current_spec", None) != spec or getattr(self, "_engine", None) is None:
+                    self._load_engine_for_spec(spec)
+                engine = self._engine
+        else:
+            engine = getattr(self, "_engine", None)
 
         raw = engine(image_path_or_array)
 
