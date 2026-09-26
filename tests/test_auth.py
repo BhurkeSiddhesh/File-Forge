@@ -100,7 +100,9 @@ def test_tool_pages_render_with_full_schema():
         assert "<title>" in body and 'rel="canonical"' in body
         for schema in ("FAQPage", "SoftwareApplication", "HowTo", "BreadcrumbList"):
             assert schema in body, f"/{slug} missing {schema} schema"
-        assert f"/{slug}" in sitemap, f"/{slug} missing from sitemap"
+        from scripts.seo_content import CANONICAL_ALIASES
+        canonical = CANONICAL_ALIASES.get(slug, slug)
+        assert f"/{canonical}</loc>" in sitemap, f"/{canonical} missing from sitemap"
 
 
 def test_tool_pages_have_substantial_security_copy():
@@ -116,7 +118,7 @@ def test_tool_pages_have_substantial_security_copy():
     for slug in TOOL_PAGES:
         body = seo_content.render_tool_page(slug)
         # Concise privacy section present and pointing at the full /privacy page.
-        assert "tool private?" in body, f"/{slug} missing privacy section"
+        assert "File handling" in body, f"/{slug} missing processing-path disclosure"
         assert 'href="/privacy"' in body, f"/{slug} privacy section missing /privacy link"
         # Word-count the visible copy only (strip tags) and require a healthy body,
         # now carried by tool-specific content rather than duplicated boilerplate.
@@ -167,8 +169,9 @@ def test_robots_allows_ai_crawlers_and_sitemap():
     assert sitemap.status_code == 200
     assert "<urlset" in sitemap.text
     assert "<priority>" in sitemap.text and "<lastmod>" in sitemap.text
+    from scripts.seo_content import CANONICAL_ALIASES
     for slug in SEO_PAGES:
-        assert f"/{slug}" in sitemap.text
+        assert f"/{CANONICAL_ALIASES.get(slug, slug)}</loc>" in sitemap.text
 
 
 def test_adsense_is_disabled_by_default():
@@ -252,14 +255,16 @@ def test_consent_banner_substitutes_into_served_page_when_adsense_on(monkeypatch
     monkeypatch.setattr(main, "ADSENSE_HEAD_HTML", main._build_adsense_head())
     monkeypatch.setattr(main, "CONSENT_BANNER_HTML", main._build_consent_banner())
     main._render_page.cache_clear()  # drop the ad-free cached render
+    main._render_tool_page.cache_clear()
     try:
-        body = TestClient(main.app).get("/").text
+        body = TestClient(main.app).get("/merge-pdf").text
         assert 'id="ff-consent"' in body            # banner present in the page
         assert "consent','default'" in body          # Consent Mode default (denied)
         assert "granted()" in body                    # ad fill is consent-gated
         assert "{{CONSENT_BANNER}}" not in body       # token substituted, not leaked
     finally:
         main._render_page.cache_clear()  # don't poison the cache for other tests
+        main._render_tool_page.cache_clear()
 
 
 def test_consent_banner_accept_click_dismisses_in_dom():

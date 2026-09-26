@@ -1,0 +1,6 @@
+# Preserve exact example bytes, including ASCII-encoded PDFs and their offsets.
+*.pdf binary
+*.docx binary
+*.heic binary
+*.jpg binary
+*.png binary

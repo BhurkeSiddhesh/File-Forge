@@ -1,10 +1,9 @@
-"""Server-rendered /blog guides — long-tail SEO content.
+"""Server-rendered guides with practical instructions and original examples.
 
 Mirrors the pattern in ``seo_content.py`` (same <head>, canonical, funnel beacon,
 consent banner, JSON-LD) but for editorial how-to guides rather than tool pages.
-The point is to rank for informational long-tail queries ("how to compress a PDF
-without losing quality") that the transactional tool pages don't target, and to
-funnel that traffic into the matching tool via prominent in-content CTAs.
+Each guide explains a task, its tradeoffs and how to check the actual result,
+with links to the relevant tools and reproducible practice files.
 
 Each guide is fully server-rendered HTML (no JS needed) so JS-less crawlers and
 AI bots read the whole article from the raw response. main.py substitutes the
@@ -20,6 +19,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from scripts import seo_content as sc
+from scripts.content_examples import render_example
 from scripts.seo_content import (
     ASSET_V, SITE, GITHUB, BASE, ADS_HEAD, ADS_SLOT, CONSENT_BANNER,
     SITE_VERIFY, CF_ANALYTICS, GA_ANALYTICS, DATAFAST_ANALYTICS, FUNNEL_BEACON, TOOL_PAGES,
@@ -34,192 +34,84 @@ BLOG_BASE = BASE + "/blog"
 # related (extra tool slugs to cross-link), date (ISO, for dateModified).
 GUIDES: Dict[str, dict] = {
     "how-to-compress-a-pdf-without-losing-quality": {
-        "title": "How to Compress a PDF Without Losing Quality (Free) | " + SITE,
-        "meta": ("Compress a PDF to a smaller file size without making it blurry. "
-                 "A free, step-by-step guide plus the trade-offs that actually "
-                 "affect quality. No signup, no watermark."),
-        "h1": "How to compress a PDF without losing quality",
-        "dek": ("Big PDF won't attach to an email or upload to a portal? Here's how "
-                "to shrink it while keeping text sharp and images readable, and what "
-                "“quality” really means when you compress."),
-        "primary_tool": "compress-pdf",
-        "related": ["merge-pdf", "split-pdf", "pdf-to-word"],
-        "date": "2026-07-20",
+        "title": "Compress a PDF: Size, Readability and Real Examples | " + SITE,
+        "meta": "Compare real compression outputs, distinguish selectable text from scans, and choose a smaller PDF that remains readable.",
+        "h1": "Compress a PDF without sacrificing the details you need",
+        "dek": "A smaller attachment is useful only if the recipient can still read it. Here is a practical way to choose a compression level, with an original scan you can test yourself.",
+        "primary_tool": "compress-pdf", "related": ["extract-pdf-pages", "merge-pdf"],
+        "date": "2026-09-26", "published": "2026-07-20", "example": "compression",
         "body": [
-            ("Why PDFs get so large", (
-                "<p>Most oversized PDFs are heavy for one of three reasons: "
-                "high-resolution scanned images, embedded fonts, or pages exported "
-                "at print resolution (300+ DPI) when screen resolution (72–150 "
-                "DPI) would look identical on a monitor. Text itself is tiny; it's "
-                "almost always the images driving the file size.</p>")),
-            ("The fastest way: compress it online", (
-                "<p>You don't need to install anything. Use the free "
-                "<a href=\"/compress-pdf\">Compress PDF</a> tool: it re-samples "
-                "oversized images and strips redundant data while leaving text as "
-                "crisp vector glyphs, so the words stay perfectly sharp.</p>"
-                "<ol>"
-                "<li>Open <a href=\"/compress-pdf\">Compress PDF</a>.</li>"
-                "<li>Drag in your file (it's processed on our server over HTTPS and "
-                "deleted right after; nothing is kept).</li>"
-                "<li>Download the smaller PDF. Compare it to the original before you "
-                "send it.</li>"
-                "</ol>")),
-            ("What “without losing quality” really means", (
-                "<p>Compression is a trade-off, so it helps to know where quality "
-                "actually lives:</p>"
-                "<ul>"
-                "<li><strong>Text stays perfect.</strong> Vector text is re-saved "
-                "losslessly. It never gets blurry no matter how much you "
-                "compress.</li>"
-                "<li><strong>Images degrade gracefully.</strong> Photos are "
-                "re-encoded; moderate compression is invisible on screen, and you "
-                "only notice softening if you zoom far in or print at high DPI.</li>"
-                "<li><strong>Match the destination.</strong> Emailing or uploading to "
-                "a web portal? Screen-resolution compression is ideal. Sending to a "
-                "commercial printer? Keep the original.</li>"
-                "</ul>")),
-            ("Extra ways to shrink a PDF", (
-                "<p>If one pass isn't small enough:</p>"
-                "<ul>"
-                "<li><strong>Remove pages you don't need</strong> with "
-                "<a href=\"/split-pdf\">Split PDF</a> before compressing.</li>"
-                "<li><strong>Combine smartly.</strong> If you merged several files, "
-                "compress the final PDF once at the end rather than each part.</li>"
-                "<li><strong>Scanned document?</strong> A scan is really a stack of "
-                "images, so it benefits the most from compression.</li>"
-                "</ul>")),
+            ("First, find out what kind of PDF you have", "<p>Open the document and try selecting a sentence. A digital PDF often has selectable text and separate images. A scan usually holds a picture of the whole page, including its words. Some PDFs contain both kinds of pages. This distinction matters: reducing image detail can soften scanned words, even when selectable text stays sharp.</p><p>Inspect a page with the smallest print, not only the cover. A 20-page text report may already be compact, while a single scanned page can contain a large image. A file's page count alone does not predict how much it will shrink.</p>"),
+            ("Choose a level and check the result", "<ol><li>Keep the original. Open <a href=\"/compress-pdf\">Compress PDF</a>, choose your file and start with Low.</li><li>Download the output and compare its actual byte size with the destination's limit.</li><li>Inspect small text, signatures, fine lines and colored labels at 100% and 200% zoom.</li><li>If the result is still too large, try Medium from the original, then High only if the important details remain readable.</li></ol><p>Do not repeatedly compress the last output: a fresh attempt from the original avoids stacking lossy conversions. There is no universal safe setting for every scan.</p>"),
+            ("What the levels actually change", "<p>In the current server utility, Low targets eligible images up to a 2,200-pixel longest side with JPEG quality 80; Medium uses 1,600 and 60; High uses 1,000 and 40. Small images and transparency take different paths, and re-encoding is skipped when it does not save space. These are implementation settings, not a promise about the final file size or visual quality.</p><p>A 1,000-pixel page image spread across a full sheet has fewer pixels available for each letter than a high-resolution scan. You may not notice that in a thumbnail, which is why downloading and zooming matters.</p>"),
+            ("If the upload portal still rejects it", "<p>Check whether the portal specifies bytes, KB or MB and whether it also requires a particular format or page count. Keep a small margin below the stated size limit. If only a few pages are needed, use <a href=\"/extract-pdf-pages\">Extract Pages</a> before compression. Do not remove required evidence just to pass a size check.</p><p>When a readable document cannot meet the limit, ask whether the recipient accepts separate parts or a file link. Keep the full-resolution original for archival use and printing.</p>"),
         ],
-        "faqs": [
-            ("Will compressing a PDF make the text blurry?",
-             "No. Text in a PDF is stored as vector glyphs and is re-saved without "
-             "loss, so it stays sharp at any zoom. Only embedded images are "
-             "re-encoded, and moderate compression is invisible on screen."),
-            ("How small can I make a PDF?",
-             "It depends on what's inside. Image-heavy or scanned PDFs can often drop "
-             "50–90%. A text-only PDF is already small, so there's less to save."),
-            ("Is it safe to compress a confidential PDF here?",
-             "Yes. The file is sent over encrypted HTTPS, processed, returned, and "
-             "then deleted, with an hourly sweeper as a backstop. Forge Files is "
-             "open source, so you can verify exactly how it's handled."),
-        ],
+        "faqs": [("Why did the PDF barely shrink?", "It may already be optimized or contain mostly efficient text. File size is not a quality score; compare the actual output before deciding whether compression helped."),
+                 ("Is this lossless compression?", "Structural optimization can be lossless, but the image compression levels can discard detail. In scanned PDFs, that detail includes the words themselves.")],
     },
     "how-to-convert-pdf-to-word-for-free": {
-        "title": "How to Convert a PDF to Word (DOCX) for Free | " + SITE,
-        "meta": ("Turn a PDF into an editable Word document for free. Step-by-step, "
-                 "with tips on keeping layout and tables intact and when a scanned "
-                 "PDF needs OCR. No signup, no watermark."),
-        "h1": "How to convert a PDF to an editable Word document",
-        "dek": ("Need to edit a PDF but only have the finished file? Convert it to a "
-                "Word .docx you can open in Microsoft Word, Google Docs, or "
-                "LibreOffice. Here's how, and how to keep the formatting."),
-        "primary_tool": "pdf-to-word",
-        "related": ["compress-pdf", "merge-pdf", "unlock-pdf"],
-        "date": "2026-07-20",
+        "title": "PDF to Word: Check Text, Tables and Layout | " + SITE,
+        "meta": "Convert a PDF to editable Word, compare an original report and its real DOCX output, and troubleshoot scans, tables and page breaks.",
+        "h1": "Convert a PDF to Word, then check what changed",
+        "dek": "A DOCX extension does not guarantee a faithful, editable document. Use this workflow to choose the right conversion path and inspect the parts most likely to change.",
+        "primary_tool": "pdf-to-word", "related": ["ocr-pdf", "pdf-to-text", "unlock-pdf"],
+        "date": "2026-09-26", "published": "2026-07-20", "example": "word",
         "body": [
-            ("Convert your PDF to Word in three steps", (
-                "<p>Use the free <a href=\"/pdf-to-word\">PDF to Word</a> tool "
-                "(no account, no software install):</p>"
-                "<ol>"
-                "<li>Open <a href=\"/pdf-to-word\">PDF to Word</a> and drop in your "
-                "PDF.</li>"
-                "<li>It reconstructs paragraphs, headings, and tables into a real "
-                ".docx (not just an image pasted into a page).</li>"
-                "<li>Download the Word file and edit it anywhere: Word, Google "
-                "Docs, or LibreOffice.</li>"
-                "</ol>")),
-            ("How to keep the layout intact", (
-                "<p>Conversion quality depends on how the PDF was made:</p>"
-                "<ul>"
-                "<li><strong>Digital PDFs</strong> (exported from Word, a browser, or "
-                "a design tool) convert cleanly: text, headings, and simple "
-                "tables usually survive.</li>"
-                "<li><strong>Complex multi-column layouts</strong> may need light "
-                "clean-up after conversion; expect to fix the odd spacing or column "
-                "break.</li>"
-                "<li><strong>Locked PDFs</strong> must be unlocked first. Run "
-                "them through <a href=\"/unlock-pdf\">Unlock PDF</a> if you have the "
-                "password.</li>"
-                "</ul>")),
-            ("Scanned PDFs and OCR", (
-                "<p>If your PDF is a scan or photo of a document, the “text” "
-                "is really an image, so it can't be edited until it's recognised. "
-                "Optical character recognition (OCR) reads the pixels and turns them "
-                "back into selectable, editable text. Forge Files runs OCR fully "
-                "offline on our server, so scanned pages come back as words you can "
-                "actually change.</p>")),
+            ("Start with a selection test", "<p>Open the PDF and select a complete sentence. If you can copy sensible words into a text editor, standard PDF-to-Word conversion has text to work with. If you can only select the page as a picture, it is probably a scan. A PDF can mix digital text and scanned pages, so check more than one page.</p><p>If you still have the original Word document, edit that instead. PDF conversion reconstructs structure from positioned text; it cannot recover the author's exact styles, tracked changes or editing history.</p>"),
+            ("Convert a digital document", "<ol><li>Open <a href=\"/pdf-to-word\">PDF to Word</a> and choose the PDF.</li><li>If it requires an opening password, use <a href=\"/unlock-pdf\">Unlock PDF</a> with the correct password first.</li><li>Use standard conversion for selectable text. Download the DOCX after processing completes.</li><li>Open the DOCX in your editor and change a word and a table cell to confirm editability.</li></ol><p>The practice files below let you do this without uploading a private document. They are deliberately simple; their results should not be treated as a benchmark for contracts, complex reports or handwritten scans.</p>"),
+            ("If the document is a scan", "<p>Recognition must happen before image text can become editable. The AI Layout Recovery option depends on the OCR engine and models available on the server. If it is disabled or unavailable, standard conversion will not magically recognize the page image. An image retained inside a DOCX is not editable text.</p><p>For search rather than editing, <a href=\"/ocr-pdf\">OCR PDF</a> may be the better output: it retains the page image and adds recognized text behind it. Neither path guarantees correct spelling, numbers or reading order.</p>"),
+            ("A five-minute comparison before sharing", "<ul><li><strong>Tables:</strong> compare quantities, decimal points and which header each cell belongs to.</li><li><strong>Reading order:</strong> read across a page with columns or a sidebar.</li><li><strong>Page breaks:</strong> check the final line of each page and the next heading.</li><li><strong>Characters:</strong> inspect accents, currency symbols and mathematical notation.</li><li><strong>Headers and footers:</strong> look for repeated text that became part of a paragraph.</li></ul><p>Fix the DOCX, then export a fresh PDF from your editor if you need a stable final layout. Retain the original alongside the corrected version until the recipient has accepted it.</p>"),
         ],
-        "faqs": [
-            ("Can I convert a scanned PDF to editable Word?",
-             "Yes. A scan is an image, so it's run through OCR (optical character "
-             "recognition) first to turn the picture of text back into editable text "
-             "before it's written into the Word document."),
-            ("Will my tables and formatting survive?",
-             "Digital PDFs keep paragraphs, headings, and simple tables well. Very "
-             "complex or multi-column layouts may need minor clean-up after "
-             "converting. That's normal for any PDF-to-Word conversion."),
-            ("Is it really free with no watermark?",
-             "Yes. No signup, no watermark, no “one free file” limit. File "
-             "Forge is open source and your upload is deleted right after "
-             "processing."),
-        ],
+        "faqs": [("Why did the layout move?", "A PDF describes page positions rather than Word paragraphs and styles. Reconstruction, missing fonts and different page settings can change wrapping and breaks."),
+                 ("Do I need Word if I only want the words?", "No. <a href=\"/pdf-to-text\">PDF to Text</a> produces a TXT file. It does not preserve images or editable table structure.")],
     },
     "how-to-convert-heic-to-jpg": {
-        "title": "How to Convert HEIC to JPG for Free (iPhone Photos) | " + SITE,
-        "meta": ("iPhone photos won't open on Windows or in your app? Convert HEIC to "
-                 "JPG for free. Why HEIC exists, and a step-by-step fix: no "
-                 "signup, no watermark, photos deleted after."),
-        "h1": "How to convert HEIC (iPhone photos) to JPG",
-        "dek": ("Shared an iPhone photo and the other person can't open it? That's "
-                "HEIC. Here's how to convert it to a universally supported JPG in "
-                "seconds, and why your phone saves this format in the first "
-                "place."),
-        "primary_tool": "heic-to-jpeg",
-        "related": ["image-to-pdf"],
-        "date": "2026-07-20",
+        "title": "HEIC to JPG: Compatibility, Size and Metadata | " + SITE,
+        "meta": "Convert a HEIC still image to JPG, try an original downloadable example, and check color, orientation, size and metadata.",
+        "h1": "Convert HEIC to JPG for an app that cannot open it",
+        "dek": "Convert the format once, check the result, and keep your original. Changing the filename extension is not a conversion.",
+        "primary_tool": "heic-to-jpeg", "related": ["resize-image", "image-to-pdf", "convert-image"],
+        "date": "2026-09-26", "published": "2026-07-20", "example": "heic",
         "body": [
-            ("What is HEIC, and why won't it open?", (
-                "<p>HEIC (High Efficiency Image Container) is the format modern "
-                "iPhones use by default. It stores the same photo at roughly half the "
-                "file size of JPG, which is great for your phone's storage, but "
-                "many Windows apps, older devices, web forms, and messaging tools "
-                "still don't recognise it, so the photo appears broken or won't "
-                "upload.</p>")),
-            ("Convert HEIC to JPG in seconds", (
-                "<p>The free <a href=\"/heic-to-jpeg\">HEIC to JPG</a> tool converts "
-                "them without any app:</p>"
-                "<ol>"
-                "<li>Open <a href=\"/heic-to-jpeg\">HEIC to JPG</a>.</li>"
-                "<li>Drop in your <code>.heic</code> file (straight from an iPhone or "
-                "AirDrop).</li>"
-                "<li>Download a standard <code>.jpg</code> that opens everywhere: "
-                "Windows, Android, email, and every website upload box.</li>"
-                "</ol>")),
-            ("Stop your iPhone saving HEIC (optional)", (
-                "<p>If you'd rather your phone just shoot JPG going forward: open "
-                "<strong>Settings → Camera → Formats</strong> and choose "
-                "<strong>Most Compatible</strong>. New photos will save as JPG. Your "
-                "existing HEIC library still needs converting. That's what the "
-                "tool above is for.</p>")),
-            ("Turning photos into a PDF instead", (
-                "<p>Sometimes the real goal is a single document, not loose images. "
-                "Once your photos are JPGs you can combine them into one file with "
-                "<a href=\"/image-to-pdf\">Image to PDF</a>, handy for receipts, "
-                "IDs, or a set of scanned pages.</p>")),
+            ("Check what the destination actually accepts", "<p>HEIC is commonly used for still images in Apple's high-efficiency workflow. Some applications and upload forms instead require JPEG, usually named .jpg or .jpeg. Those two extensions name the same format. Read the form's size and dimension requirements before converting: format, pixels and bytes are separate checks.</p><p>If the destination already accepts HEIC, conversion may be unnecessary. Keep the original because JPEG compression can discard information and cannot preserve every feature of the source container.</p>"),
+            ("Convert and inspect", "<ol><li>Open <a href=\"/heic-to-jpeg\">HEIC to JPG</a> and choose the original file.</li><li>Start with JPEG quality 95 for a first comparison.</li><li>Download the JPG and open it in the app that rejected the HEIC.</li><li>Check orientation, dimensions, color and fine detail. Compare bytes with the upload limit.</li></ol><p>If it is still too large, use <a href=\"/resize-image\">Resize Image</a> to fit the required pixel dimensions rather than repeatedly saving at lower quality. A JPG can be larger than its HEIC source even when both look similar.</p>"),
+            ("What this conversion does not preserve", "<p>Forge Files converts a supported still image. It does not export a Live Photo's video component, reproduce every HDR display behavior or promise identical appearance across screens. The synthetic example below tests basic decoding and output dimensions, not iPhone camera fidelity.</p><p>The server converter attempts to preserve embedded ICC color information and EXIF metadata while applying orientation to the pixels. Metadata may include camera details or location, depending on the source. Do not use format conversion as a substitute for inspecting and removing metadata before publishing a sensitive image.</p>"),
+            ("Alternatives on Apple devices", "<p>On a Mac, Apple documents exporting a HEIF image from Photos or Preview to JPEG or PNG. On supported iPhones and iPads, Camera's Formats setting includes Most Compatible for future captures. Changing that setting does not convert existing files.</p><p>See <a href=\"https://support.apple.com/en-us/116944\">Apple's HEIF and HEVC guidance</a> for device-specific availability. Use a local export when you prefer not to upload the image to a server.</p>"),
         ],
-        "faqs": [
-            ("Why do my iPhone photos have a .heic extension?",
-             "Newer iPhones save photos as HEIC by default because it stores the same "
-             "image quality at about half the size of JPG. The trade-off is that many "
-             "non-Apple apps and sites don't support it yet."),
-            ("Does converting HEIC to JPG reduce quality?",
-             "There's a small, usually invisible re-encoding step because JPG is a "
-             "different codec. For everyday sharing, printing, and uploads the result "
-             "looks identical to the original."),
-            ("Are my photos uploaded anywhere permanent?",
-             "No. Each photo is processed over HTTPS and deleted immediately after "
-             "conversion, with an hourly sweeper as a backstop. Nothing is stored or "
-             "used to train anything."),
+        "faqs": [("Will changing .heic to .jpg work?", "No. The encoded image data must be converted. Renaming can make the file harder for apps to identify."),
+                 ("Why does the JPG look different?", "Lossy compression, color-profile handling, HDR display behavior and viewer settings can affect appearance. Compare in the intended receiving app and keep the HEIC original.")],
+    },
+    "merge-split-or-extract-pdf-pages": {
+        "title": "Merge, Split or Extract PDF Pages: Which Tool? | " + SITE,
+        "meta": "Choose the right PDF page operation and verify its output using original three-page and one-page practice documents.",
+        "h1": "Merge, split, extract or reorder: choose the right PDF tool",
+        "dek": "These operations solve different problems. Start with the shape of the output you need, then check page count and order.",
+        "primary_tool": "merge-pdf", "related": ["split-pdf", "extract-pdf-pages", "organize-pdf"],
+        "date": "2026-09-26", "published": "2026-09-26", "example": "pages",
+        "body": [
+            ("Choose by the result", "<ul><li><a href=\"/merge-pdf\">Merge PDF</a>: several input PDFs become one PDF.</li><li><a href=\"/split-pdf\">Split PDF</a>: one input becomes several PDFs in a ZIP.</li><li><a href=\"/extract-pdf-pages\">Extract Pages</a>: selected pages become one PDF.</li><li><a href=\"/organize-pdf\">Organize PDF</a>: a typed list changes page order, drops pages or repeats them.</li></ul><p>None of these operations redacts words inside a retained page. If your goal is to hide confidential information, removing unrelated pages is not sufficient.</p>"),
+            ("Work through a four-page packet", "<p>Download the three-page report and one-page appendix below. Select the report first and the appendix second in Merge PDF. Inspect the file list, run the tool, and confirm that the appendix appears as physical page 4.</p><p>To send only the report's first and third pages, use Extract Pages on the report with <code>1,3</code>. To create separate PDFs for report and appendix from the merged packet, use Split PDF with custom ranges <code>1-3,4</code>, then extract the downloaded ZIP.</p>"),
+            ("Understand page numbers before typing ranges", "<p>Tools use physical positions starting at 1. A cover counts, even if its printed page number is absent. A viewer may display a label such as iii or A-1 while the tool still needs the page's position. Count from the start of the actual file.</p><p>For Organize PDF, <code>3,1,2</code> places page 3 first; <code>1,1,2</code> duplicates page 1. Inspect the output rather than assuming a typed range selected the intended chapter.</p>"),
+            ("Inspect boundaries, signatures and file size", "<p>Check the first and last page of each source segment, total page count, rotation and paper size. Merging can mix portrait, landscape and differently sized pages. It does not make their layouts consistent or automatically compress them.</p><p>Editing a digitally signed PDF can invalidate its signature. Preserve originals and confirm the recipient's requirements before modifying signed documents. If size becomes a problem, compress only after assembling and verifying the packet.</p>"),
         ],
+        "faqs": [("Why did I receive a ZIP?", "Split PDF creates multiple output PDFs and packages them together. Use Extract Pages if you wanted one combined file."),
+                 ("Can I undo the operation?", "Keep your original files. The tools create new outputs, but server copies are temporary and should not be treated as backups.")],
+    },
+    "make-a-scanned-pdf-searchable": {
+        "title": "Make a Scanned PDF Searchable and Check OCR | " + SITE,
+        "meta": "Decide whether your PDF needs OCR, choose the matching available language, and verify search and copied text against the original scan.",
+        "h1": "Make a scanned PDF searchable, then verify the words",
+        "dek": "OCR adds a text layer behind the page image. The page can look unchanged while its recognized text contains errors, so appearance alone is not a reliable check.",
+        "primary_tool": "ocr-pdf", "related": ["rotate-pdf", "pdf-to-text", "pdf-to-word"],
+        "date": "2026-09-26", "published": "2026-09-26",
+        "body": [
+            ("Decide whether recognition is necessary", "<p>Search for a distinctive visible word, then try selecting and copying a sentence. If those work, the PDF already has text; it may not need another OCR pass. Test more than one page because scans and digital pages can be mixed.</p><p>You can practice with our <a href=\"/static/examples/scan.pdf\" data-ff-download download>synthetic image-only scan</a>. It deliberately has no selectable words. We do not publish an OCR accuracy score for it; recognition depends on the engine and language available on the server.</p>"),
+            ("Prepare the page and run OCR", "<ol><li>Rotate sideways pages before processing. Use a sharp original rather than an image that has already been compressed repeatedly.</li><li>Open <a href=\"/ocr-pdf\">OCR PDF</a>, choose the PDF, and select its matching available language.</li><li>Wait for processing and download the searchable PDF. If the engine or model is unavailable, do not assume another language will give acceptable results.</li><li>Open the result in a viewer with search and text selection.</li></ol>"),
+            ("Check the invisible layer", "<p>Search for words on several pages, including a heading and a word near the bottom. Copy a sentence into a plain text editor and compare it character by character with the scan. Check numbers and decimal points separately; a plausible word does not prove an accurate amount.</p><p>For multilingual documents, inspect every script used. Stamps, handwriting, faint print and complex layouts can confuse recognition. Keep the original and obtain human review when an error would affect a decision or submission.</p>"),
+            ("Choose a different output when needed", "<p>A searchable PDF is useful for finding words while keeping the scanned appearance. It is not the same as an editable Word document, a verified transcript or a fully tagged accessible PDF. Use <a href=\"/pdf-to-text\">PDF to Text</a> for plain text or an available OCR-aware Word conversion for editing, then review those outputs too.</p><p>If search fails only in one viewer, try another viewer before rerunning OCR. If copied text is consistently wrong, improve scan quality and verify language selection rather than accepting the visible page as proof.</p>"),
+        ],
+        "faqs": [("Does OCR correct the original image?", "No. A searchable layer does not remove blur, stains or handwriting from the visible scan."),
+                 ("Is every recognized word guaranteed correct?", "No. OCR is probabilistic. Check important fields against the original and have a qualified person review documents where errors matter.")],
     },
 }
 
@@ -239,8 +131,8 @@ def _article_schema(slug: str, g: dict) -> dict:
         "inLanguage": "en",
         "mainEntityOfPage": {"@type": "WebPage", "@id": BLOG_BASE + "/" + slug},
         "dateModified": g["date"],
-        "datePublished": g["date"],
-        "author": {"@type": "Organization", "name": SITE, "url": BASE + "/"},
+        "datePublished": g["published"],
+        "author": {"@type": "Organization", "name": SITE, "url": BASE + "/about"},
         "publisher": {
             "@type": "Organization",
             "name": SITE,
@@ -339,8 +231,11 @@ def render_guide(slug: str) -> str:
     )
 
     sections = "\n".join(
-        f"        <h2>{h2}</h2>\n        {body}" for h2, body in g["body"]
+        f'        <section id="section-{i}"><h2>{h2}</h2>\n        {body}</section>'
+        for i, (h2, body) in enumerate(g["body"], 1)
     )
+    contents = "".join(f'<li><a href="#section-{i}">{_attr(h2)}</a></li>' for i, (h2, _) in enumerate(g["body"], 1))
+    example = render_example(g["example"]) if g.get("example") else ""
     faqs = "\n".join(
         "        <h3>" + _plain(q) + "</h3>\n        <p>" + a + "</p>"
         for q, a in g["faqs"]
@@ -354,20 +249,31 @@ def render_guide(slug: str) -> str:
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
     </div>
-    <main class="page-wrap">
-        <nav class="page-nav"><a href="/blog">&larr; {SITE} Guides</a></nav>
+    <a class="skip-content" href="#main-content">Skip to content</a>
+    <main class="page-wrap" id="main-content">
+        <nav class="page-nav" aria-label="Main navigation"><a href="/">All tools</a><a href="/blog">{SITE} Guides</a><a href="/about">About</a></nav>
 
         <h1>{g['h1']}</h1>
         <p class="lede">{g['dek']}</p>
+        <p class="content-meta">Published by <a href="/about">Forge Files</a> · Updated <time datetime="{g['date']}">{g['date']}</time></p>
 
         <p><a class="cta" href="{cta_href}">Open the free {tool['app']} tool &rarr;</a></p>
 
-        {ADS_SLOT}
+        <nav class="article-contents" aria-label="In this guide"><strong>In this guide</strong><ol>{contents}</ol></nav>
 
 {sections}
 
+{example}
+
         <h2>Frequently asked questions</h2>
 {faqs}
+
+        <aside class="processing-note"><h2>About this guide</h2><p>These instructions describe Forge Files' current controls and known conversion limits.
+            Examples use original synthetic files, with actual outputs and reproducible measurements where shown.
+            AI-assisted drafting was checked against the implementation and the supplied examples; no external expert review is claimed.
+            <a href="/contact">Report an error or a confusing step</a>.</p></aside>
+
+        {ADS_SLOT}
 
         <h2>Related free tools</h2>
         <p>{_related_tools_html([g['primary_tool']] + g['related'])}</p>
@@ -402,13 +308,13 @@ def render_blog_index() -> str:
     head = _HEAD.format(
         site_verify=SITE_VERIFY, title=_attr(title), meta=_attr(meta),
         canonical=canonical, og_type="website", site=SITE, og_title=_attr(title.split(" | ")[0]),
-        og_desc=_attr(meta), base=BASE, asset_v=ASSET_V, ads_head=ADS_HEAD,
+        og_desc=_attr(meta), base=BASE, asset_v=ASSET_V, ads_head="",
         cf_analytics=CF_ANALYTICS, ga_analytics=GA_ANALYTICS,
         datafast_analytics=DATAFAST_ANALYTICS, schema_blocks=schema_blocks,
     )
     cards = "\n".join(
         f'            <li><a href="/blog/{slug}"><strong>{_attr(g["h1"])}</strong>'
-        f'<br><span>{_attr(g["meta"])}</span></a></li>'
+        f'<span>{_attr(g["meta"])}</span><small>Updated {g["date"]}</small></a></li>'
         for slug, g in GUIDES.items()
     )
     return f"""{head}
@@ -421,11 +327,11 @@ def render_blog_index() -> str:
         <nav class="page-nav"><a href="/">&larr; {SITE}: all tools</a></nav>
 
         <h1>Forge Files Guides</h1>
-        <p class="lede">Practical, no-nonsense guides for getting file jobs done.
-            Each one links straight to the free tool that does it. No signup, no watermark,
-            files deleted after processing.</p>
-
-        {ADS_SLOT}
+        <p class="lede">Choose a workflow, try it with a practice file, and learn what to check before sharing your result.</p>
+        <p>These guides cover the decisions that a convert button cannot make for you: how much image detail to keep,
+            whether a PDF needs OCR, which page operation gives the right output, and what a format conversion loses.</p>
+        <p>Compression, Word, HEIC and page-assembly guides include original downloadable inputs and actual outputs.
+            Keep your originals and use the result checks with your own files.</p>
 
         <ul class="guide-list">
 {cards}

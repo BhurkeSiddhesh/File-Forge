@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy: Forge Files</title>
     <meta name="description"
-        content="Forge Files privacy policy: files are deleted automatically after download, nothing is read by humans, and the open-source code makes every claim verifiable.">
+        content="How Forge Files handles local and server processing, temporary files, analytics, advertising cookies and support information.">
     <link rel="canonical" href="{{BASE_URL}}/privacy">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Forge Files">
@@ -15,9 +15,9 @@
     <meta property="og:url" content="{{BASE_URL}}/privacy">
     <meta name="twitter:card" content="summary">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/style.css?v=20260824">
+    <link rel="stylesheet" href="/static/style.css?v=20260926">
     <meta name="theme-color" content="#ffffff">
-    {{ADSENSE_HEAD}}
+
     {{CF_ANALYTICS}}
     {{GA_ANALYTICS}}
     <script
@@ -33,77 +33,35 @@
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
     </div>
-    <main class="page-wrap">
-        <nav class="page-nav"><a href="/">&larr; Forge Files: all tools</a></nav>
+    <a class="skip-content" href="#main-content">Skip to content</a>
+    <main class="page-wrap" id="main-content">
+        <nav class="page-nav" aria-label="Main navigation"><a href="/">All tools</a><a href="/blog">Guides &amp; examples</a><a href="/about">About</a></nav>
 
-        <h1>Privacy Policy</h1>
-        <p class="lede">Last updated: September 2026</p>
-
-        <h2>The short version</h2>
-        <ul>
-            <li>Your files are processed automatically and <strong>deleted from the server immediately after you
-                    download the result</strong>. Anything left over (e.g. an abandoned download) is purged within one
-                hour.</li>
-            <li>No account, no email, and no personal information is required to use any tool.</li>
-            <li>No human ever views your files. We do not open, read, copy, index, or share them.</li>
-            <li>Forge Files is <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank"
-                    rel="noopener">open source</a>, so every claim on this page can be verified by reading the code, and
-                you can self-host the tool so your files never leave your machine at all.</li>
-        </ul>
-
-        <h2>Files you upload</h2>
-        <p>When you use a tool, your file (including documents, PDFs, and uploaded photos/images such as HEIC, PNG, or JPEG) is transmitted over HTTPS to the server, processed in an automated pipeline,
-            and stored only as long as needed to deliver the result:</p>
-        <ul>
-            <li>The uploaded file is deleted as soon as processing completes.</li>
-            <li>The processed result is deleted the moment you download it.</li>
-            <li>A scheduled cleanup removes any remaining file older than one hour.</li>
-        </ul>
-        <p>Passwords you enter (for locked PDFs) are used only to decrypt the file during processing and are never
-            stored.</p>
-
-        <h3>Premium batch jobs</h3>
-        <p>Batch OCR works the same way, with one difference: because a batch runs in the background rather than
-            while you wait, its results stay available for you to collect for <strong>up to 24 hours</strong> before
-            being deleted automatically. The documents you upload to a batch are deleted as soon as the job finishes,
-            whether it succeeded or failed.</p>
-
-        <h2>Information we collect</h2>
-        <p>We do not require or store names, emails, or accounts. Standard technical data (IP address, browser type)
-            may appear in short-lived server logs used for abuse prevention (rate limiting) and debugging. We do not
-            build profiles of users or sell any data.</p>
-
-        <h2>Advertising and cookies</h2>
-        <p>The public site may display ads served by Google AdSense to cover hosting costs and keep the tools free.
-            Google may use cookies (including the DoubleClick cookie) to serve ads based on prior visits to this or
-            other websites. You can opt out of personalized advertising at <a
-                href="https://adssettings.google.com" target="_blank" rel="noopener">Google Ads Settings</a>. See <a
-                href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">how Google
-                uses data from partner sites</a>. Forge Files sets no third-party tracking cookies, and ads never have access
-            to your uploaded files.</p>
-
-        <h2>Analytics and product telemetry</h2>
-        <p>We use Cloudflare Web Analytics to see aggregate traffic to the site (page views, referrers, and
-            country-level location). It is cookieless and does not track you across other websites or build a
-            profile of you; see <a href="https://www.cloudflare.com/web-analytics/" target="_blank"
-                rel="noopener">Cloudflare's Web Analytics</a> for details.</p>
-        <p>We also use DataFast for website visitor and conversion analytics on the website. DataFast processes aggregate technical metadata such as page activity, referrer, country, browser, and device user agent. DataFast never has access to, inspects, or processes your uploaded files or file contents.</p>
-        <p>When Google Analytics (GA4) is enabled on the web, it collects aggregate website usage statistics subject to Google's privacy practices. You can opt out via Google's analytics opt-out tools or browser cookie preferences.</p>
-        <p>In addition, Forge Files records first-party anonymous product-usage events (such as page views, tool selections, successful processing, errors, operation duration, and download events) to monitor service health, reliability, and error rates. These events record an anonymous first-party session identifier (stored in a cookie with a 90-day lifespan) and a coarse country code derived from request edge headers. They never record precise GPS coordinates, filenames, file contents, email addresses, or personal accounts. Telemetry records are stored in a local, server-side database and are automatically pruned after 90 days.</p>
-        <p><strong>Mobile Applications (iOS &amp; Android):</strong> Mobile app builds do not include third-party web tracking scripts. DataFast, Cloudflare Web Analytics, Google Analytics, and Google AdSense are completely stripped and omitted from the mobile application bundles.</p>
-
-        <h2>Third-party services</h2>
-        <p>The site loads fonts and icons from public CDNs (Google Fonts, Cloudflare cdnjs). These providers may see
-            your IP address as part of serving those assets. Your files are never sent to any third party.</p>
-
-        <h2>Self-hosting</h2>
-        <p>If you want zero third-party involvement, you can run Forge Files on your own computer or server: the <a
-                href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">README</a> explains
-            how. In that setup, no data of any kind reaches us.</p>
-
-        <h2>Changes and contact</h2>
-        <p>If this policy changes, the date at the top will be updated. Questions or concerns? See the <a
-                href="/contact">contact page</a>.</p>
+<h1>Privacy Policy</h1>
+<p class="lede">Updated 26 September 2026. This page explains file processing, temporary storage and website analytics.</p>
+<h2>Processing on your device and on the server</h2>
+<p>Supported browser operations process file contents locally. Other operations use the server, and a local handler may fall back to server processing for an unsupported file. Server requests send the file over HTTPS. OCR is performed by the configured server engine; the free processing code does not send document contents to an external generative AI service.</p>
+<p>A file selected on a tool landing page may be held temporarily in your browser's IndexedDB to transfer it into the processing workspace. Local output files are held by the browser for download. These browser copies are distinct from server storage. Keep your own originals; neither path is a backup service.</p>
+<h2>Server file retention</h2>
+<ul><li>Uploads are removed during normal operation cleanup after processing.</li><li>Generated results are scheduled for deletion after the download response completes.</li><li>Abandoned free-tool files become eligible for cleanup after one hour. A background task checks about every 15 minutes while the service is running; this is not a guarantee of deletion within exactly 60 minutes.</li><li>Where premium background batch processing is enabled, results may remain available for up to 24 hours, subject to that feature's cleanup policy.</li></ul>
+<p>Processing is automated; human document review is not part of the normal workflow. Files are not intentionally published, sold or used as a content library. Access controls and cleanup reduce exposure, but we do not promise that hosting is risk-free. Use a locally controlled installation when your document-handling requirements do not permit uploads.</p>
+<p>Passwords supplied for locked PDFs are used to open the file during processing and are not intentionally logged or retained as account credentials. Do not reuse a sensitive account password as a document password.</p>
+<h2>Accounts and support</h2>
+<p>The free toolbox does not require an account or email address. If you contact support, we receive the information you choose to send. If optional account or paid features are enabled, their account and transaction flows may require identifying information; the free-tool no-signup statement does not describe those separate flows.</p>
+<h2>Analytics and product telemetry</h2>
+<p>We use first-party product events to understand page visits, tool selections, successful processing, downloads, errors and processing duration. Web requests may use an anonymous first-party session cookie with a 90-day lifespan and a coarse country code supplied by the network edge. This is a browser-session identifier, not a claim that all activity is impossible to associate. Event records are pruned after 90 days by the running service.</p>
+<p>Our product-event fields do not intentionally record filenames, file contents, email addresses or precise GPS location. Technical logs may contain IP addresses and browser or request information for service operation, debugging and abuse prevention.</p>
+<p>The website includes DataFast visitor and conversion analytics. Cloudflare Web Analytics and Google Analytics (GA4) may also be enabled. These services receive website activity and technical information such as page URLs, referrers and browser/device information; DataFast and Google Analytics may use cookies and identifiers. File contents are not deliberately included in analytics events. See <a href="https://datafa.st/privacy-policy">DataFast privacy information</a>, <a href="https://www.cloudflare.com/web-analytics/">Cloudflare Web Analytics</a> and <a href="https://policies.google.com/technologies/partner-sites">Google's partner-site data information</a>.</p>
+<p>You can manage cookies and site storage in your browser and use <a href="https://tools.google.com/dlpage/gaoptout">Google's Analytics opt-out tool</a>. Blocking analytics can limit the usage data we receive without changing the purpose of the file tools.</p>
+<p><strong>Mobile applications (iOS &amp; Android):</strong> Current mobile bundles omit DataFast, Cloudflare Web Analytics, Google Analytics and Google AdSense scripts. Server-side operation telemetry can still be recorded when a mobile tool calls the processing server.</p>
+<h2>Advertising</h2>
+<p>Pages may display Google AdSense ads when ad serving is enabled. Third-party vendors, including Google, use cookies to serve ads based on prior visits to this or other websites. Google's advertising cookies allow Google and its partners to personalize ads. Manage personalization through <a href="https://adssettings.google.com">Google Ads Settings</a> or participating vendors through <a href="https://www.aboutads.info/choices/">YourAdChoices</a>.</p>
+<p>The site's ad preference controls manage its advertising choice; they should not be interpreted as a guarantee that every unrelated analytics or technical request is blocked. Uploaded documents are not supplied as advertising content.</p>
+<h2>Third-party requests and self-hosting</h2>
+<p>Hosting, network, font, icon and analytics providers can receive technical requests such as IP addresses. File processing and website asset requests are different activities. The public source lets you inspect the code, but does not independently verify the live server's configuration.</p>
+<p>For self-hosting, review the <a href="https://github.com/BhurkeSiddhesh/File-Forge">installation instructions</a> and disable or replace external analytics and assets as required. Running a local server alone does not automatically remove every third-party browser request.</p>
+<h2>Contact and changes</h2>
+<p>For a privacy question, contact <a href="mailto:bhurke.siddhesh@gmail.com">bhurke.siddhesh@gmail.com</a>. Avoid attaching sensitive documents. This page's date changes when its substance is revised.</p>
 
         <footer class="page-footer">
             <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>

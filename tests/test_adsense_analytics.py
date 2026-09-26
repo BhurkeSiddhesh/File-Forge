@@ -40,18 +40,19 @@ def _assert_adsense_present(html: str, context: str = ""):
     assert "gtag('consent','default'" in head_content or "gtag('consent', 'default'" in head_content, f"Consent mode missing in <head> in {context}"
 
 
-def test_index_page_contains_adsense(client, enable_adsense):
+def test_processing_workspace_does_not_load_adsense(client, enable_adsense):
     res = client.get("/")
     assert res.status_code == 200
-    _assert_adsense_present(res.text, "index page (/)")
+    assert "adsbygoogle.js" not in res.text
+    assert '<ins class="adsbygoogle"' not in res.text
     assert 'id="ff-consent"' in res.text, "Consent banner missing on index page"
 
 
 @pytest.mark.parametrize("slug", ["about", "contact", "faq", "privacy", "terms"])
-def test_static_content_pages_contain_adsense(client, enable_adsense, slug):
+def test_support_and_policy_pages_do_not_load_adsense(client, enable_adsense, slug):
     res = client.get(f"/{slug}")
     assert res.status_code == 200
-    _assert_adsense_present(res.text, f"content page (/{slug})")
+    assert "adsbygoogle.js" not in res.text
     assert 'id="ff-consent"' in res.text, f"Consent banner missing on content page (/{slug})"
 
 
@@ -66,12 +67,14 @@ def test_tool_landing_pages_contain_adsense(client, enable_adsense, slug):
 def test_blog_index_and_guides_contain_adsense(client, enable_adsense):
     res = client.get("/blog")
     assert res.status_code == 200
-    _assert_adsense_present(res.text, "blog index (/blog)")
+    assert "adsbygoogle.js" not in res.text
 
     for slug in blog_content.guide_slugs():
         g_res = client.get(f"/blog/{slug}")
         assert g_res.status_code == 200
         _assert_adsense_present(g_res.text, f"blog guide (/blog/{slug})")
+        if blog_content.GUIDES[slug].get("example"):
+            assert g_res.text.index('class="worked-example"') < g_res.text.index('<ins class="adsbygoogle"')
 
 
 def test_ads_txt_endpoint(client, monkeypatch):

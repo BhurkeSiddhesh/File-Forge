@@ -15,42 +15,10 @@
     <meta property="og:url" content="{{BASE_URL}}/faq">
     <meta name="twitter:card" content="summary">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/style.css?v=20260824">
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-            {
-                "@type": "Question",
-                "name": "Is Forge Files really free?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every tool is free with no daily limits, watermarks, or accounts. The project is open source (MIT/Apache-2.0), and the public site is supported by unobtrusive ads." }
-            },
-            {
-                "@type": "Question",
-                "name": "What happens to my files after I upload them?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Files are processed automatically, the upload is removed when processing finishes, and the result is deleted from the server the moment you download it. A background sweeper purges anything older than an hour. Because the code is open source, all of this is publicly verifiable." }
-            },
-            {
-                "@type": "Question",
-                "name": "Is there a file size limit?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Yes, uploads are capped (50 MB by default on the public site) to keep the free service fast and available for everyone. If you self-host, you can raise the limit with one environment variable." }
-            },
-            {
-                "@type": "Question",
-                "name": "Can I run Forge Files on my own computer or server?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Clone the GitHub repository, install the Python requirements, and run main.py, or use the included Dockerfile. Your files then never leave your machine at all." }
-            },
-            {
-                "@type": "Question",
-                "name": "Can Forge Files crack a PDF password I don't know?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. The Unlock PDF tool only removes encryption from documents whose password you already know. It does not guess, brute-force, or bypass passwords." }
-            }
-        ]
-    }
-    </script>
+    <link rel="stylesheet" href="/static/style.css?v=20260926">
+    <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is the toolbox free?", "acceptedAnswer": {"@type": "Answer", "text": "The free tools do not require signup or add a branding watermark. Upload sizes, processing limits and rate limits still apply. Free does not mean unlimited resources."}}, {"@type": "Question", "name": "Are files always uploaded?", "acceptedAnswer": {"@type": "Answer", "text": "No. Supported operations can run in your browser. Other operations and unsupported local cases use the server. Each tool page describes its processing path; see the privacy policy for retention and analytics."}}, {"@type": "Question", "name": "When are server files deleted?", "acceptedAnswer": {"@type": "Answer", "text": "Normal cleanup removes uploads after processing and schedules results for deletion after the download response. Abandoned free-tool files become eligible after one hour and are checked about every 15 minutes while the service runs."}}, {"@type": "Question", "name": "Why can a conversion look different?", "acceptedAnswer": {"@type": "Answer", "text": "Formats store information differently. Fonts, tables, columns, scans and unsupported features can affect the result. Keep the original and inspect the output before sharing."}}, {"@type": "Question", "name": "Can OCR guarantee correct words?", "acceptedAnswer": {"@type": "Answer", "text": "No. OCR estimates text from page images and depends on engine availability, language and scan quality. Check names, dates, numbers and reading order against the original."}}, {"@type": "Question", "name": "Can I recover a forgotten PDF opening password?", "acceptedAnswer": {"@type": "Answer", "text": "No. Unlock PDF does not guess or recover a forgotten opening password. Use the correct password and only process documents you are authorized to modify."}}, {"@type": "Question", "name": "Is Sign PDF a digital signature service?", "acceptedAnswer": {"@type": "Answer", "text": "It places a signature image on a page. It does not provide certificate-based signing, identity verification or tamper-evident certification. Check what the recipient accepts."}}, {"@type": "Question", "name": "Can I try it without my own documents?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The guides include original synthetic input files and actual outputs for compression, Word conversion, HEIC conversion and page assembly."}}, {"@type": "Question", "name": "Can I self-host?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The public toolbox is available under GNU AGPLv3, with separate commercial licensing information. Review dependencies, analytics and deployment configuration when setting up your own installation."}}]}</script>
     <meta name="theme-color" content="#ffffff">
-    {{ADSENSE_HEAD}}
+
     {{CF_ANALYTICS}}
     {{GA_ANALYTICS}}
     <script
@@ -66,47 +34,11 @@
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
     </div>
-    <main class="page-wrap">
-        <nav class="page-nav"><a href="/">&larr; Forge Files: all tools</a></nav>
+    <a class="skip-content" href="#main-content">Skip to content</a>
+    <main class="page-wrap" id="main-content">
+        <nav class="page-nav" aria-label="Main navigation"><a href="/">All tools</a><a href="/blog">Guides &amp; examples</a><a href="/about">About</a></nav>
 
-        <h1>Frequently Asked Questions</h1>
-
-        <h2>Is Forge Files really free?</h2>
-        <p>Yes. Every tool is free with no daily limits, no watermarks, and no account. The project is open source
-            (MIT / Apache-2.0), and the public site is supported by unobtrusive ads so it can stay free.</p>
-
-        <h2>What happens to my files after I upload them?</h2>
-        <p>Three things, all automatic: the upload is removed as soon as processing finishes; the result is deleted
-            from the server the moment you download it; and a background sweeper purges anything older than one hour.
-            No human ever looks at your files. Unlike closed-source tools, you don't have to take our word for it: the
-            <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">code that does this
-                is public</a>.</p>
-
-        <h2>Is there a file size limit?</h2>
-        <p>Uploads are capped (50 MB by default on the public site) to keep the free service fast for everyone. If you
-            self-host, you can raise the limit with a single environment variable.</p>
-
-        <h2>Can I run Forge Files myself?</h2>
-        <p>Yes, that's the point of being open source. Clone the <a
-                href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">repository</a>,
-            install the Python requirements, and run <code>python main.py</code>, or use the included Dockerfile. Your
-            files then never leave your machine.</p>
-
-        <h2>Can Forge Files crack a PDF password I don't know?</h2>
-        <p>No. <a href="/unlock-pdf">Unlock PDF</a> removes encryption only when you provide the correct password. It
-            does not guess, brute-force, or bypass anything.</p>
-
-        <h2>Why did my conversion fail?</h2>
-        <p>The most common causes: the file is over the size cap, the PDF password was wrong, or the file is corrupted.
-            Try again, and if it keeps failing, <a href="/contact">tell us</a>, ideally with the error message you
-            saw.</p>
-
-        <h2>Which tools are available?</h2>
-        <p><a href="/unlock-pdf">Unlock PDF</a>, <a href="/pdf-to-word">PDF to Word</a>, <a
-                href="/compress-pdf">Compress PDF</a>, <a href="/extract-pdf-pages">Extract PDF Pages</a>, <a
-                href="/pdf-to-text">PDF to Text</a>, <a href="/heic-to-jpeg">HEIC to JPG</a>, and <a
-                href="/resize-image">Resize / Crop Image</a>, plus a <a href="/?tool=workflow">Workflow Builder</a>
-            that chains steps together.</p>
+<h1>Frequently asked questions</h1><p class="lede">Processing, limits and what to check before you share a converted file.</p><h2>Is the toolbox free?</h2><p>The free tools do not require signup or add a branding watermark. Upload sizes, processing limits and rate limits still apply. Free does not mean unlimited resources.</p><h2>Are files always uploaded?</h2><p>No. Supported operations can run in your browser. Other operations and unsupported local cases use the server. Each tool page describes its processing path; see the privacy policy for retention and analytics.</p><h2>When are server files deleted?</h2><p>Normal cleanup removes uploads after processing and schedules results for deletion after the download response. Abandoned free-tool files become eligible after one hour and are checked about every 15 minutes while the service runs.</p><h2>Why can a conversion look different?</h2><p>Formats store information differently. Fonts, tables, columns, scans and unsupported features can affect the result. Keep the original and inspect the output before sharing.</p><h2>Can OCR guarantee correct words?</h2><p>No. OCR estimates text from page images and depends on engine availability, language and scan quality. Check names, dates, numbers and reading order against the original.</p><h2>Can I recover a forgotten PDF opening password?</h2><p>No. Unlock PDF does not guess or recover a forgotten opening password. Use the correct password and only process documents you are authorized to modify.</p><h2>Is Sign PDF a digital signature service?</h2><p>It places a signature image on a page. It does not provide certificate-based signing, identity verification or tamper-evident certification. Check what the recipient accepts.</p><h2>Can I try it without my own documents?</h2><p>Yes. The guides include original synthetic input files and actual outputs for compression, Word conversion, HEIC conversion and page assembly.</p><h2>Can I self-host?</h2><p>Yes. The public toolbox is available under GNU AGPLv3, with separate commercial licensing information. Review dependencies, analytics and deployment configuration when setting up your own installation.</p><p><a href="/blog">Guides and practice files</a> · <a href="/privacy">Privacy details</a> · <a href="/contact">Get help</a></p>
 
         <footer class="page-footer">
             <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>

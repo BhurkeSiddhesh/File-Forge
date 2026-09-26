@@ -230,7 +230,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://www.forgefiles.org").rstrip("/")
 # date on every request is inaccurate and teaches crawlers to distrust the field
 # (wasting crawl budget). Bump CONTENT_LAST_MODIFIED (or set the env var on a
 # real content change) so the sitemap reflects the true last edit, not "now".
-CONTENT_LAST_MODIFIED = os.environ.get("CONTENT_LAST_MODIFIED", "2026-07-20").strip()
+CONTENT_LAST_MODIFIED = os.environ.get("CONTENT_LAST_MODIFIED", "2026-09-26").strip()
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
 # Multi-file endpoints (the merge tools, images->PDF) share one budget across the
 # whole request: a per-file cap alone would let a single request write
@@ -360,6 +360,7 @@ def _build_adsense_slot() -> str:
     slot_attr = f' data-ad-slot="{ADSENSE_SLOT}"' if ADSENSE_SLOT else ""
     return (
         '<div class="ad-slot" role="complementary" aria-label="Advertisement">'
+        '<span class="ad-label">Advertisement</span>'
         '<ins class="adsbygoogle" style="display:block"'
         f' data-ad-client="{ADSENSE_CLIENT}"{slot_attr}'
         ' data-ad-format="auto" data-full-width-responsive="true"></ins>'
@@ -3645,17 +3646,18 @@ async def robots_txt():
 @app.get("/sitemap.xml")
 async def sitemap_xml():
     lastmod = CONTENT_LAST_MODIFIED
-    # (loc, changefreq, priority)
-    entries = [(BASE_URL + "/", "daily", "1.0")]
-    entries += [(f"{BASE_URL}/{slug}", "weekly", "0.8") for slug in TOOL_PAGES]
-    entries += [(f"{BASE_URL}/blog", "weekly", "0.6")]
-    entries += [(f"{BASE_URL}/blog/{slug}", "monthly", "0.6")
+    # (loc, changefreq, priority, actual content modification date)
+    entries = [(BASE_URL + "/", "daily", "1.0", lastmod)]
+    entries += [(f"{BASE_URL}/{slug}", "weekly", "0.8", lastmod) for slug in TOOL_PAGES
+                if slug not in seo_content.CANONICAL_ALIASES]
+    entries += [(f"{BASE_URL}/blog", "weekly", "0.6", lastmod)]
+    entries += [(f"{BASE_URL}/blog/{slug}", "monthly", "0.6", blog_content.GUIDES[slug]["date"])
                 for slug in blog_content.guide_slugs()]
-    entries += [(f"{BASE_URL}/{slug}", "monthly", "0.5") for slug in CONTENT_PAGES]
+    entries += [(f"{BASE_URL}/{slug}", "monthly", "0.5", lastmod) for slug in CONTENT_PAGES]
     items = "\n".join(
-        f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
+        f"  <url><loc>{loc}</loc><lastmod>{modified}</lastmod>"
         f"<changefreq>{cf}</changefreq><priority>{pr}</priority></url>"
-        for loc, cf, pr in entries
+        for loc, cf, pr, modified in entries
     )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -3702,6 +3704,8 @@ async def llms_txt():
 
     by_category: dict = {}
     for slug, page in TOOL_PAGES.items():
+        if slug in seo_content.CANONICAL_ALIASES:
+            continue
         by_category.setdefault(page.get("tool") or "other", []).append((slug, page))
 
     for key in sorted(by_category, key=lambda k: -len(by_category[k])):
@@ -3776,6 +3780,8 @@ async def serve_blog_guide(slug: str):
 
 @app.get("/{slug}", response_class=HTMLResponse)
 async def serve_seo_page(slug: str):
+    if slug in seo_content.CANONICAL_ALIASES:
+        return RedirectResponse(url="/" + seo_content.CANONICAL_ALIASES[slug], status_code=308)
     if slug in TOOL_PAGES:
         return HTMLResponse(_render_tool_page(slug))
     if slug in CONTENT_PAGES:

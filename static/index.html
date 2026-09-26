@@ -107,10 +107,9 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="/static/style.css?v=20260824">
+    <link rel="stylesheet" href="/static/style.css?v=20260926">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
-    {{ADSENSE_HEAD}}
     {{CF_ANALYTICS}}
     <script>window.FF_GA_MANUAL_PAGEVIEW=true;</script>
     {{GA_ANALYTICS}}
@@ -223,7 +222,21 @@
                 </div>
             </div>
 
-            {{ADSENSE_SLOT}}
+            <section class="home-learning" aria-labelledby="learn-heading">
+                <p class="eyebrow">MAKE THE RIGHT CONVERSION</p>
+                <h2 id="learn-heading">Know what changes before you share it.</h2>
+                <p>A smaller scan can lose fine print. A converted slide can be a picture instead of editable text.
+                    Try a practice file and learn what to check in the output.</p>
+                <div class="learning-grid">
+                    <a href="/blog/how-to-compress-a-pdf-without-losing-quality"><strong>Find the right PDF size</strong><span>Compare three measured outputs and inspect readability.</span></a>
+                    <a href="/blog/how-to-convert-pdf-to-word-for-free"><strong>Get editable text and tables</strong><span>Compare a source PDF with its actual Word conversion.</span></a>
+                    <a href="/blog/merge-split-or-extract-pdf-pages"><strong>Build the right page packet</strong><span>Choose merge, split, extract or reorder with worked examples.</span></a>
+                </div>
+                <p><a class="text-link" id="learning-guides-link" href="/blog">All guides &amp; practice files &rarr;</a></p>
+                <p class="processing-summary">Some tools process supported files on your device; others upload to the server,
+                    including unsupported local cases. Keep your originals and download results promptly.
+                    <a href="/privacy">How files and usage data are handled</a>.</p>
+            </section>
         </section>
 
         <!-- Drill Down Page (PDF) -->
@@ -296,7 +309,7 @@
                             <i class="fas fa-file-archive"></i>
                             <div class="action-text">
                                 <h4>Compress PDF</h4>
-                                <p>Shrink file size without quality loss</p>
+                                <p>Reduce size; inspect image detail</p>
                             </div>
                         </div>
                         <div class="action-card" id="merge-pdf-btn" role="button" tabindex="0">
@@ -722,7 +735,7 @@
                         </a>
                         <div class="file-deleted-notice">
                             <i class="fas fa-shield-alt"></i>
-                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                            <span>Your result is ready. Download it now and keep your original; server copies are temporary.</span>
                         </div>
                     </div>
                 </div>
@@ -988,7 +1001,7 @@
                         </a>
                         <div class="file-deleted-notice">
                             <i class="fas fa-shield-alt"></i>
-                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                            <span>Your result is ready. Download it now and keep your original; server copies are temporary.</span>
                         </div>
                     </div>
                 </div>
@@ -1110,7 +1123,7 @@
                         </a>
                         <div class="file-deleted-notice">
                             <i class="fas fa-shield-alt"></i>
-                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                            <span>Your result is ready. Download it now and keep your original; server copies are temporary.</span>
                         </div>
                     </div>
                 </div>
@@ -1218,7 +1231,7 @@
                         </a>
                         <div class="file-deleted-notice">
                             <i class="fas fa-shield-alt"></i>
-                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                            <span>Your result is ready. Download it now and keep your original; server copies are temporary.</span>
                         </div>
                     </div>
                 </div>
@@ -1315,7 +1328,7 @@
                         </a>
                         <div class="file-deleted-notice">
                             <i class="fas fa-shield-alt"></i>
-                            <span>Your file has been safely processed and automatically deleted from our servers.</span>
+                            <span>Your result is ready. Download it now and keep your original; server copies are temporary.</span>
                         </div>
                     </div>
                 </div>
@@ -1611,19 +1624,19 @@
                     <a href="/terms">Terms of Use</a>
                 </div>
             </div>
-            <p class="footer-note">© 2026 Forge Files, free &amp; open source (AGPLv3 / Commercial). Files are processed
-                automatically and deleted from the server after download.</p>
+            <p class="footer-note">© 2026 Forge Files. Public toolbox: AGPLv3, with commercial licensing available.
+                Processing and upload limits apply. <a href="/privacy">File handling and retention</a>.</p>
         </footer>
     </main>
 
-    <script src="/static/config.js?v=20260824"></script>
+    <script src="/static/config.js?v=20260926"></script>
     <!-- On-device processing. Must precede script.js: these register the local
          handlers that ffProcess() dispatches to, and define ffProcess itself.
          Small (~30 KB total) — pdf-lib is fetched on demand, not from here. -->
-    <script src="/static/local/ff-local.js?v=20260824"></script>
-    <script src="/static/local/ops-image.js?v=20260824"></script>
-    <script src="/static/local/ops-pdf.js?v=20260824"></script>
-    <script src="/static/script.js?v=20260824"></script>
+    <script src="/static/local/ff-local.js?v=20260926"></script>
+    <script src="/static/local/ops-image.js?v=20260926"></script>
+    <script src="/static/local/ops-pdf.js?v=20260926"></script>
+    <script src="/static/script.js?v=20260926"></script>
     {{CONSENT_BANNER}}
 </body>
 

@@ -660,6 +660,13 @@
   ],
   "shared_capabilities": [
     {
+      "id": "learning_guides",
+      "web": "Server-rendered tool help, guides and reproducible downloadable examples from the home learning-guides-link.",
+      "mobile": "The same content and samples bundled offline under content/, with tool deep links, upload handoff and native sample saving.",
+      "web_surface": "learning-guides-link",
+      "mobile_surface": "learning-guides-link"
+    },
+    {
       "id": "max_upload_mb",
       "web": "Authenticated server tools accept the backend-authorized limit.",
       "mobile": "The shared web bundle forwards the session and applies the same /api/me limit."
@@ -668,7 +675,6 @@
   "mobile_exemptions": [
     {"id": "admin_stats", "reason": "Internal operations only"},
     {"id": "adsense", "reason": "Web monetization only; mobile uses no ads"},
-    {"id": "seo_pages", "reason": "Search acquisition only"},
     {"id": "search_metadata", "reason": "Web search indexing only"},
     {"id": "web_checkout", "reason": "Mobile purchases use RevenueCat in-app purchase"},
     {"id": "public_repo_mirroring", "reason": "Development infrastructure only"}

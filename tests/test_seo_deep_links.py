@@ -115,7 +115,9 @@ def test_merge_pages_have_multi_file_upload_box(slug):
     """Merge tools support uploading and dropping multiple files directly on the landing page."""
     html = seo_content.render_tool_page(slug)
     assert "data-ff-upload" in html, f"{slug} must have an upload box"
-    assert "multiple hidden>" in html, f"{slug} upload box must have multiple attribute"
+    assert ' multiple>' in html, f"{slug} upload box must allow multiple files"
+    assert 'class="upload-cta-input"' in html
+    assert ' multiple hidden>' not in html, "the file picker must remain keyboard accessible"
     assert "or drop files here" in html, f"{slug} upload box must have multi-file hint text"
 
 

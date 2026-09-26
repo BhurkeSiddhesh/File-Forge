@@ -15,9 +15,9 @@
     <meta property="og:url" content="{{BASE_URL}}/contact">
     <meta name="twitter:card" content="summary">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/style.css?v=20260824">
+    <link rel="stylesheet" href="/static/style.css?v=20260926">
     <meta name="theme-color" content="#ffffff">
-    {{ADSENSE_HEAD}}
+
     {{CF_ANALYTICS}}
     {{GA_ANALYTICS}}
     <script
@@ -33,26 +33,21 @@
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
     </div>
-    <main class="page-wrap">
-        <nav class="page-nav"><a href="/">&larr; Forge Files: all tools</a></nav>
+    <a class="skip-content" href="#main-content">Skip to content</a>
+    <main class="page-wrap" id="main-content">
+        <nav class="page-nav" aria-label="Main navigation"><a href="/">All tools</a><a href="/blog">Guides &amp; examples</a><a href="/about">About</a></nav>
 
-        <h1>Contact</h1>
-        <p class="lede">Found a bug, want a new tool, or have a question? We'd genuinely like to hear it.</p>
-
-        <h2>Report a bug or request a feature</h2>
-        <p>The fastest way is to <a href="https://github.com/BhurkeSiddhesh/File-Forge/issues" target="_blank"
-                rel="noopener">open an issue on GitHub</a>. Include what you were doing, what you expected, and any
-            error message you saw. You don't need to attach the file itself, and for private documents, please don't.</p>
-
-        <h2>Email</h2>
-        <p>For anything else (questions, feedback, or privacy concerns), email
-            <a href="mailto:bhurke.siddhesh@gmail.com">bhurke.siddhesh@gmail.com</a>. We usually reply within a couple
-            of days.</p>
-
-        <h2>A note on your files</h2>
-        <p>We cannot recover a file you processed: uploads and results are deleted automatically (see our
-            <a href="/privacy">privacy policy</a>). That's by design: it means nobody, including us, can go back and
-            look at your documents.</p>
+<h1>Contact Forge Files</h1>
+<p class="lede">Report a failed conversion, a confusing instruction or an incorrect example. Useful reports help us improve the tools and their guidance.</p>
+<h2>Report a problem</h2>
+<p>Open an issue in the <a href="https://github.com/BhurkeSiddhesh/File-Forge/issues">public GitHub issue tracker</a>. Include the tool, browser or mobile platform, selected options, the error message and what you expected. A page URL and approximate file type and size are usually enough to start.</p>
+<p>Try one of our <a href="/blog">practice files</a> if you can reproduce the problem without your own document. Public issues are visible to others: do not attach bank statements, identity documents, private contracts, passwords or unredacted personal information.</p>
+<h2>Email and privacy questions</h2>
+<p>Email <a href="mailto:bhurke.siddhesh@gmail.com">bhurke.siddhesh@gmail.com</a> for questions that should not be public. Support is handled by the project maintainer; no guaranteed response time is offered.</p>
+<h2>Before reporting a conversion difference</h2>
+<ul><li>Keep the original and compare the downloaded output in another viewer.</li><li>For a scan, explain whether text can be selected before processing.</li><li>For a layout issue, describe the affected element: table, font, image or page break.</li><li>For an upload error, include the visible error text without document contents.</li></ul>
+<h2>Temporary files cannot serve as backups</h2>
+<p>Browser outputs and server results are temporary. We cannot promise to recover a deleted file. Download results promptly and keep your originals. See the <a href="/privacy">retention details</a>.</p>
 
         <footer class="page-footer">
             <a href="/">Home</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/contact">Contact</a>

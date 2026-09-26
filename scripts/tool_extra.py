@@ -1,619 +1,212 @@
-"""Tool-specific extended content for landing pages.
+"""Authored, tool-specific use cases and limitations. No quality guarantees."""
+from __future__ import annotations
 
-WHY: every tool page shares the same short privacy note and the same
-"Why use Forge Files?" benefits. To rank, each page also needs *unique*,
-substantial, on-topic copy — supported formats, real limits, concrete
-use-cases, and honest comparisons. That lives here, keyed by tool slug, and is
-rendered by seo_content.render_tool_page between the benefits list and the
-privacy note.
+from html import escape
 
-This is intentionally modular and incremental: a slug with no entry here simply
-renders no extra section (the page is still valid, just shorter). Fill in the
-remaining tools over time; keep every claim factually true to what the tool
-actually does — inaccurate copy hurts both users and rankings.
-
-Format: EXTRA[slug] is a block of server-rendered HTML using <h2>/<h3>/<p>/<ul>.
-Keep internal links to sibling tools (they strengthen internal linking) and to
-the matching /blog guide where one exists.
-"""
-from typing import Dict
-
-EXTRA: Dict[str, str] = {
-    # ---- PDF: high-traffic ------------------------------------------------
-    "merge-pdf": """
-        <h2>Can I merge PDFs without a watermark or account?</h2>
-        <p>Yes. Forge Files combines PDF files without adding a watermark and
-            without requiring registration. Select at least two PDFs, check their
-            order, and download the combined document. Upload and processing limits
-            still apply; no signup does not mean unlimited file sizes.</p>
-        <h2>What you can merge</h2>
-        <p>Combine any number of PDF files into a single document: reports and
-            their appendices, scanned pages, invoices, or chapters exported
-            separately. There is no two-file free cap and no page limit beyond your
-            upload size. Drag the files into the order you want before merging, so
-            the final PDF reads top-to-bottom exactly as intended.</p>
-        <h2>Common uses</h2>
-        <ul>
-            <li>Bundling a cover letter, CV, and portfolio into one file to upload.</li>
-            <li>Joining separately scanned pages back into one document.</li>
-            <li>Combining monthly statements or invoices for a single submission.</li>
-        </ul>
-        <h2>Merge vs. split, organize, and compress</h2>
-        <p>Merging only joins files. If you also need to drop or reorder pages,
-            <a href="/organize-pdf">Organize PDF</a> gives you page-level control; to
-            pull pages out instead, use <a href="/split-pdf">Split PDF</a>. Merged a
-            lot of image-heavy files? Run the result through
-            <a href="/compress-pdf">Compress PDF</a> once at the end to keep the size
-            down.</p>""",
-
-    "compress-pdf": """
-        <h2>How do I compress a PDF before emailing it?</h2>
-        <p>Upload the PDF to Forge Files, select a compression level, and download
-            the result. Start with Low when fine detail matters, then try Medium
-            or High if the file is still too large. Compare the output size with
-            your email service's attachment limit and inspect the pages before sending.</p>
-        <p>A target size is not guaranteed: an already optimized PDF may shrink
-            very little. If it is still too large, <a href="/extract-pdf-pages">keep
-            only the required pages</a> or share it using an appropriate file link.</p>
-        <h2>How compression works here</h2>
-        <p>Compress PDF re-samples oversized embedded images and strips redundant
-            data. Selectable text and text inside scanned images are different: image
-            compression can soften scanned words as well as photos. Most
-            savings come from images and scans; a text-only PDF is already small.
-            Pick a level to trade size against image fidelity: screen-resolution
-            output is ideal for email and web uploads, while you should keep the
-            original for high-DPI commercial printing.</p>
-        <h2>When you need it</h2>
-        <ul>
-            <li>A PDF is too big to attach to an email or upload to a portal.</li>
-            <li>A scanned document is huge because it's really a stack of images.</li>
-            <li>You merged several files and the combined PDF ballooned in size.</li>
-        </ul>
-        <p>For the full walkthrough and the quality trade-offs, see our guide:
-            <a href="/blog/how-to-compress-a-pdf-without-losing-quality">how to compress
-            a PDF without losing quality</a>.</p>""",
-
-    "pdf-to-word": """
-        <h2>What converts well</h2>
-        <p>PDF to Word rebuilds paragraphs, headings, and simple tables into a real
-            editable <code>.docx</code>, not an image pasted into a page, so you can
-            open and edit it in Microsoft Word, Google Docs, or LibreOffice. Digital
-            PDFs (exported from Word, a browser, or design software) convert cleanly;
-            very complex multi-column layouts may need light clean-up afterwards, which
-            is normal for any PDF-to-Word conversion.</p>
-        <h2>Scanned PDFs</h2>
-        <p>If your PDF is a scan or photo, the "text" is really an image. It's run
-            through OCR (optical character recognition), which runs fully offline on our
-            server, so the recognised words come back editable rather than locked in a
-            picture.</p>
-        <h2>Locked PDFs</h2>
-        <p>Password-protected PDFs must be opened first:
-            <a href="/unlock-pdf">remove the password</a> (on a file you own), then
-            convert. Both tools are free. Full walkthrough:
-            <a href="/blog/how-to-convert-pdf-to-word-for-free">how to convert a PDF to
-            Word for free</a>.</p>""",
-
-    "unlock-pdf": """
-        <h2>Can I unlock a PDF if I do not know its password?</h2>
-        <p>If a PDF requires a password to open, you need the correct password.
-            This tool does not recover a forgotten opening password. Use it for
-            documents you own or are authorized to modify, then download the
-            unlocked copy for editing, printing, or conversion.</p>
-        <h2>What "unlock" means</h2>
-        <p>Unlock PDF removes the open/permissions password from a PDF <strong>you
-            own</strong> so you can view, copy, print, or convert it freely. Use it on
-            your own bank statements, payslips, or documents whose password you know,
-            not on files you aren't authorised to open.</p>
-        <h2>After unlocking</h2>
-        <ul>
-            <li>Convert it: <a href="/pdf-to-word">PDF to Word</a>,
-                <a href="/pdf-to-jpg">PDF to JPG</a>, or
-                <a href="/pdf-to-excel">PDF to Excel</a>.</li>
-            <li>Edit its pages with <a href="/organize-pdf">Organize PDF</a> or
-                <a href="/split-pdf">Split PDF</a>.</li>
-            <li>Re-secure it later with a new password using
-                <a href="/protect-pdf">Protect PDF</a>.</li>
-        </ul>
-        <h2>Is it private?</h2>
-        <p>Your file and its password never leave the processing step: the upload is
-            deleted right after download, and because the code is open source you can
-            verify exactly how the password is handled.</p>""",
-
-    "split-pdf": """
-        <h2>Ways to split</h2>
-        <p>Pull out exactly the pages you need: a single page, a range like
-            <code>5-10</code>, or a mix such as <code>1,3,5-10</code>. The selected
-            pages come out as a new PDF, leaving your original untouched. It's the fast
-            way to extract a chapter, remove confidential pages before sharing, or grab
-            one page out of a long document.</p>
-        <h2>Split, extract, or organize?</h2>
-        <ul>
-            <li><a href="/split-pdf">Split PDF</a>: create separate PDFs for pages or ranges inside one ZIP.</li>
-            <li><a href="/extract-pdf-pages">Extract PDF pages</a>: pick specific pages to keep.</li>
-            <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
-        </ul>
-        <p>Need the opposite? <a href="/merge-pdf">Merge PDF</a> joins files back
-            together.</p>""",
-
-    "pdf-to-jpg": """
-        <h2>PDF pages to images</h2>
-        <p>PDF to JPG renders each page as a standalone JPEG image, handy when you need
-            a preview thumbnail, want to drop a page into a slide or social post, or
-            need to share a page with someone who can't open PDFs. Every page becomes
-            its own image so you can use just the ones you want.</p>
-        <h2>Related conversions</h2>
-        <ul>
-            <li>Going the other way? <a href="/image-to-pdf">Image to PDF</a> turns
-                photos or scans into a single PDF.</li>
-            <li>Need the words, not a picture? <a href="/pdf-to-text">PDF to text</a>
-                or <a href="/pdf-to-word">PDF to Word</a> keep text editable.</li>
-        </ul>""",
-
-    # ---- Image: high-traffic ---------------------------------------------
-    "heic-to-jpeg": """
-        <h2>Can I convert HEIC to JPG online for free?</h2>
-        <p>Yes. Open Forge Files' HEIC to JPG tool, choose your HEIC photo,
-            convert it, and download the JPG without registering. JPG and JPEG
-            refer to the same image format. Keep the original HEIC if you may
-            need it later: conversion to JPEG can lose some image detail.</p>
-        <h2>Why iPhone photos need converting</h2>
-        <p>Modern iPhones save photos as HEIC, which stores the same quality at about
-            half the size of JPG, great for your phone, but many Windows apps, older
-            devices, web upload forms, and messaging tools still don't support it, so
-            the photo looks broken or won't upload. Converting to JPG produces a file
-            that opens everywhere.</p>
-        <h2>Tips</h2>
-        <ul>
-            <li>Want your iPhone to shoot JPG from now on? <strong>Settings → Camera →
-                Formats → Most Compatible.</strong> Existing HEIC files still need
-                converting.</li>
-            <li>Turning photos into a document instead? Convert to JPG, then combine
-                them with <a href="/image-to-pdf">Image to PDF</a>.</li>
-        </ul>
-        <p>Full walkthrough:
-            <a href="/blog/how-to-convert-heic-to-jpg">how to convert HEIC to JPG</a>.</p>""",
-
-    "image-to-pdf": """
-        <h2>Turn photos and scans into one PDF</h2>
-        <p>Image to PDF combines JPG, PNG, and other images into a single PDF in the
-            order you choose, ideal for receipts, ID documents, handwritten notes, or a
-            set of scanned pages that should travel as one file. Reorder the images
-            before converting so the pages come out in the right sequence.</p>
-        <h2>Good to know</h2>
-        <ul>
-            <li>iPhone photos are HEIC; convert them first with
-                <a href="/heic-to-jpeg">HEIC to JPG</a>, then build your PDF.</li>
-            <li>Big photos make big PDFs; run the result through
-                <a href="/compress-pdf">Compress PDF</a> if you need a smaller file.</li>
-            <li>Need images out of a PDF instead? Use <a href="/pdf-to-jpg">PDF to JPG</a>.</li>
-        </ul>""",
-
-    # ---- PDF: remaining ---------------------------------------------------
-    "extract-pdf-pages": """
-        <h2>Can I extract specific PDF pages without signing up?</h2>
-        <p>Yes. Forge Files lets you select pages without an account. For example,
-            <code>1,3,5-7</code> selects five pages: 1, 3, 5, 6, and 7.
-            The result is one new PDF. Use <a href="/split-pdf">Split PDF</a>
-            instead when you want separate files in a ZIP.</p>
-        <h2>Pull out exactly the pages you need</h2>
-        <p>Type the pages you want: a single page, a range like <code>5-10</code>, or a
-            mix such as <code>1,3,5-10</code>, and download them as a new PDF. Your
-            original file is left untouched, so it's a safe way to keep only the pages
-            that matter: one chapter, a signed page, or the exhibit from a long report.</p>
-        <h2>Extract, split, or organize?</h2>
-        <ul>
-            <li><a href="/extract-pdf-pages">Extract PDF pages</a>: keep specific pages by number.</li>
-            <li><a href="/split-pdf">Split PDF</a>: create separate PDFs inside one ZIP.</li>
-            <li><a href="/organize-pdf">Organize PDF</a>: reorder, rotate, and delete pages visually.</li>
-        </ul>
-        <p>Want the pieces back together afterwards? <a href="/merge-pdf">Merge PDF</a>
-            joins files into one.</p>""",
-
-    "pdf-to-text": """
-        <h2>Get clean, plain text out of a PDF</h2>
-        <p>PDF to Text extracts the words from a PDF into a simple <code>.txt</code>
-            file: no formatting, no images, just the text ready to search, paste, or feed
-            into another tool. It's ideal for quoting a document, copying content that a
-            PDF viewer won't let you select, or preparing text for analysis.</p>
-        <h2>Scanned documents</h2>
-        <p>If the PDF is a scan or photo, the words are really an image. An OCR (optical
-            character recognition) fallback, running fully offline on our server, reads
-            the pixels and recovers the text. Need to keep layout and edit it instead of
-            plain text? Use <a href="/pdf-to-word">PDF to Word</a>.</p>""",
-
-    "ocr-pdf": """
-        <h2>Add search to scanned PDFs</h2>
-        <p>OCR PDF keeps the scanned page image and adds an invisible text layer behind
-            it. That means the file still looks like the original scan, but PDF viewers
-            can search for names, invoice numbers, dates, and phrases. Use it for
-            scanned applications, college documents, bank paperwork, and receipts where
-            a plain text export would lose too much context.</p>
-        <h2>PDF output, not a text dump</h2>
-        <p>Use <a href="/pdf-to-text">PDF to Text</a> when you want a <code>.txt</code>
-            file. Use OCR PDF when the job is “make this PDF searchable” and the output
-            should still be a PDF.</p>""",
-
-    "make-pdf-searchable": """
-        <h2>Keep the document as a PDF</h2>
-        <p>Make PDF Searchable runs OCR on scanned pages and writes recognized words
-            back into the PDF as hidden text. The visual page remains the source scan:
-            no watermark, no layout remake, and no forced Word conversion.</p>
-        <h2>When to use it</h2>
-        <p>It is best for scanned PDFs where Ctrl+F finds nothing today. After OCR,
-            regular viewers can search the document and often let you select recognized
-            text, while the original page image stays intact.</p>""",
-
-    "rotate-pdf": """
-        <h2>Fix sideways and upside-down pages for good</h2>
-        <p>Scanned a document in the wrong orientation, or got a PDF where some pages are
-            rotated 90°? Rotate PDF turns pages 90, 180, or 270 degrees and saves the new
-            orientation into the file permanently, unlike just rotating the view in a
-            reader, which resets next time someone opens it. Rotate every page at once or
-            only the ones that are wrong.</p>
-        <h2>Related page fixes</h2>
-        <ul>
-            <li>Reorder or delete pages too: <a href="/organize-pdf">Organize PDF</a>.</li>
-            <li>Rotating a photo, not a PDF? Use <a href="/rotate-image">Rotate Image</a>.</li>
-        </ul>""",
-
-    "protect-pdf": """
-        <h2>Encrypt a PDF with a password</h2>
-        <p>Protect PDF adds a password so only the people you share it with can open the
-            file, and lets you set permissions such as restricting printing or copying.
-            It's the right tool before emailing a contract, a payslip, or anything
-            confidential. Choose a strong password and share it separately from the file
-            itself.</p>
-        <h2>The opposite direction</h2>
-        <p>Need to remove a password from a PDF you own (so you can edit or convert it)?
-            Use <a href="/unlock-pdf">Unlock PDF</a>. You can always re-protect the file
-            here afterwards. To mark a document visually as private, add a
-            <a href="/watermark-pdf">CONFIDENTIAL watermark</a>.</p>""",
-
-    "watermark-pdf": """
-        <h2>Stamp text across every page</h2>
-        <p>Add a text watermark (<code>DRAFT</code>, <code>CONFIDENTIAL</code>, a company
-            name, or a copyright line) across every page of a PDF, with control over
-            position and opacity so it's visible without hiding the content. It marks a
-            document's status or ownership at a glance and discourages casual reuse.</p>
-        <h2>Good pairings</h2>
-        <ul>
-            <li>Restrict who can open or print it: <a href="/protect-pdf">Protect PDF</a>.</li>
-            <li>Add reference numbering: <a href="/pdf-page-numbers">Page numbers</a>.</li>
-            <li>Watermarking an image instead? <a href="/watermark-image">Watermark Image</a>.</li>
-        </ul>""",
-
-    "pdf-page-numbers": """
-        <h2>Add clear page numbering</h2>
-        <p>Add page numbers to a PDF with control over position, number format
-            (<code>1, 2, 3</code>, roman <code>i, ii, iii</code>, or letters
-            <code>A, B, C</code>), the starting number, and which pages to skip, handy
-            when a cover page or table of contents shouldn't be counted. It makes long
-            reports, manuals, and bundles easy to reference and print in order.</p>
-        <h2>Building a polished document</h2>
-        <p>Combine with <a href="/merge-pdf">Merge PDF</a> to assemble sections first, then
-            number the finished file. Add a <a href="/watermark-pdf">watermark</a> for
-            status labelling.</p>""",
-
-    "pdf-to-excel": """
-        <h2>Turn PDF tables into a real spreadsheet</h2>
-        <p>PDF to Excel detects tables in your PDF and rebuilds them as editable cells in
-            an <code>.xlsx</code> workbook, so you can sort, total, and chart data that
-            was previously locked inside a document. It's built for financial statements,
-            reports, and exported data tables. Cleanly ruled tables convert best; very
-            irregular layouts may need a little tidying after.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Need the whole document editable, not just tables? <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Just want the raw text? <a href="/pdf-to-text">PDF to text</a>.</li>
-            <li>Going the other way: <a href="/excel-to-pdf">Excel to PDF</a>.</li>
-        </ul>""",
-
-    "pdf-to-powerpoint": """
-        <h2>Convert a PDF into editable slides</h2>
-        <p>PDF to PowerPoint turns each page of a PDF into a slide in a <code>.pptx</code>
-            presentation, so you can reuse an exported deck, a one-pager, or a report as
-            the starting point for a talk. Open the result in PowerPoint, Keynote, or
-            Google Slides and edit from there.</p>
-        <h2>Related conversions</h2>
-        <ul>
-            <li>Reverse it: <a href="/powerpoint-to-pdf">PowerPoint to PDF</a>.</li>
-            <li>Want images of each page instead? <a href="/pdf-to-jpg">PDF to JPG</a>.</li>
-        </ul>""",
-
-    "pdf-to-epub": """
-        <h2>Get a reflowable ebook from a PDF</h2>
-        <p>PDF to EPUB extracts the text of each page and repackages it as chapters in a
-            standard <code>.epub</code> file, so the content reflows to fit any screen
-            size or font setting instead of staying locked to the PDF's fixed page
-            layout. Pages that are actually scanned images (no embedded text layer) are
-            run through OCR automatically, so scanned books still produce readable
-            chapters instead of blank ones.</p>
-        <h2>Related conversions</h2>
-        <ul>
-            <li>Want to keep editing the document itself? <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Just need the plain text? <a href="/pdf-to-text">PDF to text</a>.</li>
-            <li>Want the exact page layout preserved instead of reflowed text? <a href="/pdf-to-powerpoint">PDF to PowerPoint</a>.</li>
-        </ul>""",
-
-    "sign-pdf": """
-        <h2>Add your signature to a document</h2>
-        <p>Sign PDF lets you place a signature image onto any page and position it exactly
-            where it belongs (on agreements, forms, and letters) without printing,
-            signing by hand, and re-scanning. Upload a transparent PNG of your signature
-            for the cleanest result.</p>
-        <h2>Before and after signing</h2>
-        <ul>
-            <li>Locked file? <a href="/unlock-pdf">Unlock PDF</a> first (on a file you own).</li>
-            <li>Combine the signed page back in with <a href="/merge-pdf">Merge PDF</a>.</li>
-            <li>Lock it down before sending: <a href="/protect-pdf">Protect PDF</a>.</li>
-        </ul>""",
-
-    "organize-pdf": """
-        <h2>Rearrange a PDF, page by page</h2>
-        <p>Organize PDF gives you visual control over a document's pages: set a new order,
-            delete pages you don't need, and duplicate pages, all in one step. It's the
-            tool for fixing a document whose pages are out of sequence or that contains
-            pages that shouldn't be there.</p>
-        <h2>How it compares</h2>
-        <ul>
-            <li><a href="/organize-pdf">Organize PDF</a>: reorder, delete, duplicate visually.</li>
-            <li><a href="/split-pdf">Split PDF</a>: create a ZIP of separate PDFs; <a href="/extract-pdf-pages">Extract pages</a>: pull selected pages into one file.</li>
-            <li><a href="/merge-pdf">Merge PDF</a>: join separate files together.</li>
-            <li><a href="/rotate-pdf">Rotate PDF</a>: fix page orientation.</li>
-        </ul>""",
-
-    # ---- Image: remaining -------------------------------------------------
-    "resize-image": """
-        <h2>Can I resize an image online without registration?</h2>
-        <p>Yes. Forge Files lets you resize an image without creating an account.
-            Choose pixels for a width-and-height requirement, percentage for scaling,
-            or target KB for a file-size limit. Check both the downloaded file's
-            dimensions and its size before submitting it to a form.</p>
-        <h2>Example: a photo for an application form</h2>
-        <p>If the form asks for 800 by 600 pixels and a file under 200 KB, first
-            crop to the required proportions, then resize. Check the output size and
-            use <a href="/compress-image">image compression</a> if needed.
-            A smaller file alone does not guarantee the right dimensions.</p>
-        <h2>Three ways to resize</h2>
-        <p>Resize an image by exact <strong>width/height in pixels</strong>, by
-            <strong>percentage</strong> to scale it up or down, or to a
-            <strong>target file size in KB</strong> when a form caps the upload. That last
-            mode is the one people hunt for: set "under 200 KB" and get a file that fits.
-            You can also crop visually in the same tool.</p>
-        <h2>Resize vs. compress vs. crop</h2>
-        <ul>
-            <li><a href="/resize-image">Resize</a>: change dimensions (or hit a KB target).</li>
-            <li><a href="/compress-image">Compress</a>: keep dimensions, shrink file size.</li>
-            <li><a href="/crop-image">Crop</a>: trim to a region of the photo.</li>
-        </ul>""",
-
-    "compress-image": """
-        <h2>Shrink photos without an obvious drop in quality</h2>
-        <p>Compress JPG, PNG, and WebP images with a quality slider so you control the
-            balance between file size and sharpness. It's ideal for speeding up a website,
-            fitting an email attachment, or getting under an upload limit. Moderate
-            compression is visually indistinguishable from the original on screen.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Need specific dimensions or a KB target? <a href="/resize-image">Resize Image</a>.</li>
-            <li>Switching format (e.g. PNG → JPG for smaller size)? <a href="/convert-image">Convert Image</a>.</li>
-        </ul>""",
-
-    "convert-image": """
-        <h2>Convert between JPG, PNG, and WebP</h2>
-        <p>Each format has a job: <strong>JPG</strong> is smallest for photos,
-            <strong>PNG</strong> keeps sharp edges and transparency for logos and
-            screenshots, and <strong>WebP</strong> gives the best size for the web.
-            Convert Image moves your file between them with an adjustable quality setting.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>iPhone HEIC photos won't open? <a href="/heic-to-jpeg">HEIC to JPG</a>.</li>
-            <li>Just need it smaller? <a href="/compress-image">Compress Image</a>.</li>
-            <li>Turning images into a document? <a href="/image-to-pdf">Image to PDF</a>.</li>
-        </ul>""",
-
-    "crop-image": """
-        <h2>How do I crop an image and convert its format?</h2>
-        <p>Crop the image first and download the result. Then open
-            <a href="/convert-image">Convert Image</a>, upload the cropped file,
-            and choose JPG, PNG, or WebP. These are separate operations.
-            Choose PNG when transparency matters, or JPG for a widely supported
-            photo format. Keep the original so you can revise the crop later.</p>
-        <h2>Trim a photo to exactly what you want</h2>
-        <p>Crop Image gives you a visual drag-and-drop editor to cut away everything
-            outside the part you care about: straighten a document scan, remove a
-            distracting background, or frame a profile picture. It works on JPG, PNG, WebP,
-            and HEIC files straight from a phone.</p>
-        <h2>After cropping</h2>
-        <ul>
-            <li>Set exact dimensions or a file-size target: <a href="/resize-image">Resize Image</a>.</li>
-            <li>Shrink the result: <a href="/compress-image">Compress Image</a>.</li>
-            <li>Combine cropped scans into one file: <a href="/image-to-pdf">Image to PDF</a>.</li>
-        </ul>""",
-
-    "rotate-image": """
-        <h2>Fix sideways phone photos in one click</h2>
-        <p>Phone cameras often save a photo with orientation metadata that some apps
-            ignore, so the picture shows up sideways or upside-down. Rotate Image turns it
-            90, 180, or 270 degrees and bakes the correct orientation into the file, so it
-            displays right everywhere.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Rotating PDF pages instead? <a href="/rotate-pdf">Rotate PDF</a>.</li>
-            <li>Trim it too: <a href="/crop-image">Crop Image</a>.</li>
-        </ul>""",
-
-    "watermark-image": """
-        <h2>Mark your images as yours</h2>
-        <p>Add a text watermark to an image (your name, brand, or a
-            <code>© copyright</code> line) with control over position, colour, and
-            opacity. It's the simple way to protect photos and graphics you post publicly,
-            or to label a proof before sending it to a client.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Watermarking a PDF instead? <a href="/watermark-pdf">Watermark PDF</a>.</li>
-            <li>Resize or compress after: <a href="/resize-image">Resize</a> · <a href="/compress-image">Compress</a>.</li>
-        </ul>""",
-
-    # ---- Excel ------------------------------------------------------------
-    "excel-to-pdf": """
-        <h2>Share spreadsheets that look right everywhere</h2>
-        <p>Excel to PDF renders every sheet of your XLSX or XLS workbook as a styled table
-            in a PDF, so recipients see a fixed, tidy layout regardless of their software:
-            no broken columns, no "which version of Excel" surprises. It's the reliable way
-            to send a report, invoice, or price list for viewing and printing.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Reverse it: <a href="/pdf-to-excel">PDF to Excel</a> pulls tables back out.</li>
-            <li>Working with CSVs? <a href="/csv-to-xlsx">CSV to Excel</a> · <a href="/xlsx-to-csv">Excel to CSV</a>.</li>
-        </ul>""",
-
-    "csv-to-xlsx": """
-        <h2>Turn a raw CSV into a proper workbook</h2>
-        <p>CSV to Excel imports a plain CSV into a real <code>.xlsx</code> workbook so you
-            get typed cells, formatting, and formula support instead of a text file. Pick
-            the delimiter your file actually uses: comma, semicolon, tab, or pipe, which
-            matters for exports from non-English locales where semicolons are common.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Export back to plain text: <a href="/xlsx-to-csv">Excel to CSV</a>.</li>
-            <li>Combine several workbooks: <a href="/merge-excel">Merge Excel</a>.</li>
-        </ul>""",
-
-    "xlsx-to-csv": """
-        <h2>Export a sheet to universal CSV</h2>
-        <p>Excel to CSV exports a chosen sheet to a plain comma-separated file, the format
-            almost every database, analytics tool, and import wizard accepts. Pick which
-            sheet to export when your workbook has several. CSV keeps only values (no
-            formulas, styling, or multiple sheets), which is exactly what most imports
-            want.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Coming from CSV? <a href="/csv-to-xlsx">CSV to Excel</a> builds a workbook.</li>
-            <li>Need a shareable, printable version? <a href="/excel-to-pdf">Excel to PDF</a>.</li>
-        </ul>""",
-
-    "merge-excel": """
-        <h2>Combine multiple workbooks into one</h2>
-        <p>Merge Excel joins several <code>.xlsx</code> files into a single workbook, the
-            fast way to consolidate monthly sheets, per-region exports, or contributions
-            from different people into one file to analyse together. No copy-pasting
-            between windows.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Standardise inputs first: <a href="/csv-to-xlsx">CSV to Excel</a>.</li>
-            <li>Share the combined result: <a href="/excel-to-pdf">Excel to PDF</a>.</li>
-        </ul>""",
-
-    # ---- PowerPoint / Word ------------------------------------------------
-    "powerpoint-to-pdf": """
-        <h2>Can I convert PowerPoint to PDF without a watermark?</h2>
-        <p>Yes. Forge Files converts a PPTX presentation to PDF without adding
-            a watermark or requiring signup. Download and review the PDF before
-            sharing, especially slides containing unusual fonts, charts, or SmartArt.</p>
-        <h2>What changes when slides become a PDF?</h2>
-        <p>A PDF is a static document. Animations, transitions, and interactive
-            presentation behavior are not retained. Layout and font fidelity can
-            vary with the source deck and the conversion engine.</p>
-        <h2>Send slides that open anywhere</h2>
-        <p>PowerPoint to PDF converts a <code>.pptx</code> deck into a clean PDF, so anyone
-            can view or print the resulting static pages without PowerPoint. It's the standard way to share a finished
-            presentation as a handout or for review.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Reverse it: <a href="/pdf-to-powerpoint">PDF to PowerPoint</a>.</li>
-            <li>Need each slide as an image? <a href="/ppt-to-images">PPT to Images</a>.</li>
-            <li>Combine decks first: <a href="/merge-ppt">Merge PowerPoint</a>.</li>
-        </ul>""",
-
-    "ppt-to-images": """
-        <h2>Every slide as a standalone image</h2>
-        <p>PPT to Images exports each slide as a PNG or JPG and bundles them into a zip,
-            perfect for embedding slides in a document, posting them to social media, or
-            dropping a single slide into an email where a whole deck would be overkill.
-            Choose PNG for crisp text and diagrams, JPG for smaller photo-heavy slides.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Want one shareable document? <a href="/powerpoint-to-pdf">PowerPoint to PDF</a>.</li>
-            <li>Combine images into a PDF: <a href="/image-to-pdf">Image to PDF</a>.</li>
-        </ul>""",
-
-    "merge-ppt": """
-        <h2>Combine presentations into one deck</h2>
-        <p>Merge PowerPoint joins multiple <code>.pptx</code> files into a single
-            presentation, ideal for assembling a team deck from separate contributions or
-            stitching modular sections into one talk. Order the files before merging so the
-            slides flow correctly.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Share the finished deck: <a href="/powerpoint-to-pdf">PowerPoint to PDF</a>.</li>
-            <li>Export slides as images: <a href="/ppt-to-images">PPT to Images</a>.</li>
-        </ul>""",
-
-    "word-to-pdf": """
-        <h2>Convert Word to a fixed, shareable PDF</h2>
-        <p>Word to PDF converts a <code>.docx</code> document into a PDF that keeps your
-            layout, fonts, and spacing exactly as designed, so it looks identical on every
-            device and can't be accidentally edited. It's the expected format for
-            submitting CVs, contracts, assignments, and official letters.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Reverse it to edit again: <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Combine with other PDFs: <a href="/merge-pdf">Merge PDF</a>.</li>
-            <li>Lock it before sending: <a href="/protect-pdf">Protect PDF</a>.</li>
-        </ul>""",
-
-    "ocr-hindi": """
-        <h2>Hindi PDF OCR and Text Recognition</h2>
-        <p>Extract Devanagari text from scanned Hindi PDFs, official forms, gazette notifications,
-            and certificates. Our Indic OCR pipeline recognizes conjunct characters and complex Devanagari
-            ligatures accurately, producing searchable PDFs or editable text.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
-            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
-        </ul>""",
-
-    "ocr-marathi": """
-        <h2>Marathi PDF OCR and Text Recognition</h2>
-        <p>Extract Devanagari script text from scanned Marathi documents, land records (7/12 utara),
-            government notices, and legal agreements. Built specifically to handle regional Devanagari
-            orthography and complex compound letters with high precision.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
-            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
-        </ul>""",
-
-    "ocr-tamil": """
-        <h2>Tamil PDF OCR and Text Recognition</h2>
-        <p>Extract Tamil script from scanned documents, Tamil Nadu government forms, certificates,
-            and literature. The model accurately identifies Tamil vowel markers, uyirmey characters,
-            and numerals without distorting sentence flow.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
-            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
-        </ul>""",
-
-    "ocr-telugu": """
-        <h2>Telugu PDF OCR and Text Recognition</h2>
-        <p>Extract Telugu script text from scanned PDFs, Andhra Pradesh and Telangana administrative
-            records, books, and affidavits. Captures round letterforms, secondary vowel signs (gunintalu),
-            and subjoined consonants cleanly.</p>
-        <h2>Related</h2>
-        <ul>
-            <li>Searchable PDF output: <a href="/ocr-pdf">OCR PDF</a>.</li>
-            <li>Convert scanned pages to editable documents: <a href="/pdf-to-word">PDF to Word</a>.</li>
-            <li>Extract plain text: <a href="/pdf-to-text">PDF to Text</a>.</li>
-        </ul>""",
+# Summary, example, limitation, result check. Keep these tied to actual controls.
+HELP: dict[str, tuple[str, str, str, str]] = {
+    "unlock-pdf": (
+        "Save an unencrypted copy of a PDF you are authorized to modify, using its current opening password when required.",
+        "For a statement you read repeatedly, enter the existing password and keep the downloaded copy in a protected folder. It will no longer ask for that password.",
+        "This does not recover a forgotten opening password. Removing encryption also removes that protection from the new copy; it does not grant permission to redistribute it.",
+        "Open the result in a separate viewer. If the password is rejected, check case, whitespace and the selected file. Keep the encrypted original until you have checked every page."),
+    "pdf-to-word": (
+        "Reconstruct a PDF as an editable DOCX. Standard mode uses existing text; scans require an available OCR path.",
+        "Try the workshop report below. Open its converted Word document and edit a table quantity; a readable preview alone does not prove editability.",
+        "PDF stores positioned content rather than the original Word structure. Columns, equations and page breaks may change. Standard conversion does not recognize scan images; AI Layout Recovery depends on server availability.",
+        "Compare numbers, table cells and reading order. If the result is empty or contains images, check whether text can be selected in the source. Image-only pages need OCR when available."),
+    "compress-pdf": (
+        "Reduce PDF size by optimizing structure and eligible embedded images. Low, Medium and High trade image detail for size.",
+        "Start with Low for a scanned application. Compare downloaded bytes with the portal limit before trying Medium. Inspect fine print and signatures at 200% zoom after each attempt.",
+        "A scan is a picture of text, so image compression can soften its words. Already optimized files may shrink little. A target size or reduction percentage is not guaranteed.",
+        "Keep the original for archival storage or printing. If the output is still too large, remove unnecessary pages or use an accepted file-sharing method instead of repeatedly compressing it."),
+    "extract-pdf-pages": (
+        "Keep selected pages in one new PDF using their physical positions, starting at page 1.",
+        "For a seven-page file, 1,3,5-7 keeps five pages. A cover counts as page 1 even when printed numbering starts later. The example below keeps report pages 1 and 3.",
+        "Extraction does not redact content on retained pages. Use Split PDF for separate output files. A page outside the source range cannot be extracted.",
+        "Count the output pages and inspect the first and last retained pages. Use positions in the viewer rather than numbers printed in the footer."),
+    "pdf-to-text": (
+        "Export a PDF's words as plain text. Recognition of image-only pages depends on an available OCR engine.",
+        "Try selecting a sentence before processing. Use Preserve layout structure when spacing matters, then compare the TXT reading order with the original columns.",
+        "TXT cannot preserve images, fonts or editable table cells. Scans may require OCR; unusual character encoding can produce missing characters.",
+        "Check accents, totals and headings. If columns interleave, extract the sections you need separately or try PDF to Word. Review OCR text against the image."),
+    "ocr-pdf": (
+        "Add a searchable text layer to a scanned PDF while retaining its page images. Results depend on scan quality and OCR availability.",
+        "Choose a clearly printed scan and the matching available language. Search the result for a word mid-paragraph, then paste a sentence into a text editor.",
+        "OCR is an estimate, not a verified transcription. Handwriting, skew and faint marks reduce reliability. Searchability does not reconstruct Word layout or certify accessibility compliance.",
+        "Compare names, dates and decimal points with the original. Rotate sideways pages first. If the engine is unavailable, retry later or use a local OCR tool."),
+    "make-pdf-searchable": (
+        "Make an image-only PDF searchable using the OCR PDF tool, which keeps the visible page image.",
+        "Test your viewer's search first. If a visible word cannot be found or selected, the page may be a scan requiring recognition.",
+        "This uses the same operation as OCR PDF. It does not improve the scan or verify recognized words. The chosen language must be available on the server.",
+        "Search several pages and copy a sentence. If words are inaccurate, obtain a sharper scan and check the selected language."),
+    "merge-pdf": (
+        "Combine two or more PDFs in the displayed file order without adding a watermark.",
+        "Select the three-page report followed by the one-page appendix below. The output should have four pages with the appendix last. Check the file list before starting.",
+        "Merging does not standardize paper sizes or reduce image size. Locked files may need unlocking first. Modifying a digitally signed document can invalidate its signature.",
+        "Check the total page count and each boundary between files. Use Organize PDF to change page order afterward. Upload and processing limits still apply."),
+    "split-pdf": (
+        "Create a ZIP of separate PDFs: one per page, groups of N pages, or custom ranges.",
+        "For six pages, custom ranges 1-2,3-6 create two PDFs inside the ZIP. Every page instead creates six files. Extract Pages is the choice for one combined output.",
+        "Splitting uses physical page positions including covers, not chapter detection. Open the ZIP before trying to use its individual PDFs.",
+        "Unzip and inspect the start and end of each part. Check every range ends within the source page count."),
+    "rotate-pdf": (
+        "Save right-angle rotations into a new PDF for the whole document or selected pages.",
+        "If only page 2 is sideways, enter 2 and choose 90°. Other pages stay as they were. A reader's temporary view rotation may not be saved into the file.",
+        "This does not deskew slightly tilted scans, crop margins or recognize text. Existing page rotation affects which angle gives the desired result.",
+        "Close the preview and reopen the downloaded PDF. Inspect both portrait and landscape pages. Rescan or use an image editor for small-angle skew."),
+    "protect-pdf": (
+        "Encrypt a PDF with an opening password and optional reader permissions.",
+        "Set an opening password and try opening the result without it before sharing. Send the password through a separate communication channel.",
+        "Copying and printing restrictions depend on the reader honoring them and cannot prevent screenshots. The tool cannot recover a forgotten password.",
+        "Test a wrong password and the correct one in another viewer. Keep an accessible original securely and check encryption support if a recipient cannot open it."),
+    "watermark-pdf": (
+        "Place a text watermark on PDF pages with a selected position and opacity.",
+        "For a review copy, use DRAFT at low opacity. Check a dense page as well as a blank page so the mark does not hide totals or instructions.",
+        "A watermark is a visual label, not encryption, redaction or proof of ownership. It may be removable and does not hide underlying information.",
+        "Inspect portrait and landscape pages for clipping. Reduce opacity or change position if content is obscured. Use password protection separately for access control."),
+    "pdf-to-jpg": (
+        "Render PDF pages as JPG or PNG images packaged in a ZIP.",
+        "Try 150 DPI for screen previews or 300 DPI for more detail at a larger size. PNG suits fine diagrams; JPG often suits photographic pages.",
+        "The result is pixels: words are not selectable and links are not interactive. High resolutions use more memory and are subject to render limits.",
+        "Extract the ZIP, count its images and inspect small labels. Use PDF to Text or Word if you need editable words. Lower DPI if the render exceeds limits."),
+    "pdf-page-numbers": (
+        "Add visible page numbers with a chosen position, format, starting value and number of leading pages to skip.",
+        "For a report with one cover, skip one page and start at 1. Compare the first numbered page and last page to catch an offset.",
+        "This adds text; it does not remove existing numbers or change viewer page-label metadata. Existing footers may overlap the new numbers.",
+        "Inspect long footnotes and different paper sizes. Choose another position if text collides and confirm the cover remains unnumbered."),
+    "pdf-to-excel": (
+        "Extract detected tables into an XLSX workbook for checking and editing.",
+        "Start with a digital PDF with clear rows and columns. Compare its first row, last row and a total with the output before calculating.",
+        "PDF tables are not spreadsheets. Scans, merged cells and irregular columns can be reconstructed incorrectly. Original formulas cannot be recovered from displayed values.",
+        "Check decimal separators, negative signs and leading zeros. If no table is found, check for selectable text and regular columns. Use the original spreadsheet when available."),
+    "pdf-to-powerpoint": (
+        "Place a rendered image of each PDF page onto a PowerPoint slide.",
+        "Convert a PDF handout to present it, then add your own annotations on top of the page images in PowerPoint.",
+        "Text and charts inside each image do not become editable slide objects. Animations, slide masters and speaker notes cannot be recovered from a PDF.",
+        "Check slide count, cropping and small text in slideshow mode. Obtain the original presentation if you need to edit individual objects."),
+    "pdf-to-epub": (
+        "Rebuild extractable PDF content into a reflowable EPUB for an ebook reader.",
+        "Try a simple single-column PDF. Open the EPUB at two font sizes and check reading order instead of expecting the same page boundaries.",
+        "PDFs lack reliable chapter structure. Equations, columns and scans may convert poorly. Reflow changes pagination and is not a faithful page-image archive.",
+        "Check chapter starts, captions and text around images. Image-only scans need usable recognized text first. Keep the PDF when exact layout is essential."),
+    "sign-pdf": (
+        "Place an image of your signature onto a selected PDF page and position.",
+        "Use a transparent PNG cropped close to the signature. Select the physical page number and inspect the output against the signature line.",
+        "This is a visual stamp, not a certificate-based digital signature, identity verification or tamper-evident signing service.",
+        "Check size, background and placement at full zoom. Ask the recipient which signing method they accept; use a certificate-based service when that is required."),
+    "organize-pdf": (
+        "Reorder, omit or duplicate PDF pages by entering their positions in the desired output order.",
+        "For three pages, 3,1,2 puts page 3 first. Enter 1,3 to omit page 2 or 1,1,2 to repeat page 1. Numbering starts at 1.",
+        "This uses a typed list, not a visual sorter or automatic content detection. Omitting a page affects only the new copy and does not redact retained content.",
+        "Count the output pages against your list and inspect them in order. Use Rotate PDF separately if orientation also needs correction."),
+    "heic-to-jpeg": (
+        "Convert a supported HEIC or HEIF still image into JPEG for compatible apps and upload forms.",
+        "Try the synthetic sample below, using JPEG quality 95. Inspect colors, fine edges and orientation before converting important photographs.",
+        "JPEG is lossy. This is not a Live Photo video export or a guarantee of HDR fidelity. A JPG may be larger than its HEIC source.",
+        "Keep the HEIC original. Embedded EXIF and ICC metadata may be preserved, so conversion is not metadata removal. Check the actual file format if decoding fails."),
+    "resize-image": (
+        "Change image dimensions by pixels or percentage, or try an approximate target file size.",
+        "For a 600-pixel-wide upload, enter the width and preserve aspect ratio unless both dimensions are mandatory. Check the downloaded dimensions.",
+        "Pixel dimensions and byte size are separate requirements. A target KB size is not guaranteed for every image. Enlarging cannot restore missing detail.",
+        "Check dimensions, format and bytes together. Review a portal's minimum resolution and aspect ratio before reducing quality further."),
+    "image-to-pdf": (
+        "Place image content onto PDF pages to make a document a PDF viewer can open.",
+        "Choose a clear JPG or PNG, set page size and orientation, and inspect the margins. Convert unsupported HEIC input to JPG first.",
+        "An image inside a PDF is still an image: its words do not become searchable. Aspect ratio affects fit and high-resolution pictures can make large PDFs.",
+        "Inspect every edge for cropping and check readability. Use OCR on the resulting PDF when available if you need searchable text."),
+    "compress-image": (
+        "Re-encode an image at a chosen quality to reduce byte size when possible.",
+        "Lower quality gradually on a copy. Compare facial detail, small text and sharp edges at 100% zoom rather than in a thumbnail.",
+        "Already compressed images may shrink little. Repeated lossy saves accumulate artifacts. Transparency and metadata behavior depend on format and processing path.",
+        "Compare downloaded bytes with the original. Resize unnecessarily large dimensions instead of repeatedly compressing. Keep a lossless original for future edits."),
+    "convert-image": (
+        "Convert supported images among JPEG, PNG and WebP formats.",
+        "Choose PNG for transparent artwork or JPG for widely supported photo uploads. Test a transparent logo before converting other artwork.",
+        "Renaming an extension does not convert data. JPEG cannot store transparency and lossy formats may change detail. Decoder support varies by browser and server.",
+        "Check the output's actual type and inspect transparent edges against both light and dark backgrounds. Keep PNG or supported WebP when alpha transparency matters."),
+    "crop-image": (
+        "Keep a rectangular area of an image using a crop selection and optional aspect ratio.",
+        "Use a 1:1 selection for a square profile image. Cropping selects which pixels remain; resizing changes their dimensions.",
+        "Cropping cannot recover missing pixels and is not a general metadata-removal tool. A strict upload portal may still require resizing afterward.",
+        "Inspect all four edges and check the output dimensions. Return to the original for a wider crop if the subject is clipped."),
+    "rotate-image": (
+        "Turn an image by a right angle and save its corrected orientation in a new file.",
+        "Choose 90° for a sideways photo or 180° for an upside-down one, then open it in another viewer.",
+        "This does not straighten a slightly slanted horizon or correct perspective. Lossy output formats can change detail during saving.",
+        "Check orientation, width and height after reopening. Use a perspective or crop editor for camera-angle problems rather than right-angle rotation."),
+    "watermark-image": (
+        "Draw a text watermark onto an image at a chosen position, size and opacity.",
+        "Place a short attribution near a clear edge and inspect the output at full size. Contrast changes between light and dark parts of a photograph.",
+        "The mark changes pixels and can cover detail. It does not prevent copying, prove ownership or guarantee resistance to removal.",
+        "Reduce text size if it clips at an edge. Keep an unmarked original and move the watermark if it covers the subject."),
+    "excel-to-pdf": (
+        "Render spreadsheet sheets into PDF pages for a static view of the workbook.",
+        "Try a sheet with headings, quantities and a total. Compare wide columns and long cell contents with the spreadsheet.",
+        "Rendering is best effort: charts, merged cells, fonts and print layouts can differ. A PDF does not retain interactive formulas or filters.",
+        "Review every sheet and its rightmost columns. For strict print fidelity, compare a PDF export from the original spreadsheet application."),
+    "csv-to-xlsx": (
+        "Import delimited text into an XLSX workbook using the delimiter that matches the CSV.",
+        "If the first line is item;quantity;unit, select semicolon. If records land in one column, check the delimiter.",
+        "CSV has no reliable data-type schema. Leading zeros, date-like values, encoding and quoted separators need checking; intended types cannot always be inferred.",
+        "Compare row and column counts, non-English characters and an identifier such as 00123. Inspect quoted values containing separators before using the workbook."),
+    "xlsx-to-csv": (
+        "Export a selected workbook sheet to a plain CSV file for another system.",
+        "Select the required sheet. Inspect the CSV in a text editor as well as a spreadsheet app, checking separators and the first and last records.",
+        "CSV cannot preserve multiple sheets, styling or charts. Formula results depend on available calculated values; CSV is not a lossless workbook backup.",
+        "Confirm the receiving system's delimiter and encoding requirements. Keep the XLSX original and verify dates and identifiers before importing."),
+    "merge-excel": (
+        "Collect sheets from multiple XLSX workbooks into one workbook.",
+        "Select separate monthly files and inspect their sheets after merging. This collects sheets, rather than joining matching rows or reconciling records.",
+        "Formulas, external links, charts and duplicate sheet names need review. Combining workbooks does not standardize columns or remove duplicate records.",
+        "Compare sheet count and important totals with each source. For one combined data table, standardize columns and use a tool designed to append rows."),
+    "powerpoint-to-pdf": (
+        "Render a PPTX presentation into static PDF pages for viewing and printing.",
+        "Compare a chart slide, an image slide and a slide with unusual fonts before sharing the PDF handout.",
+        "Animations, transitions and interactive playback are omitted. Fonts, SmartArt, gradients and layout can differ by renderer.",
+        "Check slide count and text wrapping. Compare an export from the original presentation application when exact appearance is essential."),
+    "ppt-to-images": (
+        "Render presentation slides as individual PNG or JPG images in a ZIP.",
+        "PNG suits text-heavy diagrams; JPG often suits photographic slides. Extract the ZIP and inspect its smallest labels.",
+        "Images flatten slide objects. Words are not editable, links are not clickable and animations are omitted. Unsupported fonts or slide features can change appearance.",
+        "Count images and compare their edges with the slides. Use images exported by the original application if rendering differs materially."),
+    "merge-ppt": (
+        "Append slides from several PPTX presentations into one deck.",
+        "Select an introduction deck followed by the main report. Inspect their boundary and run the result in slideshow mode before presenting.",
+        "Themes, slide masters, linked media and complex objects may not transfer exactly. Merging does not unify typography or remove duplicate title slides.",
+        "Compare slide count and review charts and images from each source. Keep separate decks to recover any object that transfers incorrectly."),
+    "word-to-pdf": (
+        "Convert a DOCX document to fixed PDF pages for sharing and printing.",
+        "Inspect the final lines, page breaks, tables and headers of a CV or report after conversion. The PDF freezes the converter's rendered layout.",
+        "Missing fonts and complex Word features can shift layout. Creating a PDF does not make content impossible to edit or certify an archival or accessibility standard.",
+        "Compare page count and inspect another viewer. Simplify the DOCX or export from the original authoring application if layout differs."),
 }
+
+_LANGUAGES = {
+    "ocr-hindi": ("Hindi", "Devanagari", "a printed Hindi notice", "vowel marks, joined letters and names"),
+    "ocr-marathi": ("Marathi", "Devanagari", "a printed Marathi bill", "Marathi-specific letters, names and amounts"),
+    "ocr-tamil": ("Tamil", "Tamil", "a printed Tamil notice", "vowel signs, letter combinations and numerals"),
+    "ocr-telugu": ("Telugu", "Telugu", "a printed Telugu form", "vowel signs, joined letters and reference numbers"),
+}
+for _slug, (_language, _script, _example, _checks) in _LANGUAGES.items():
+    HELP[_slug] = (
+        f"Add searchable {_script} text to a scanned {_language} PDF when the server's {_language} OCR option is available.",
+        f"Start with {_example}, select {_language}, and search for a visible word after processing. Copy a sentence into a Unicode-capable editor.",
+        "A language selection does not guarantee recognition accuracy. Mixed scripts, stamps, handwriting and low-resolution scans need manual checking. Unavailable engines produce an error, not a verified transcription.",
+        f"Compare {_checks} with the scan. Check a word on each page. Keep the original and use a qualified reviewer when transcription errors would matter.",
+    )
+
+EXAMPLE_KIND = {"compress-pdf": "compression", "pdf-to-word": "word", "heic-to-jpeg": "heic",
+                "merge-pdf": "pages", "extract-pdf-pages": "pages"}
+
+
+def _render(slug: str) -> str:
+    _, example, _, _ = HELP[slug]
+    return f'<h2>A practical starting point</h2><p>{escape(example)}</p>'
+
+
+EXTRA = {slug: _render(slug) for slug in HELP}
 
 
 def extra_html(slug: str) -> str:
-    """Return the tool-specific extended-content block for ``slug``, or '' if
-    none is defined yet (the page then renders without it)."""
     return EXTRA.get(slug, "")

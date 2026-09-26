@@ -3661,6 +3661,17 @@ function ffConsumePendingOp() {
 }
 window.ffConsumePendingOp = ffConsumePendingOp;
 
+// Initialize before the deep-link bootstrap calls ffClaimHandoff. Function
+// declarations are hoisted, but reading a later const would throw on arrival.
+const FF_CATEGORY_INPUTS = {
+    pdf: 'file-input',
+    image: 'image-file-input',
+    excel: 'excel-file-input',
+    ppt: 'ppt-file-input',
+    word: 'word-file-input',
+    workflow: 'workflow-file-input',
+};
+
 (function () {
     const params = new URLSearchParams(window.location.search);
     const requestedTool = params.get('tool');
@@ -3707,17 +3718,6 @@ window.ffConsumePendingOp = ffConsumePendingOp;
         ffClaimHandoff(requestedTool);
     }
 })();
-
-// Category → the file input a handed-off file belongs in. Mirrors the inputs
-// in index.html; a category missing here simply doesn't accept a handoff.
-const FF_CATEGORY_INPUTS = {
-    pdf: 'file-input',
-    image: 'image-file-input',
-    excel: 'excel-file-input',
-    ppt: 'ppt-file-input',
-    word: 'word-file-input',
-    workflow: 'workflow-file-input',
-};
 
 function ffClaimHandoff(tool) {
     const inputId = FF_CATEGORY_INPUTS[tool];

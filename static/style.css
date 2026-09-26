@@ -1773,6 +1773,9 @@ body.seo-page {
 
 .page-nav {
     margin-bottom: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem 1.25rem;
 }
 
 .page-nav a {
@@ -1883,6 +1886,63 @@ body.seo-page {
 .upload-cta-label {
     display: inline-block;
     cursor: pointer;
+    position: relative;
+}
+
+.upload-cta-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.upload-cta-secondary { margin: .25rem 0 0; }
+.page-wrap .upload-cta-secondary .cta { background: transparent; color: var(--link); padding: .3rem; margin: 0; text-decoration: underline; font-size: .9rem; }
+.skip-content { position: fixed; top: -100px; left: 1rem; padding: .75rem 1rem; background: var(--canvas); color: var(--ink); z-index: 10000; }
+.skip-content:focus { top: .5rem; }
+.page-wrap { overflow-wrap: anywhere; }
+.page-wrap p + p { margin-top: .9rem; }
+.content-meta { font-size: .85rem; margin: 1rem 0; }
+.page-wrap figure { margin: 1.25rem 0; }
+.page-wrap img { max-width: 100%; height: auto; display: block; border: 1px solid var(--hairline); border-radius: 8px; }
+.page-wrap figcaption { font-size: .85rem; color: var(--body-text); padding-top: .5rem; }
+.example-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.example-preview { max-width: 360px; }
+.worked-example { margin: 2.5rem 0; padding: 1.5rem; background: var(--canvas-soft-2); border: 1px solid var(--hairline); border-radius: 16px; }
+.worked-example h2 { margin-top: .5rem; }
+.eyebrow { font-size: .72rem; font-weight: 650; letter-spacing: .12em; color: var(--body-text); }
+.file-size { font-size: .82rem; white-space: nowrap; }
+.table-scroll { max-width: 100%; overflow-x: auto; margin: 1.2rem 0; }
+.table-scroll table { min-width: 430px; }
+.table-hint { font-size: .82rem; color: var(--body-text); }
+@media (min-width: 600px) { .table-hint { display: none; } }
+.page-wrap table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.page-wrap th, .page-wrap td { text-align: left; vertical-align: top; padding: .7rem .5rem; border-bottom: 1px solid var(--hairline); }
+.page-wrap th[scope="row"] { white-space: nowrap; }
+.page-wrap caption { text-align: left; padding-bottom: .7rem; color: var(--body-text); }
+.page-wrap details { margin-top: 1.25rem; }
+.page-wrap summary { cursor: pointer; font-weight: 600; padding: .5rem 0; }
+.page-wrap details p { font-size: .9rem; }
+.processing-note, .article-contents { padding: 1rem 1.25rem; border-left: 3px solid var(--hairline); margin: 2rem 0; }
+.page-wrap .processing-note h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+.processing-note p { font-size: .93rem; }
+.article-contents ol { margin-bottom: 0; }
+.page-wrap .guide-list { list-style: none; padding: 0; margin: 2rem 0; }
+.guide-list li { border-top: 1px solid var(--hairline); padding: 1.3rem 0; }
+.guide-list a { display: grid; gap: .45rem; text-decoration: none; }
+.guide-list strong { font-size: 1.15rem; color: var(--ink); }
+.guide-list span, .guide-list small { color: var(--body-text); }
+.home-learning { margin: 3.5rem auto 1.5rem; padding-top: 2rem; border-top: 1px solid var(--hairline); max-width: 1000px; }
+.home-learning h2 { margin: .5rem 0 1rem; font-size: clamp(1.6rem, 3vw, 2rem); letter-spacing: -.025em; }
+.home-learning p { line-height: 1.65; color: var(--body-text); max-width: 760px; }
+.learning-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1.5rem 0; }
+.learning-grid a { padding: 1.2rem; border: 1px solid var(--hairline); border-radius: 12px; text-decoration: none; background: var(--canvas); color: var(--ink); }
+.learning-grid a:hover { box-shadow: var(--shadow-2); }
+.learning-grid strong, .learning-grid span { display: block; }
+.learning-grid span { margin-top: .5rem; font-size: .9rem; line-height: 1.5; color: var(--body-text); }
+.text-link { color: var(--link); }
+.processing-summary { margin-top: 1.5rem; font-size: .85rem; }
+.page-wrap :focus-visible, .home-learning :focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+@media (max-width: 600px) {
+    .learning-grid { grid-template-columns: 1fr; }
+    .worked-example { padding: 1rem; }
+    .example-figures { grid-template-columns: 1fr; }
+    .page-wrap th, .page-wrap td { padding: .5rem .3rem; font-size: .8rem; }
+    .page-wrap .cta { padding: .8rem 1rem; }
 }
 
 /* The label's inner .cta is a span, so it needs the focus ring the anchor got
@@ -1933,3 +1993,6 @@ body.seo-page {
         justify-content: center;
     }
 }
+.ad-label { display: block; margin-bottom: .5rem; color: var(--body-text); font-size: .75rem; text-align: center; }
+.sample-status { position: fixed; z-index: 1000; bottom: 1rem; left: 5%; width: 90%; box-sizing: border-box; padding: 1rem; background: var(--canvas); color: var(--ink); border: 1px solid currentColor; border-radius: .75rem; overflow-wrap: anywhere; }
+.sample-status:empty { display: none; }
