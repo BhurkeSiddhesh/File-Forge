@@ -2216,34 +2216,44 @@ def _ocr_item_rect(item: dict, page, image_width: int, image_height: int):
 
 
 def _get_fontfile_for_lang(lang: str) -> Optional[str]:
-    """Find a system or local font capable of rendering Unicode Indic scripts."""
-    custom = os.environ.get("INDIC_FONT_PATH")
-    if custom and os.path.isfile(custom):
-        return custom
+    """Find a font whose embedded face actually covers the requested script.
 
+    Existence alone is insufficient: embedding DejaVu Sans (or a Devanagari
+    font for Tamil) turns recognized text into NULs when the PDF is extracted.
+    Check without MuPDF's fallback fonts, which insert_textbox does not embed.
+    """
+    script_fonts = {
+        "hi": ("Devanagari", "devanagari", "mangal.ttf", "अकषिीुं्"),
+        "mr": ("Devanagari", "devanagari", "mangal.ttf", "अकळिीुं्"),
+        "ta": ("Tamil", "tamil", "latha.ttf", "அகழிீு்"),
+        "te": ("Telugu", "telugu", "gautami.ttf", "అకళిీు్"),
+    }
+    spec = script_fonts.get(lang)
+    if spec is None:
+        return None
+    script, lohit, windows_font, probe = spec
+    custom = os.environ.get("INDIC_FONT_PATH")
     candidates = [
+        custom,
         # Windows
         "C:/Windows/Fonts/Nirmala.ttc",
-        "C:/Windows/Fonts/mangal.ttf",
-        "C:/Windows/Fonts/aparaj.ttf",
-        "C:/Windows/Fonts/latha.ttf",
-        "C:/Windows/Fonts/gautami.ttf",
+        f"C:/Windows/Fonts/{windows_font}",
         # Linux (Debian / Ubuntu / Oracle Linux)
-        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansTelugu-Regular.ttf",
-        "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
-        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
-        "/usr/share/fonts/truetype/lohit-telugu/Lohit-Telugu.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        f"/usr/share/fonts/truetype/noto/NotoSans{script}-Regular.ttf",
+        f"/usr/share/fonts/truetype/lohit-{lohit}/Lohit-{script}.ttf",
         # macOS
         "/System/Library/Fonts/Kohinoor.ttc",
         "/System/Library/Fonts/Supplemental/Nirmala.ttf",
     ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return p
+    for path in candidates:
+        if not path or not os.path.isfile(path):
+            continue
+        try:
+            font = fitz.Font(fontfile=path)
+            if all(font.has_glyph(ord(char), fallback=False) for char in probe):
+                return path
+        except (RuntimeError, ValueError):
+            logger.warning("Could not load OCR font %s", path, exc_info=True)
     return None
 
 
@@ -2267,14 +2277,23 @@ def ocr_pdf_to_searchable_pdf(
     if engine is None:
         raise ValueError("OCR is not configured on this deployment.")
 
+    indic_fontfile = _get_fontfile_for_lang(norm_lang) if norm_lang != "en" else None
+    if norm_lang != "en" and indic_fontfile is None:
+        logger.error(
+            "No OCR font for %s. Install fonts-noto-core or set INDIC_FONT_PATH "
+            "to a font covering the requested script.", norm_lang,
+        )
+        raise ValueError(
+            "Searchable PDF OCR for this language is temporarily unavailable "
+            "because the server is missing a required font. Please contact support."
+        )
+
     input_file = Path(input_path)
     output_file = Path(output_dir) / branded_filename(input_file, "pdf")
     decrypted_path, needs_cleanup = _get_decrypted_pdf_path(input_path, password)
     doc = None
     page_count = 0
     inserted = 0
-
-    indic_fontfile = _get_fontfile_for_lang(norm_lang) if norm_lang != "en" else None
 
     try:
         doc = fitz.open(decrypted_path)
