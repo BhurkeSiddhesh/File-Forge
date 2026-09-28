@@ -244,6 +244,8 @@ body {
     transform: translateY(0);
 }
 
+.view:focus { outline: none; }
+
 /* ── Hero ── */
 .hero {
     text-align: center;
@@ -551,6 +553,8 @@ body {
     gap: 0.5rem;
     align-items: stretch;
 }
+
+.action-buttons > :not(.action-card) { grid-column: 1 / -1; }
 
 @media (min-width: 1250px) {
     .action-buttons { grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -646,7 +646,9 @@ function showDrillDown(tool, instant, fromHistory = false) {
 
     // Funnel step: visitor opened a tool category from the home grid.
     ffTrack('tool_open', { tool_name: tool });
-    ffTrackPageView(location.pathname + location.search, document.title);
+    // Analytics receives a fixed category path; URL query parameters may
+    // contain arbitrary visitor data and must not enter third-party telemetry.
+    ffTrackPageView('/app/' + encodeURIComponent(tool), document.title);
 
     const reveal = () => {
         document.querySelectorAll('.view').forEach(el => {
@@ -783,11 +785,8 @@ function hidePdfActionAreas() {
     ffClearActionSelection(document.getElementById('pdf-page'));
 }
 
-// Each option panel belongs directly under its action card. We move the panel
-// (and the shared status/result blocks) to sit right after the clicked card so
-// the options "drop down" from the card instead of always appearing at the
-// bottom of the list. `.action-buttons` is a vertical flex column, so inserting
-// after the card places the panel as a full-width row immediately below it.
+// Move the selected PDF option panel after its card. The action grid gives
+// panels a full-width row, keeping the controls close to the chosen action.
 const PDF_AREA_CARD = {
     'password-input-area': 'remove-password-btn',
     'convert-password-area': 'convert-word-btn',
