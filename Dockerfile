@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     tesseract-ocr \
+    fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
