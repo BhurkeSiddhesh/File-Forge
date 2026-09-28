@@ -2289,7 +2289,7 @@ async def api_compress_image(
         )
         return {
             "status": "success",
-            "message": "Image compressed",
+            "message": "Image compressed" if result["compressed_size"] < result["original_size"] else "Already optimized; original kept",
             **download_fields(result["output_path"]),
             "original_size": result["original_size"],
             "compressed_size": result["compressed_size"],

@@ -291,15 +291,22 @@
 
         var file = only(fd);
         var fmt = formatOf(file.name);
+        // PNG's encoder ignores quality. WebP gives the slider a real effect
+        // while retaining alpha; use the original bytes if it cannot save space.
+        if (fmt === 'png') fmt = 'webp';
         var img = await decode(file);
         var blob = await encode(renderForFormat(img, img.naturalWidth, img.naturalHeight, fmt), fmt, quality);
+        if (blob.size >= file.size) {
+            blob = file;
+            var dot = file.name.lastIndexOf('.');
+            fmt = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : 'jpg';
+        }
 
         return {
             blob: blob,
-            filename: L.brandedName(file.name, FORMAT_EXT[fmt]),
-            message: 'Image compressed',
-            // compress_image() also reports these; the image UI ignores them,
-            // but returning them keeps the response shapes identical.
+            filename: L.brandedName(file.name, FORMAT_EXT[fmt] || fmt),
+            message: blob.size < file.size ? 'Image compressed' : 'Already optimized; original kept',
+            // Keep the same size stats as compress_image() for the result UI.
             extra: {
                 original_size: file.size,
                 compressed_size: blob.size,

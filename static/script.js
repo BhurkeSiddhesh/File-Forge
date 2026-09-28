@@ -1383,7 +1383,7 @@ function ffUpdatePdfCompressPreview() {
         + ' at ' + level + ' compression (estimate).';
 }
 
-function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId) {
+function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId, format = 'jpeg') {
     const wrap = document.getElementById(wrapId);
     const imgEl = document.getElementById(imgId);
     const label = document.getElementById(labelId);
@@ -1393,6 +1393,9 @@ function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId) {
         return;
     }
     const q = Math.max(1, Math.min(100, Number(quality) || 80));
+    const mime = format === 'webp' ? 'image/webp' : 'image/jpeg';
+    const requestId = String(Number(wrap.dataset.requestId || 0) + 1);
+    wrap.dataset.requestId = requestId;
     const url = URL.createObjectURL(file);
     const probe = new Image();
     probe.onload = function () {
@@ -1407,18 +1410,22 @@ function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId) {
         }
         canvas.width = w;
         canvas.height = h;
-        canvas.getContext('2d').drawImage(probe, 0, 0, w, h);
+        const context = canvas.getContext('2d');
+        if (mime === 'image/jpeg') {
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, w, h);
+        }
+        context.drawImage(probe, 0, 0, w, h);
         URL.revokeObjectURL(url);
         canvas.toBlob(function (blob) {
-            if (!blob) return;
+            if (wrap.dataset.requestId !== requestId || !blob || blob.type !== mime) return;
             if (imgEl.dataset.blobUrl) URL.revokeObjectURL(imgEl.dataset.blobUrl);
             const previewUrl = URL.createObjectURL(blob);
             imgEl.dataset.blobUrl = previewUrl;
             imgEl.src = previewUrl;
-            label.textContent = 'Preview ≈ ' + formatBytes(blob.size) + ' at ' + q + '%'
-                + (probe.naturalWidth > w ? ' (preview scaled)' : '');
+            label.textContent = 'Visual sample at ' + q + '% quality. The sample is scaled for display; the download keeps the original dimensions. Actual size appears after processing.';
             wrap.classList.remove('hidden');
-        }, 'image/jpeg', q / 100);
+        }, mime, q / 100);
     };
     probe.onerror = function () {
         URL.revokeObjectURL(url);
@@ -1603,11 +1610,6 @@ function handleImageFile(file) {
     imageFilenameDisplay.textContent = file.name;
     imageFileInfo.classList.remove('hidden');
     try { ffTrack('file_selected', { tool_name: currentOp || currentTool || 'image', file_type: ffExtractFileType(file) || 'jpg' }); } catch (e) { }
-    if (qualitySlider) {
-        ffPreviewJpegQuality(file, qualitySlider.value,
-            'jpeg-quality-preview-img', 'jpeg-quality-preview-label', 'jpeg-quality-preview');
-    }
-
     document.getElementById('image-status-display').classList.add('hidden');
     document.getElementById('image-result-display').classList.add('hidden');
     hideImageActionAreas();
@@ -1616,28 +1618,24 @@ function handleImageFile(file) {
 }
 
 function hideImageActionAreas() {
-    ['rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area', 'image-to-pdf-area']
+    ['convert-options', 'resize-options', 'crop-options', 'rotate-image-area', 'compress-image-area', 'convert-format-area', 'watermark-image-area', 'image-to-pdf-area']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+    destroyCropper();
     ffClearActionSelection(document.getElementById('image-page'));
 }
 
 // Convert to JPEG
-const convertJpegBtn = document.getElementById('convert-jpeg-btn');
-if (convertJpegBtn) {
-    convertJpegBtn.onclick = () => {
-        if (!selectedImageFile) {
-            ffNotify('Please select a file first.');
-            return;
-        }
-
-        const quality = qualitySlider ? parseInt(qualitySlider.value) : 95;
-        const formData = new FormData();
-        formData.append('file', selectedImageFile);
-        formData.append('quality', quality);
-
-        processImageAction('/api/image/heic-to-jpeg', 'Converting HEIC to JPEG...', formData);
-    };
-}
+document.getElementById('process-convert-jpeg-btn')?.addEventListener('click', () => {
+    if (!selectedImageFile) {
+        ffNotify('Please select a file first.');
+        return;
+    }
+    const quality = qualitySlider ? parseInt(qualitySlider.value) : 95;
+    const formData = new FormData();
+    formData.append('file', selectedImageFile);
+    formData.append('quality', quality);
+    processImageAction('/api/image/heic-to-jpeg', 'Converting to JPEG...', formData);
+});
 
 async function processImageAction(url, text, formData) {
     const statusDisplay = document.getElementById('image-status-display');
@@ -1653,7 +1651,7 @@ async function processImageAction(url, text, formData) {
 
         if (response.ok) {
             const data = await response.json();
-            showImageResult(data.filename, data.message, data.download_token);
+            showImageResult(data.filename, data.message, data.download_token, data);
         } else {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
@@ -1671,13 +1669,21 @@ async function processImageAction(url, text, formData) {
     }
 }
 
-function showImageResult(filename, message, token) {
+function showImageResult(filename, message, token, data = {}) {
     const resultDisplay = document.getElementById('image-result-display');
     const resultMessage = document.getElementById('image-result-message');
     const downloadLink = document.getElementById('image-download-link');
 
     resultDisplay.classList.remove('hidden');
     resultMessage.textContent = message + ': ' + filename;
+    resultDisplay.querySelector('.image-compress-stats')?.remove();
+    if (Number.isFinite(data.original_size) && Number.isFinite(data.compressed_size)) {
+        const stats = document.createElement('p');
+        stats.className = 'helper-text image-compress-stats';
+        stats.textContent = `${formatBytes(data.original_size)} original → ${formatBytes(data.compressed_size)} download`;
+        if (data.compressed_size < data.original_size) stats.textContent += ` (${data.reduction_pct}% smaller)`;
+        resultMessage.insertAdjacentElement('afterend', stats);
+    }
     updateDownloadLink(downloadLink, token, filename);
     ffUpdateStepTracker('image', 3);
 }
@@ -1685,42 +1691,6 @@ function showImageResult(filename, message, token) {
 // --- Image Resize & Crop Functions ---
 
 let cropper = null;
-
-function toggleImageMode() {
-    const isResize = document.getElementById('mode-resize').checked;
-    const isCrop = document.getElementById('mode-crop').checked;
-
-    const convertOptions = document.getElementById('convert-options');
-    const resizeOptions = document.getElementById('resize-options');
-    const cropOptions = document.getElementById('crop-options');
-
-    const convertBtn = document.getElementById('convert-jpeg-btn');
-    const resizeBtn = document.getElementById('resize-btn');
-    const cropBtn = document.getElementById('crop-btn');
-
-    // Hide all first
-    convertOptions.classList.add('hidden');
-    resizeOptions.classList.add('hidden');
-    cropOptions.classList.add('hidden');
-
-    convertBtn.classList.add('hidden');
-    resizeBtn.classList.add('hidden');
-    cropBtn.classList.add('hidden');
-
-    if (isResize) {
-        resizeOptions.classList.remove('hidden');
-        resizeBtn.classList.remove('hidden');
-        destroyCropper();
-    } else if (isCrop) {
-        cropOptions.classList.remove('hidden');
-        cropBtn.classList.remove('hidden');
-        initCropper();
-    } else {
-        convertOptions.classList.remove('hidden');
-        convertBtn.classList.remove('hidden');
-        destroyCropper();
-    }
-}
 
 function destroyCropper() {
     if (cropper) {
@@ -1838,20 +1808,6 @@ async function initCropper() {
         reader.readAsDataURL(selectedImageFile);
     }
 }
-
-// Hook into existing handleImageFile to trigger cropper if in crop mode.
-// Wrap the original instead of replacing it — the original now handles a much
-// broader accept list (BMP/TIFF/GIF/etc.) and resets per-action option panels
-// via hideImageActionAreas(). Re-implementing it here previously regressed both.
-const originalHandleImageFile = handleImageFile;
-handleImageFile = function (file) {
-    originalHandleImageFile(file);
-    // If the original rejected the file, selectedImageFile stays null.
-    if (!selectedImageFile) return;
-    if (document.getElementById('mode-crop')?.checked) {
-        initCropper();
-    }
-};
 
 function toggleResizeInputs() {
     const method = document.getElementById('resize-method').value;
@@ -2875,9 +2831,27 @@ resetUI = function () {
 function showImageOptionPanel(id) {
     if (!selectedImageFile) { ffNotify('Please select an image first.'); return false; }
     hideImageActionAreas();
+    document.getElementById('image-result-display')?.classList.add('hidden');
     document.getElementById(id).classList.remove('hidden');
     return true;
 }
+
+document.getElementById('convert-jpeg-btn')?.addEventListener('click', e => {
+    if (!showImageOptionPanel('convert-options')) return;
+    ffSelectActionCard(e.currentTarget);
+    ffPreviewJpegQuality(selectedImageFile, qualitySlider.value,
+        'jpeg-quality-preview-img', 'jpeg-quality-preview-label', 'jpeg-quality-preview');
+});
+document.getElementById('resize-btn')?.addEventListener('click', e => {
+    if (showImageOptionPanel('resize-options')) ffSelectActionCard(e.currentTarget);
+});
+document.getElementById('crop-btn')?.addEventListener('click', e => {
+    if (!showImageOptionPanel('crop-options')) return;
+    ffSelectActionCard(e.currentTarget);
+    initCropper();
+});
+document.getElementById('process-resize-image-btn')?.addEventListener('click', resizeImage);
+document.getElementById('process-crop-image-btn')?.addEventListener('click', cropImage);
 
 document.getElementById('rotate-image-btn')?.addEventListener('click', (e) => {
     if (showImageOptionPanel('rotate-image-area')) ffSelectActionCard(e.currentTarget);
@@ -2887,7 +2861,8 @@ document.getElementById('compress-image-btn')?.addEventListener('click', (e) => 
     ffSelectActionCard(e.currentTarget);
     if (selectedImageFile && compressImgQ) {
         ffPreviewJpegQuality(selectedImageFile, compressImgQ.value,
-            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview');
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview',
+            /\.(png|webp)$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
     }
 });
 document.getElementById('convert-format-btn')?.addEventListener('click', (e) => {
@@ -2902,7 +2877,8 @@ if (compressImgQ) compressImgQ.addEventListener('input', e => {
     document.getElementById('compress-image-quality-value').textContent = e.target.value;
     if (selectedImageFile) {
         ffPreviewJpegQuality(selectedImageFile, e.target.value,
-            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview');
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview',
+            /\.(png|webp)$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
     }
 });
 const convertFmtQ = document.getElementById('convert-format-quality');
@@ -3612,8 +3588,7 @@ document.addEventListener('keydown', (e) => {
 // Without `op`, someone arriving from /pdf-to-word landed on the PDF category
 // and had to find "PDF to Word" a second time among 19 action cards — the
 // single biggest drop-off in the funnel. Keys here are the seo_content.py
-// TOOL_PAGES slugs; `card` is the action-card id in index.html, and `mode` is
-// the radio that has to be selected first for cards that start hidden.
+// TOOL_PAGES slugs; `card` is the action-card id in index.html.
 const DEEP_LINK_OPS = {
     // PDF
     'unlock-pdf': { card: 'remove-password-btn' },
@@ -3641,8 +3616,8 @@ const DEEP_LINK_OPS = {
     'organize-pdf': { card: 'organize-pdf-btn' },
     // Image
     'heic-to-jpeg': { card: 'convert-jpeg-btn' },
-    'resize-image': { card: 'resize-btn', mode: 'mode-resize' },
-    'crop-image': { card: 'crop-btn', mode: 'mode-crop' },
+    'resize-image': { card: 'resize-btn' },
+    'crop-image': { card: 'crop-btn' },
     'image-to-pdf': { card: 'image-to-pdf-btn' },
     'compress-image': { card: 'compress-image-btn' },
     'convert-image': { card: 'convert-format-btn' },
@@ -3726,14 +3701,6 @@ const FF_CATEGORY_INPUTS = {
     // an element id directly, so an arbitrary ?op= value can't reach the DOM.
     const op = DEEP_LINK_OPS[params.get('op')];
     if (!op) return;
-
-    if (op.mode) {
-        const modeInput = document.getElementById(op.mode);
-        if (modeInput) {
-            modeInput.checked = true;
-            if (typeof toggleImageMode === 'function') toggleImageMode();
-        }
-    }
 
     // No tool_open for the specific op here on purpose: it's fired by the
     // delegated action-card listener when the card is actually opened (below

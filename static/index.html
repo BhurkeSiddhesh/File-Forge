@@ -107,7 +107,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="/static/style.css?v=20260928c">
+    <link rel="stylesheet" href="/static/style.css?v=20260928d">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
     {{CF_ANALYTICS}}
@@ -770,7 +770,7 @@
                     <div id="image-drop-zone" class="drop-zone" role="button" tabindex="0"
                         aria-label="Upload Image file">
                         <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                        <p>Drag & drop your HEIC file or <span class="browse-text">browse</span></p>
+                        <p>Drag & drop an image or <span class="browse-text">browse</span></p>
                         <input type="file" id="image-file-input" accept="image/*,.heic,.heif" hidden>
                         <div id="image-file-info" class="file-info hidden">
                             <i class="fas fa-image"></i>
@@ -780,80 +780,16 @@
                 </div>
 
                 <div class="actions-panel">
-                    <div class="options-panel">
-                        <div class="switch-toggle">
-                            <input type="radio" id="mode-convert" name="image-mode" checked
-                                onchange="toggleImageMode()">
-                            <label for="mode-convert">Convert</label>
-
-                            <input type="radio" id="mode-resize" name="image-mode" onchange="toggleImageMode()">
-                            <label for="mode-resize">Resize</label>
-
-                            <input type="radio" id="mode-crop" name="image-mode" onchange="toggleImageMode()">
-                            <label for="mode-crop">Crop</label>
-                        </div>
-
-                        <!-- Options for Convert Mode -->
-                        <div id="convert-options" class="mode-options">
-                            <label class="quality-control">
-                                <span class="label">JPEG Quality: <span id="quality-value">95</span>%</span>
-                                <input type="range" id="quality-slider" min="50" max="100" value="95">
-                            </label>
-                            <div id="jpeg-quality-preview" class="compress-preview hidden">
-                                <img id="jpeg-quality-preview-img" alt="Quality preview">
-                                <p id="jpeg-quality-preview-label" class="helper-text"></p>
-                            </div>
-                        </div>
-
-                        <!-- Options for Resize Mode -->
-                        <div id="resize-options" class="mode-options hidden">
-                            <label class="select-control">
-                                <span class="label">Resize Method</span>
-                                <select id="resize-method" onchange="toggleResizeInputs()">
-                                    <option value="dimensions">Dimensions (Width/Height)</option>
-                                    <option value="percentage">Percentage (Scale)</option>
-                                    <option value="target_size">Target File Size</option>
-                                </select>
-                            </label>
-
-                            <div id="input-dimensions" class="resize-inputs">
-                                <input type="number" id="resize-width" placeholder="Width (px)">
-                                <span class="separator">x</span>
-                                <input type="number" id="resize-height" placeholder="Height (px)">
-                            </div>
-
-                            <div id="input-percentage" class="resize-inputs hidden">
-                                <label class="quality-control">
-                                    <span class="label">Scale: <span id="scale-value">50</span>%</span>
-                                    <input type="range" id="scale-slider" min="1" max="200" value="50"
-                                        oninput="document.getElementById('scale-value').innerText = this.value">
-                                </label>
-                            </div>
-
-                            <div id="input-target-size" class="resize-inputs hidden">
-                                <input type="number" id="target-size-kb" placeholder="Max Size (KB)">
-                            </div>
-                        </div>
-
-                        <!-- Options for Crop Mode -->
-                        <div id="crop-options" class="mode-options hidden">
-                            <p class="helper-text">Drag handles to crop the image.</p>
-                            <div id="crop-editor-container" class="crop-editor-container hidden">
-                                <img id="crop-image-preview" src="" alt="Image to crop">
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="action-buttons">
                         <div class="action-card" id="convert-jpeg-btn" role="button" tabindex="0">
                             <i class="fas fa-file-image"></i>
                             <div class="action-text">
                                 <h4>Convert to JPEG</h4>
-                                <p>Transform HEIC to standard JPEG format</p>
+                                <p>Convert HEIC or another image to JPEG</p>
                             </div>
                         </div>
 
-                        <div class="action-card hidden" id="resize-btn" onclick="resizeImage()" role="button"
+                        <div class="action-card" id="resize-btn" role="button"
                             tabindex="0">
                             <i class="fas fa-compress-arrows-alt"></i>
                             <div class="action-text">
@@ -862,7 +798,7 @@
                             </div>
                         </div>
 
-                        <div class="action-card hidden" id="crop-btn" onclick="cropImage()" role="button" tabindex="0">
+                        <div class="action-card" id="crop-btn" role="button" tabindex="0">
                             <i class="fas fa-crop-alt"></i>
                             <div class="action-text">
                                 <h4>Crop Image</h4>
@@ -881,7 +817,7 @@
                             <i class="fas fa-compress"></i>
                             <div class="action-text">
                                 <h4>Compress</h4>
-                                <p>Reduce file size at chosen quality</p>
+                                <p>Reduce file size; PNG exports as WebP</p>
                             </div>
                         </div>
                         <div class="action-card" id="convert-format-btn" role="button" tabindex="0">
@@ -907,6 +843,47 @@
                         </div>
                     </div>
 
+                    <div id="convert-options" class="password-area hidden">
+                        <label class="quality-control" for="quality-slider">JPEG quality: <span id="quality-value">95</span>%</label>
+                        <input type="range" id="quality-slider" min="10" max="100" value="95">
+                        <div id="jpeg-quality-preview" class="compress-preview hidden">
+                            <img id="jpeg-quality-preview-img" alt="JPEG quality visual sample">
+                            <p id="jpeg-quality-preview-label" class="helper-text"></p>
+                        </div>
+                        <button id="process-convert-jpeg-btn" class="primary-btn">Convert to JPEG</button>
+                    </div>
+
+                    <div id="resize-options" class="password-area hidden">
+                        <label class="select-control" for="resize-method">Resize method</label>
+                        <select id="resize-method" onchange="toggleResizeInputs()">
+                            <option value="dimensions">Dimensions (width/height)</option>
+                            <option value="percentage">Percentage (scale)</option>
+                            <option value="target_size">Target file size</option>
+                        </select>
+                        <div id="input-dimensions" class="resize-inputs">
+                            <input type="number" id="resize-width" placeholder="Width (px)" aria-label="Width in pixels">
+                            <span class="separator">x</span>
+                            <input type="number" id="resize-height" placeholder="Height (px)" aria-label="Height in pixels">
+                        </div>
+                        <div id="input-percentage" class="resize-inputs hidden">
+                            <label for="scale-slider">Scale: <span id="scale-value">50</span>%</label>
+                            <input type="range" id="scale-slider" min="1" max="200" value="50"
+                                oninput="document.getElementById('scale-value').innerText = this.value">
+                        </div>
+                        <div id="input-target-size" class="resize-inputs hidden">
+                            <input type="number" id="target-size-kb" placeholder="Max size (KB)" aria-label="Maximum size in kilobytes">
+                        </div>
+                        <button id="process-resize-image-btn" class="primary-btn">Resize image</button>
+                    </div>
+
+                    <div id="crop-options" class="password-area hidden">
+                        <p class="helper-text">Drag the handles to select the area to keep.</p>
+                        <div id="crop-editor-container" class="crop-editor-container hidden">
+                            <img id="crop-image-preview" src="" alt="Image to crop">
+                        </div>
+                        <button id="process-crop-image-btn" class="primary-btn">Crop image</button>
+                    </div>
+
                     <!-- Rotate options -->
                     <div id="rotate-image-area" class="password-area hidden">
                         <p class="helper-text">Choose rotation angle:</p>
@@ -920,13 +897,14 @@
 
                     <!-- Compress image options -->
                     <div id="compress-image-area" class="password-area hidden">
-                        <label class="helper-text" for="compress-image-quality">Quality: <span id="compress-image-quality-value">70</span></label>
+                        <label class="helper-text" for="compress-image-quality">Output quality: <span id="compress-image-quality-value">70</span>%</label>
                         <input type="range" id="compress-image-quality" min="10" max="95" value="70">
+                        <p class="helper-text">Lower quality usually makes a smaller file. PNG images export as WebP to make this control effective. If compression cannot reduce the size, you receive the original.</p>
                         <div id="compress-image-preview" class="compress-preview hidden">
                             <img id="compress-image-preview-img" alt="Compression preview">
                             <p id="compress-image-preview-label" class="helper-text"></p>
                         </div>
-                        <button id="process-compress-image-btn" class="primary-btn">Compress</button>
+                        <button id="process-compress-image-btn" class="primary-btn">Compress image</button>
                     </div>
 
                     <!-- Convert format options -->
@@ -1634,9 +1612,9 @@
          handlers that ffProcess() dispatches to, and define ffProcess itself.
          Small (~30 KB total) — pdf-lib is fetched on demand, not from here. -->
     <script src="/static/local/ff-local.js?v=20260926"></script>
-    <script src="/static/local/ops-image.js?v=20260926"></script>
+    <script src="/static/local/ops-image.js?v=20260928d"></script>
     <script src="/static/local/ops-pdf.js?v=20260926"></script>
-    <script src="/static/script.js?v=20260928c"></script>
+    <script src="/static/script.js?v=20260928d"></script>
     {{CONSENT_BANNER}}
 </body>
 

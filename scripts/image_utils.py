@@ -2,6 +2,7 @@
 Image conversion utilities for Forge Files.
 """
 import io
+import shutil
 from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw, ImageFont
 import pillow_heif
@@ -381,7 +382,12 @@ def rotate_image(input_path: str, output_dir: str, angle: float, quality: int = 
 
 
 def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
-    """Re-encode an image at a lower quality (JPEG/WebP) or with optimize=True (PNG)."""
+    """Compress at the requested quality, keeping the original if encoding grows it.
+
+    PNG is lossless, so its quality slider cannot affect the result. Encode PNG
+    as WebP instead; WebP also preserves transparency. The returned extension
+    always describes the bytes actually written.
+    """
     try:
         quality = int(quality)
     except (TypeError, ValueError):
@@ -393,12 +399,20 @@ def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
     fmt = input_file.suffix.lower().lstrip(".")
     if fmt not in _FORMAT_EXT:
         fmt = "jpg"
-    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
+    output_fmt = "webp" if fmt == "png" else fmt
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[output_fmt])
 
     original_size = input_file.stat().st_size
     with Image.open(input_file) as img:
         img = ImageOps.exif_transpose(img)
-        _save_pil(img, output_file, fmt, quality=quality)
+        _save_pil(img, output_file, output_fmt, quality=quality)
+
+    if output_file.stat().st_size >= original_size:
+        original_output = Path(output_dir) / branded_filename(input_file, input_file.suffix.lstrip(".").lower())
+        if original_output != output_file:
+            output_file.unlink()
+        shutil.copyfile(input_file, original_output)
+        output_file = original_output
 
     compressed_size = output_file.stat().st_size
     reduction = max(0.0, (1 - compressed_size / original_size) * 100) if original_size else 0.0

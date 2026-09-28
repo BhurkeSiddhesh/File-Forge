@@ -252,7 +252,7 @@ class TestAlphaFlattensToWhite:
             assert r.getpixel((2, 2)) == (255, 255, 255)
 
     def test_compress_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
-        """compress_image falls back to jpg for extensions outside jpg/png/webp."""
+        """An unfamiliar format becomes JPEG only when that saves space."""
         from PIL import Image
         from scripts.image_utils import compress_image
 
@@ -260,7 +260,44 @@ class TestAlphaFlattensToWhite:
         _transparent_png(src)
         result = compress_image(str(src), str(tmp_path), quality=80)
         with Image.open(result["output_path"]) as r:
-            assert r.getpixel((2, 2)) == (255, 255, 255)
+            if result["compressed_size"] < result["original_size"]:
+                assert r.getpixel((2, 2)) == (255, 255, 255)
+            else:
+                assert r.getpixel((2, 2)) == (0, 0, 0, 0)
+
+    def test_png_quality_changes_output_and_preserves_alpha(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        src = tmp_path / "source.png"
+        pixels = Image.new("RGBA", (200, 200), (30, 90, 180, 0))
+        for x in range(25, 175):
+            for y in range(25, 175):
+                pixels.putpixel((x, y), (x, y, (x + y) % 256, 255))
+        pixels.save(src, "PNG", compress_level=0)
+        sizes = []
+        for quality in (16, 95):
+            out_dir = tmp_path / str(quality)
+            out_dir.mkdir()
+            result = compress_image(str(src), str(out_dir), quality=quality)
+            out = Path(result["output_path"])
+            assert out.suffix == ".webp"
+            assert result["compressed_size"] < result["original_size"]
+            with Image.open(out) as encoded:
+                assert encoded.getpixel((0, 0))[3] == 0
+            sizes.append(result["compressed_size"])
+        assert sizes[0] != sizes[1]
+
+    def test_compression_never_returns_larger_file(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import compress_image
+
+        src = tmp_path / "tiny.png"
+        Image.new("RGBA", (1, 1), (255, 0, 0, 128)).save(src)
+        result = compress_image(str(src), str(tmp_path), quality=95)
+        assert result["compressed_size"] <= result["original_size"]
+        if result["compressed_size"] == result["original_size"]:
+            assert Path(result["output_path"]).suffix == ".png"
 
     def test_watermark_image_unrecognized_ext_transparent_flattens_to_white(self, tmp_path):
         from PIL import Image

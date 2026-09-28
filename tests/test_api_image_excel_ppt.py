@@ -200,6 +200,27 @@ class TestApiCompressImage:
         assert "compressed_size" in data
         assert "reduction_pct" in data
 
+    def test_compress_png_quality_changes_download_size(self, mock_dirs):
+        client = _make_client()
+        source = io.BytesIO()
+        Image.new("RGBA", (400, 400), (20, 100, 180, 120)).save(source, "PNG", compress_level=0)
+        downloads = []
+        for quality in (16, 95):
+            resp = client.post(
+                "/api/image/compress",
+                data={"quality": str(quality)},
+                files={"file": ("source.png", source.getvalue(), "image/png")},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["filename"].endswith(".webp")
+            assert data["compressed_size"] < data["original_size"]
+            downloaded = client.get(f"/api/download/{data['download_token']}")
+            assert downloaded.status_code == 200
+            assert len(downloaded.content) == data["compressed_size"]
+            downloads.append(downloaded.content)
+        assert downloads[0] != downloads[1]
+
     def test_compress_bad_quality_422(self, mock_dirs):
         """Quality > 95 should fail validation."""
         client = _make_client()
