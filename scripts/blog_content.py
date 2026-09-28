@@ -202,6 +202,7 @@ _HEAD = """<!DOCTYPE html>
     <meta name="twitter:description" content="{og_desc}">
     <meta name="twitter:image" content="{base}/static/og-image.png">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="{base}/static/apple-touch-icon.png">
     <link rel="stylesheet" href="/static/style.css?v={asset_v}">
     {ads_head}
     {cf_analytics}
@@ -251,7 +252,7 @@ def render_guide(slug: str) -> str:
     </div>
     <a class="skip-content" href="#main-content">Skip to content</a>
     <main class="page-wrap" id="main-content">
-        <nav class="page-nav" aria-label="Main navigation"><a href="/">All tools</a><a href="/blog">{SITE} Guides</a><a href="/about">About</a></nav>
+        <nav class="page-nav" aria-label="Main navigation"><a href="/" class="brand-nav-link"><img src="{BASE}/static/apple-touch-icon.png" alt="Forge Files" class="brand-nav-icon" width="22" height="22"><span>Forge <span class="accent">Files</span></span></a><a href="/">All tools</a><a href="/blog">{SITE} Guides</a><a href="/about">About</a></nav>
 
         <h1>{g['h1']}</h1>
         <p class="lede">{g['dek']}</p>
@@ -324,14 +325,13 @@ def render_blog_index() -> str:
         <div class="blob blob-2"></div>
     </div>
     <main class="page-wrap">
-        <nav class="page-nav"><a href="/">&larr; {SITE}: all tools</a></nav>
+        <nav class="page-nav"><a href="/" class="brand-nav-link"><img src="{BASE}/static/apple-touch-icon.png" alt="Forge Files" class="brand-nav-icon" width="22" height="22"><span>Forge <span class="accent">Files</span></span></a><a href="/">&larr; All tools</a></nav>
 
         <h1>Forge Files Guides</h1>
-        <p class="lede">Choose a workflow, try it with a practice file, and learn what to check before sharing your result.</p>
-        <p>These guides cover the decisions that a convert button cannot make for you: how much image detail to keep,
-            whether a PDF needs OCR, which page operation gives the right output, and what a format conversion loses.</p>
-        <p>Compression, Word, HEIC and page-assembly guides include original downloadable inputs and actual outputs.
-            Keep your originals and use the result checks with your own files.</p>
+        <p class="lede">Know what changes before you share it.</p>
+        <p>A smaller scan can lose fine print. A PDF converted to Word can shift tables or leave scanned text as an image.
+            Try a practice file, compare the source with the output, and keep your original.</p>
+        <p>Choose a guide below for the right tool, original downloadable examples, and checks to make before sharing your result.</p>
 
         <ul class="guide-list">
 {cards}

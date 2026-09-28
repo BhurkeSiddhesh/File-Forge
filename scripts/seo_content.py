@@ -806,6 +806,7 @@ def render_tool_page(slug: str) -> str:
     <meta name="twitter:description" content="{_attr(og_desc)}">
     <meta name="twitter:image" content="{BASE}/static/og-image.png">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="{BASE}/static/apple-touch-icon.png">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
     {ADS_HEAD}
@@ -822,7 +823,7 @@ def render_tool_page(slug: str) -> str:
     </div>
     <a class="skip-content" href="#main-content">Skip to content</a>
     <main class="page-wrap" id="main-content">
-        <nav class="page-nav" aria-label="Main navigation"><a href="/">&larr; {SITE}: all tools</a><a href="/blog">Guides &amp; examples</a><a href="/about">About</a></nav>
+        <nav class="page-nav" aria-label="Main navigation"><a href="/" class="brand-nav-link"><img src="{BASE}/static/apple-touch-icon.png" alt="{SITE}" class="brand-nav-icon" width="22" height="22"><span>Forge <span class="accent">Files</span></span></a><a href="/">&larr; All tools</a><a href="/blog">Guides &amp; examples</a><a href="/about">About</a></nav>
 
         <h1>{page['h1']}</h1>
         <p class="lede">{page['lede']}</p>
@@ -884,6 +885,7 @@ def render_404_page() -> str:
     <title>Page not found (404) | {SITE}</title>
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="{BASE}/static/apple-touch-icon.png">
     <link rel="stylesheet" href="/static/style.css?v={ASSET_V}">
     {GA_ANALYTICS}
     {DATAFAST_ANALYTICS}

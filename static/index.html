@@ -90,7 +90,7 @@
         "@type": "Organization",
         "name": "Forge Files",
         "url": "{{BASE_URL}}/",
-        "logo": "{{BASE_URL}}/static/og-image.png",
+        "logo": "{{BASE_URL}}/static/apple-touch-icon.png",
         "description": "Free, open-source online file tools: a privacy-first, no-signup alternative to iLovePDF and Smallpdf.",
         "sameAs": ["https://github.com/BhurkeSiddhesh/File-Forge"]
     }
@@ -105,9 +105,11 @@
     }
     </script>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="/static/style.css?v=20260928d">
+    <link rel="stylesheet" href="/static/style.css?v=20260928e">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
     {{CF_ANALYTICS}}
@@ -141,6 +143,42 @@
 </head>
 
 <body>
+    <!-- Startup Animated Intro Splash (Android & Web) -->
+    <div id="startup-splash-overlay" class="startup-splash-overlay" role="presentation" aria-hidden="true">
+        <div class="startup-splash-content">
+            <div class="startup-splash-badge">
+                <img src="/static/forge-files-logo-animation.gif" alt="Forge Files" class="startup-splash-gif" width="112" height="112">
+            </div>
+            <div class="startup-splash-brand">Forge <span class="accent">Files</span></div>
+            <div class="startup-splash-tagline">Fast, Private &amp; Open Document Engine</div>
+            <div class="startup-splash-loader" aria-hidden="true"><div class="startup-splash-progress"></div></div>
+        </div>
+    </div>
+    <script>
+        (function() {
+            try {
+                var overlay = document.getElementById('startup-splash-overlay');
+                if (!overlay) return;
+                if (sessionStorage.getItem('ff_startup_seen') === '1' || window.navigator.webdriver) {
+                    overlay.style.display = 'none';
+                    return;
+                }
+                function dismissSplash() {
+                    if (!overlay || overlay.classList.contains('dismissed')) return;
+                    overlay.classList.add('dismissed');
+                    sessionStorage.setItem('ff_startup_seen', '1');
+                    setTimeout(function() {
+                        if (overlay && overlay.parentNode) {
+                            overlay.style.display = 'none';
+                        }
+                    }, 500);
+                }
+                overlay.addEventListener('click', dismissSplash);
+                overlay.addEventListener('touchstart', dismissSplash, { passive: true });
+                setTimeout(dismissSplash, 1400);
+            } catch (e) {}
+        })();
+    </script>
     <button class="theme-toggle" id="theme-toggle-btn" aria-label="Toggle Dark Mode">
         <i class="fas fa-moon" id="theme-icon"></i>
     </button>
@@ -154,6 +192,9 @@
         <!-- Main Page -->
         <section id="home-page" class="view active">
             <header class="hero">
+                <div class="hero-brand">
+                    <img src="/static/forge-files-logo-animation.gif" alt="Forge Files Logo" class="hero-brand-logo" width="96" height="96" loading="eager">
+                </div>
                 <h1>Forge <span class="accent">Files</span></h1>
                 <div style="display:flex;justify-content:center;">
                     <p class="trust-strip">
@@ -222,27 +263,16 @@
                 </a>
             </div>
 
-            <section class="home-learning" aria-labelledby="learn-heading">
-                <p class="eyebrow">MAKE THE RIGHT CONVERSION</p>
-                <h2 id="learn-heading">Know what changes before you share it.</h2>
-                <p>A smaller scan can lose fine print. A converted slide can be a picture instead of editable text.
-                    Try a practice file and learn what to check in the output.</p>
-                <div class="learning-grid">
-                    <a href="/blog/how-to-compress-a-pdf-without-losing-quality"><strong>Find the right PDF size</strong><span>Compare three measured outputs and inspect readability.</span></a>
-                    <a href="/blog/how-to-convert-pdf-to-word-for-free"><strong>Get editable text and tables</strong><span>Compare a source PDF with its actual Word conversion.</span></a>
-                    <a href="/blog/merge-split-or-extract-pdf-pages"><strong>Build the right page packet</strong><span>Choose merge, split, extract or reorder with worked examples.</span></a>
-                </div>
-                <p><a class="text-link" id="learning-guides-link" href="/blog">All guides &amp; practice files &rarr;</a></p>
-                <p class="processing-summary">Some tools process supported files on your device; others upload to the server,
-                    including unsupported local cases. Keep your originals and download results promptly.
-                    <a href="/privacy">How files and usage data are handled</a>.</p>
-            </section>
         </section>
 
         <!-- Drill Down Page (PDF) -->
         <section id="pdf-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="step-tracker-bar" aria-label="Process steps">
@@ -746,6 +776,10 @@
         <section id="image-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="step-tracker-bar" aria-label="Process steps">
@@ -990,6 +1024,10 @@
         <section id="excel-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="step-tracker-bar" aria-label="Process steps">
@@ -1112,6 +1150,10 @@
         <section id="ppt-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="step-tracker-bar" aria-label="Process steps">
@@ -1220,6 +1262,10 @@
         <section id="word-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="step-tracker-bar" aria-label="Process steps">
@@ -1317,6 +1363,10 @@
         <section id="workflow-page" class="view">
             <nav class="breadcrumb">
                 <button onclick="showHome()" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Home</button>
+                <a href="/" onclick="showHome(); return false;" class="breadcrumb-brand" aria-label="Forge Files Home">
+                    <img src="/static/apple-touch-icon.png" alt="Forge Files Logo" class="brand-nav-icon" width="28" height="28">
+                    <span class="brand-nav-text">Forge <span class="accent">Files</span></span>
+                </a>
             </nav>
 
             <div class="workflow-builder">
@@ -1592,7 +1642,7 @@
                     <h4>Forge Files</h4>
                     <a href="/about">About</a>
                     <a href="/faq">FAQ</a>
-                    <a href="/blog">Guides &amp; Blog</a>
+                    <a id="learning-guides-link" href="/blog">Guides &amp; practice files</a>
                     <a href="/contact">Contact</a>
                     <a href="https://github.com/BhurkeSiddhesh/File-Forge" target="_blank" rel="noopener">GitHub</a>
                 </div>
@@ -1603,6 +1653,7 @@
                 </div>
             </div>
             <p class="footer-note">© 2026 Forge Files. Public toolbox: AGPLv3, with commercial licensing available.
+                Some supported files process on your device; others upload to the server. Keep originals and download results promptly.
                 Processing and upload limits apply. <a href="/privacy">File handling and retention</a>.</p>
         </footer>
     </main>
