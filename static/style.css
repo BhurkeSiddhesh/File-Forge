@@ -1926,19 +1926,115 @@ body.seo-page {
 .guide-list a { display: grid; gap: .45rem; text-decoration: none; }
 .guide-list strong { font-size: 1.15rem; color: var(--ink); }
 .guide-list span, .guide-list small { color: var(--body-text); }
-.home-learning { margin: 3.5rem auto 1.5rem; padding-top: 2rem; border-top: 1px solid var(--hairline); max-width: 1000px; }
-.home-learning h2 { margin: .5rem 0 1rem; font-size: clamp(1.6rem, 3vw, 2rem); letter-spacing: -.025em; }
-.home-learning p { line-height: 1.65; color: var(--body-text); max-width: 760px; }
-.learning-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1.5rem 0; }
-.learning-grid a { padding: 1.2rem; border: 1px solid var(--hairline); border-radius: 12px; text-decoration: none; background: var(--canvas); color: var(--ink); }
-.learning-grid a:hover { box-shadow: var(--shadow-2); }
-.learning-grid strong, .learning-grid span { display: block; }
-.learning-grid span { margin-top: .5rem; font-size: .9rem; line-height: 1.5; color: var(--body-text); }
-.text-link { color: var(--link); }
-.processing-summary { margin-top: 1.5rem; font-size: .85rem; }
+.home-learning {
+    margin: 3.5rem auto 1.5rem;
+    padding-top: 2.25rem;
+    border-top: 1px solid var(--hairline);
+    max-width: 1040px;
+    text-align: center;
+}
+.home-learning .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 0.35rem;
+}
+.home-learning h2 {
+    margin: 0.25rem 0 0.5rem;
+    font-size: clamp(1.2rem, 2.2vw, 1.45rem);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    line-height: 1.3;
+}
+.home-learning p {
+    line-height: 1.55;
+    color: var(--body-text);
+    font-size: 0.92rem;
+    max-width: 660px;
+    margin: 0 auto;
+}
+.learning-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin: 1.5rem 0 1.25rem;
+    text-align: left;
+}
+.learning-grid a {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    text-decoration: none;
+    background: var(--canvas);
+    color: var(--ink);
+    box-shadow: var(--shadow-1);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.learning-grid a:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-3);
+    border-color: var(--hairline-strong);
+}
+.learning-grid strong {
+    font-size: 0.975rem;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.35;
+    margin-bottom: 0.35rem;
+}
+.learning-grid span {
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--body-text);
+    font-weight: 400;
+}
+.text-link {
+    color: var(--link);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    margin-top: 0.5rem;
+    transition: color 0.15s ease;
+}
+.text-link:hover {
+    color: var(--link-deep);
+    text-decoration: underline;
+}
+.processing-summary {
+    margin-top: 1.5rem !important;
+    padding-top: 1.25rem;
+    border-top: 1px dashed var(--hairline);
+    font-size: 0.8rem !important;
+    color: var(--mute) !important;
+    max-width: 680px !important;
+}
+.processing-summary a {
+    color: var(--mute);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.processing-summary a:hover {
+    color: var(--ink);
+}
+[data-theme="dark"] .learning-grid a {
+    background: rgba(18, 18, 18, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
 .page-wrap :focus-visible, .home-learning :focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+@media (max-width: 768px) {
+    .learning-grid { grid-template-columns: 1fr; gap: 0.85rem; }
+}
 @media (max-width: 600px) {
-    .learning-grid { grid-template-columns: 1fr; }
     .worked-example { padding: 1rem; }
     .example-figures { grid-template-columns: 1fr; }
     .page-wrap th, .page-wrap td { padding: .5rem .3rem; font-size: .8rem; }

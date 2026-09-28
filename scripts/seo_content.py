@@ -25,7 +25,7 @@ from scripts.content_examples import render_example
 
 # --- constants -------------------------------------------------------------
 
-ASSET_V = "20260926"
+ASSET_V = "20260928"
 CONTENT_REVIEWED = "2026-09-26"
 SITE = "Forge Files"
 GITHUB = "https://github.com/BhurkeSiddhesh/File-Forge"
