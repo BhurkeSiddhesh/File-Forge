@@ -611,7 +611,22 @@ window.ffUpdateStepTracker = ffUpdateStepTracker;
 // `instant` skips the 500ms home-page fade — used by the SEO deep link, where
 // the visitor already chose a tool on the landing page and the animation is
 // just dead time between their click and a usable upload box.
-function showDrillDown(tool, instant) {
+const FF_TOOL_TITLES = {
+    pdf: 'PDF Tools', image: 'Image Tools', excel: 'Excel Tools',
+    ppt: 'PPT Tools', word: 'Word Tools', workflow: 'Workflow'
+};
+const FF_HOME_TITLE = document.title;
+
+function ffRouteForTool(tool) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('tool', tool);
+    url.searchParams.delete('op');
+    url.searchParams.delete('handoff');
+    return url.pathname + url.search + url.hash;
+}
+
+function showDrillDown(tool, instant, fromHistory = false) {
+    if (!Object.prototype.hasOwnProperty.call(FF_TOOL_TITLES, tool)) return;
     currentTool = tool;
     currentOp = null;  // new category — the previous tool no longer applies
     let pageId;
@@ -623,11 +638,15 @@ function showDrillDown(tool, instant) {
     else if (tool === 'workflow') pageId = 'workflow-page';
     else return;
 
+    if (!fromHistory && new URLSearchParams(location.search).get('tool') !== tool) {
+        history.pushState({ tool }, '', ffRouteForTool(tool));
+    }
+    document.title = FF_TOOL_TITLES[tool] + ' | Forge Files';
     ffUpdateStepTracker(tool, 1);
 
     // Funnel step: visitor opened a tool category from the home grid.
     ffTrack('tool_open', { tool_name: tool });
-    ffTrackPageView('/app/' + encodeURIComponent(tool), document.title);
+    ffTrackPageView(location.pathname + location.search, document.title);
 
     const reveal = () => {
         document.querySelectorAll('.view').forEach(el => {
@@ -641,18 +660,24 @@ function showDrillDown(tool, instant) {
             target.style.display = 'flex';
             target.style.flexDirection = 'column';
             window.scrollTo({ top: 0, behavior: 'instant' });
-            setTimeout(() => {
-                target.classList.add('active');
-            }, instant ? 0 : 50);
+            target.classList.add('active');
+            target.setAttribute('tabindex', '-1');
+            target.focus({ preventScroll: true });
         }
     };
 
     document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-    if (instant) reveal();
-    else setTimeout(reveal, 300);
+    reveal();
 }
 
-function showHome() {
+function showHome(fromHistory = false) {
+    const homePath = /\/index\.html$/.test(location.pathname) ? location.pathname : '/';
+    if (!fromHistory && (location.search || location.pathname !== homePath)) {
+        history.pushState({}, '', homePath);
+    }
+    document.title = FF_HOME_TITLE;
+    currentTool = null;
+    currentOp = null;
     ffTrackPageView('/', document.title);
     document.querySelectorAll('.view').forEach(el => {
         if (el.id !== 'home-page') {
@@ -666,11 +691,30 @@ function showHome() {
         home.style.display = 'flex';
         home.style.flexDirection = 'column';
         window.scrollTo({ top: 0, behavior: 'instant' });
-        setTimeout(() => {
-            home.classList.add('active');
-        }, 50);
+        home.classList.add('active');
+        home.setAttribute('tabindex', '-1');
+        home.focus({ preventScroll: true });
     }
 }
+
+window.addEventListener('popstate', () => {
+    const tool = new URLSearchParams(location.search).get('tool');
+    if (tool && Object.prototype.hasOwnProperty.call(FF_TOOL_TITLES, tool)) {
+        showDrillDown(tool, true, true);
+    } else {
+        showHome(true);
+    }
+});
+
+// On a stacked phone layout the result follows the action catalog. Bring the
+// finished download into view so users do not have to search for it.
+document.querySelectorAll('.result-panel .result-display').forEach(result => {
+    new MutationObserver(() => {
+        if (window.innerWidth > 992 || result.classList.contains('hidden') ||
+            !result.closest('.view.active')) return;
+        result.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }).observe(result, { attributes: true, attributeFilter: ['class'] });
+});
 
 // File Selection
 const dropZone = document.getElementById('drop-zone');
@@ -3677,7 +3721,7 @@ const FF_CATEGORY_INPUTS = {
     const requestedTool = params.get('tool');
     if (!requestedTool || !['pdf', 'image', 'workflow', 'excel', 'ppt', 'word'].includes(requestedTool)) return;
 
-    showDrillDown(requestedTool, true);
+    showDrillDown(requestedTool, true, true);
 
     // `op` is only ever resolved through DEEP_LINK_OPS — never used to look up
     // an element id directly, so an arbitrary ?op= value can't reach the DOM.

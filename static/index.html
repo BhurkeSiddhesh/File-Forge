@@ -107,7 +107,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-    <link rel="stylesheet" href="/static/style.css?v=20260928">
+    <link rel="stylesheet" href="/static/style.css?v=20260928b">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Cropper.js (CSS + JS) is lazy-loaded by script.js only when the crop tool is opened, to protect LCP/INP. -->
     {{CF_ANALYTICS}}
@@ -167,59 +167,59 @@
             </header>
 
             <div class="tool-grid">
-                <div class="tool-card active" onclick="showDrillDown('pdf')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=pdf" onclick="showDrillDown('pdf'); return false;">
                     <div class="icon-wrapper pdf">
                         <i class="fas fa-file-pdf"></i>
                     </div>
                     <h3>PDF Tools</h3>
                     <p>Unlock, convert, and compress PDF files effortlessly.</p>
                     <div class="badge">Available</div>
-                </div>
+                </a>
 
-                <div class="tool-card active" onclick="showDrillDown('image')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=image" onclick="showDrillDown('image'); return false;">
                     <div class="icon-wrapper image">
                         <i class="fas fa-image"></i>
                     </div>
                     <h3>Image Tools</h3>
                     <p>Convert HEIC to JPEG and more image transformations.</p>
                     <div class="badge">Available</div>
-                </div>
+                </a>
 
-                <div class="tool-card active" onclick="showDrillDown('workflow')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=workflow" onclick="showDrillDown('workflow'); return false;">
                     <div class="icon-wrapper workflow">
                         <i class="fas fa-project-diagram"></i>
                     </div>
                     <h3>Workflow</h3>
                     <p>Chain operations: PDF unlock → Word and more pipelines.</p>
                     <div class="badge">New</div>
-                </div>
+                </a>
 
-                <div class="tool-card active" onclick="showDrillDown('excel')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=excel" onclick="showDrillDown('excel'); return false;">
                     <div class="icon-wrapper excel">
                         <i class="fas fa-file-excel"></i>
                     </div>
                     <h3>Excel Tools</h3>
                     <p>Excel → PDF, CSV ↔ XLSX, and merge workbooks.</p>
                     <div class="badge">New</div>
-                </div>
+                </a>
 
-                <div class="tool-card active" onclick="showDrillDown('ppt')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=ppt" onclick="showDrillDown('ppt'); return false;">
                     <div class="icon-wrapper ppt">
                         <i class="fas fa-file-powerpoint"></i>
                     </div>
                     <h3>PPT Tools</h3>
                     <p>PPT → PDF, PPT → Images, and merge presentations.</p>
                     <div class="badge">New</div>
-                </div>
+                </a>
 
-                <div class="tool-card active" onclick="showDrillDown('word')" role="button" tabindex="0">
+                <a class="tool-card active" href="/?tool=word" onclick="showDrillDown('word'); return false;">
                     <div class="icon-wrapper word">
                         <i class="fas fa-file-word"></i>
                     </div>
                     <h3>Word Tools</h3>
                     <p>Convert DOCX to PDF and more Word operations.</p>
                     <div class="badge">New</div>
-                </div>
+                </a>
             </div>
 
             <section class="home-learning" aria-labelledby="learn-heading">
@@ -1636,7 +1636,7 @@
     <script src="/static/local/ff-local.js?v=20260926"></script>
     <script src="/static/local/ops-image.js?v=20260926"></script>
     <script src="/static/local/ops-pdf.js?v=20260926"></script>
-    <script src="/static/script.js?v=20260926"></script>
+    <script src="/static/script.js?v=20260928b"></script>
     {{CONSENT_BANNER}}
 </body>
 
