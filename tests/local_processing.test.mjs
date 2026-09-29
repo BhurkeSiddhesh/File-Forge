@@ -304,6 +304,78 @@ test('local PNG to JPEG conversion flattens transparency onto white', async () =
     assert.equal(canvases.length >= 1, true);
 });
 
+test('local image resize and crop preserve original format for PNG and JPG', async () => {
+    function canvasFactory() {
+        return {
+            width: 0,
+            height: 0,
+            getContext(type) {
+                if (type !== '2d') return null;
+                return {
+                    fillStyle: '#000',
+                    fillRect() {},
+                    drawImage() {},
+                };
+            },
+            toBlob(cb, mime) {
+                cb(new Blob(['mock-bytes'], { type: mime || 'image/png' }));
+            },
+        };
+    }
+
+    class ImageMock {
+        constructor() {
+            this.naturalWidth = 100;
+            this.naturalHeight = 100;
+            this.onload = null;
+            this.onerror = null;
+        }
+
+        set src(_value) {
+            setTimeout(() => this.onload && this.onload(), 0);
+        }
+    }
+
+    const { sandbox } = load({ canvasFactory, ImageClass: ImageMock });
+
+    // Resize PNG preserves PNG
+    const fdResizePng = new FormData();
+    fdResizePng.append('mode', 'dimensions');
+    fdResizePng.append('width', '50');
+    fdResizePng.append('file', new Blob(['png-data'], { type: 'image/png' }), 'graphic.png');
+    const resizePngRes = await (await sandbox.window.ffProcess('/api/image/resize', fdResizePng)).json();
+    assert.equal(resizePngRes.status, 'success');
+    assert.equal(resizePngRes.filename, 'graphic_forgefiles.org.png');
+
+    // Resize JPG preserves JPG
+    const fdResizeJpg = new FormData();
+    fdResizeJpg.append('mode', 'dimensions');
+    fdResizeJpg.append('width', '50');
+    fdResizeJpg.append('file', new Blob(['jpg-data'], { type: 'image/jpeg' }), 'photo.jpg');
+    const resizeJpgRes = await (await sandbox.window.ffProcess('/api/image/resize', fdResizeJpg)).json();
+    assert.equal(resizeJpgRes.status, 'success');
+    assert.equal(resizeJpgRes.filename, 'photo_forgefiles.org.jpg');
+
+    // Crop PNG preserves PNG
+    const fdCropPng = new FormData();
+    fdCropPng.append('x', '10');
+    fdCropPng.append('y', '10');
+    fdCropPng.append('width', '40');
+    fdCropPng.append('height', '40');
+    fdCropPng.append('file', new Blob(['png-data'], { type: 'image/png' }), 'logo.png');
+    const cropPngRes = await (await sandbox.window.ffProcess('/api/image/crop', fdCropPng)).json();
+    assert.equal(cropPngRes.status, 'success');
+    assert.equal(cropPngRes.filename, 'logo_forgefiles.org.png');
+
+    // Compress PNG preserves PNG
+    const fdCompressPng = new FormData();
+    fdCompressPng.append('quality', '70');
+    fdCompressPng.append('file', new Blob(['png-data-long-enough-to-compress'], { type: 'image/png' }), 'badge.png');
+    const compressPngRes = await (await sandbox.window.ffProcess('/api/image/compress', fdCompressPng)).json();
+    assert.equal(compressPngRes.status, 'success');
+    assert.equal(compressPngRes.filename, 'badge_forgefiles.org.png');
+});
+
 // ── FormData coercion ─────────────────────────────────────────────────────
 
 test('form helpers coerce and default like FastAPI Form() declarations', () => {

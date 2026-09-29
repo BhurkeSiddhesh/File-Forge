@@ -222,25 +222,49 @@ class TestAlphaFlattensToWhite:
         img = Image.new("RGB", (10, 10), (30, 60, 90))
         assert _flatten_to_rgb(img) is img
 
-    def test_resize_image_transparent_png_flattens_to_white(self, tmp_path):
+    def test_resize_image_preserves_png_and_alpha(self, tmp_path):
         from PIL import Image
         from scripts.image_utils import resize_image
 
         src = _transparent_png(tmp_path / "trans.png")
         out = resize_image(str(src), str(tmp_path), mode="dimensions", width=50)
+        assert out.endswith(".png")
         with Image.open(out) as r:
-            r, g, b = r.getpixel((2, 2))
-        assert (r, g, b) != (0, 0, 0)
-        assert r > 200 and g > 200 and b > 200
+            assert r.mode in ("RGBA", "P")
+            pixel = r.getpixel((2, 2))
+            alpha = pixel[3] if len(pixel) == 4 else r.convert("RGBA").getpixel((2, 2))[3]
+            assert alpha == 0
 
-    def test_crop_image_transparent_png_flattens_to_white(self, tmp_path):
+    def test_crop_image_preserves_png_and_alpha(self, tmp_path):
         from PIL import Image
         from scripts.image_utils import crop_image
 
         src = _transparent_png(tmp_path / "trans.png")
         out = crop_image(str(src), str(tmp_path), x=0, y=0, width=100, height=100)
+        assert out.endswith(".png")
         with Image.open(out) as r:
-            assert r.getpixel((2, 2)) == (255, 255, 255)
+            assert r.mode in ("RGBA", "P")
+            pixel = r.getpixel((2, 2))
+            alpha = pixel[3] if len(pixel) == 4 else r.convert("RGBA").getpixel((2, 2))[3]
+            assert alpha == 0
+
+    def test_resize_image_preserves_jpg_format(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import resize_image
+
+        jpg_src = tmp_path / "photo.jpg"
+        Image.new("RGB", (100, 100), (10, 20, 30)).save(jpg_src, "JPEG")
+        out = resize_image(str(jpg_src), str(tmp_path), mode="dimensions", width=50)
+        assert out.endswith(".jpg")
+
+    def test_crop_image_preserves_jpg_format(self, tmp_path):
+        from PIL import Image
+        from scripts.image_utils import crop_image
+
+        jpg_src = tmp_path / "photo.jpg"
+        Image.new("RGB", (100, 100), (10, 20, 30)).save(jpg_src, "JPEG")
+        out = crop_image(str(jpg_src), str(tmp_path), x=0, y=0, width=50, height=50)
+        assert out.endswith(".jpg")
 
     def test_convert_image_format_to_jpg_flattens_to_white(self, tmp_path):
         from PIL import Image

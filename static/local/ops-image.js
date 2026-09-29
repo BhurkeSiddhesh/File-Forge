@@ -138,6 +138,7 @@
         var targetKb = L.range('target_size_kb', L.int(fd, 'target_size_kb', null), 1);
 
         var file = only(fd);
+        var fmt = formatOf(file.name);
         var img = await decode(file);
         var ow = img.naturalWidth, oh = img.naturalHeight;
         var nw, nh;
@@ -163,17 +164,16 @@
         }
         validateResize(nw, nh);
 
-        // resize_image() always writes JPEG, whatever went in.
         var blob;
         if (mode === 'target_size') {
-            blob = await toTargetSize(img, ow, oh, targetKb * 1024);
+            blob = await toTargetSize(img, ow, oh, targetKb * 1024, fmt);
         } else {
-            blob = await encode(renderForFormat(img, nw, nh, 'jpg'), 'jpg', 95);
+            blob = await encode(renderForFormat(img, nw, nh, fmt), fmt, 95);
         }
 
         return {
             blob: blob,
-            filename: L.brandedName(file.name, 'jpg'),
+            filename: L.brandedName(file.name, FORMAT_EXT[fmt] || fmt),
             message: 'Image Resized',
         };
     });
@@ -183,30 +183,35 @@
      * binary-search quality down to 30, then shrink the canvas by 10% at a time
      * until it fits (stopping before either side goes under 10px).
      */
-    async function toTargetSize(img, w, h, targetBytes) {
-        var canvas = renderForFormat(img, w, h, 'jpg');
-        var best = await encode(canvas, 'jpg', 95);
+    async function toTargetSize(img, w, h, targetBytes, fmt) {
+        fmt = fmt || 'jpg';
+        var canvas = renderForFormat(img, w, h, fmt);
+        var best = await encode(canvas, fmt, 95);
         if (best.size <= targetBytes) return best;
 
-        var lo = 30, hi = 95, bestQuality = 30;
-        while (lo <= hi) {
-            var mid = Math.floor((lo + hi) / 2);
-            var candidate = await encode(canvas, 'jpg', mid);
-            if (candidate.size <= targetBytes) {
-                bestQuality = mid; best = candidate; lo = mid + 1;
-            } else {
-                hi = mid - 1;
+        var bestQuality = 95;
+        if (fmt === 'jpg' || fmt === 'webp') {
+            var lo = 30, hi = 95;
+            bestQuality = 30;
+            while (lo <= hi) {
+                var mid = Math.floor((lo + hi) / 2);
+                var candidate = await encode(canvas, fmt, mid);
+                if (candidate.size <= targetBytes) {
+                    bestQuality = mid; best = candidate; lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
             }
         }
 
-        var out = await encode(canvas, 'jpg', bestQuality);
+        var out = await encode(canvas, fmt, bestQuality);
         var cw = w, ch = h;
         while (out.size > targetBytes) {
             cw = Math.trunc(cw * 0.9);
             ch = Math.trunc(ch * 0.9);
             if (cw < 10 || ch < 10) break;
-            canvas = renderForFormat(img, cw, ch, 'jpg');
-            out = await encode(canvas, 'jpg', bestQuality);
+            canvas = renderForFormat(img, cw, ch, fmt);
+            out = await encode(canvas, fmt, bestQuality);
         }
         return out;
     }
@@ -223,6 +228,7 @@
         }
 
         var file = only(fd);
+        var fmt = formatOf(file.name);
         var img = await decode(file);
 
         // crop_image() clamps the box to the image rather than erroring.
@@ -235,16 +241,13 @@
             throw new L.Error('The crop area falls outside the image.');
         }
 
-        var canvas = canvasOf(cw, ch);
-        var ctx = canvas.getContext('2d');
-        if (!ctx) throw new L.Unsupported('2d canvas context unavailable');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, x, y, cw, ch, 0, 0, cw, ch);
+        var canvas = renderForFormat(img, cw, ch, fmt, function (ctx) {
+            ctx.drawImage(img, x, y, cw, ch, 0, 0, cw, ch);
+        });
 
         return {
-            blob: await encode(canvas, 'jpg', 95),
-            filename: L.brandedName(file.name, 'jpg'),
+            blob: await encode(canvas, fmt, 95),
+            filename: L.brandedName(file.name, FORMAT_EXT[fmt] || fmt),
             message: 'Image Cropped',
         };
     });

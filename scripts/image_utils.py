@@ -194,11 +194,13 @@ def resize_image(input_path: str, output_dir: str, mode: str,
         Path to the resized image.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / branded_filename(input_file, "jpg")
+    fmt = input_file.suffix.lower().lstrip(".")
+    if fmt not in _FORMAT_EXT:
+        fmt = "jpg"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
     
     with Image.open(input_file) as img:
-        img = _prepare_image(img)
-        icc_kwargs = _icc_profile_kwargs(img)
+        img = ImageOps.exif_transpose(img)
         original_width, original_height = img.size
 
         if mode == 'dimensions':
@@ -220,7 +222,7 @@ def resize_image(input_path: str, output_dir: str, mode: str,
 
             validate_resize_dimensions(new_width, new_height)
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
+            _save_pil(img, output_file, fmt, quality=quality)
 
         elif mode == 'percentage':
             if not percentage:
@@ -232,71 +234,60 @@ def resize_image(input_path: str, output_dir: str, mode: str,
 
             validate_resize_dimensions(new_width, new_height)
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
+            _save_pil(img, output_file, fmt, quality=quality)
 
         elif mode == 'target_size':
             if not target_size_kb:
                 raise ValueError("Target size must be provided for target_size mode.")
 
             target_bytes = target_size_kb * 1024
-
-            # Optimized approach using binary search for quality
-            # This reduces file writes from 10+ to 3-5
             import io
 
-            # First, try with optimize flag and high quality
-            img.save(output_file, "JPEG", quality=95, optimize=True, **icc_kwargs)
-            current_size = output_file.stat().st_size
-
-            if current_size <= target_bytes:
-                # Already under target with high quality
+            # Test initial save at high quality
+            buffer = io.BytesIO()
+            _save_pil(img, buffer, fmt, quality=quality)
+            if buffer.tell() <= target_bytes:
+                with open(output_file, "wb") as f:
+                    f.write(buffer.getvalue())
                 return str(output_file)
 
-            # Binary search for optimal quality (between 30 and 95)
-            min_quality = 30
-            max_quality = 95
-            best_quality = min_quality
+            best_quality = 30
+            if fmt in ("jpg", "jpeg", "webp"):
+                min_quality = 30
+                max_quality = 95
 
-            while min_quality <= max_quality:
-                mid_quality = (min_quality + max_quality) // 2
+                while min_quality <= max_quality:
+                    mid_quality = (min_quality + max_quality) // 2
+                    buffer = io.BytesIO()
+                    _save_pil(img, buffer, fmt, quality=mid_quality)
+                    test_size = buffer.tell()
 
-                # Test quality in memory first (faster than disk I/O)
-                buffer = io.BytesIO()
-                img.save(buffer, "JPEG", quality=mid_quality, optimize=True, **icc_kwargs)
-                test_size = buffer.tell()
+                    if test_size <= target_bytes:
+                        best_quality = mid_quality
+                        min_quality = mid_quality + 1
+                    else:
+                        max_quality = mid_quality - 1
 
-                if test_size <= target_bytes:
-                    # This quality works, try higher
-                    best_quality = mid_quality
-                    min_quality = mid_quality + 1
-                else:
-                    # Too large, try lower quality
-                    max_quality = mid_quality - 1
+            buffer = io.BytesIO()
+            _save_pil(img, buffer, fmt, quality=best_quality)
 
-            # Save with best quality found
-            img.save(output_file, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
-
-            # If still too large, progressively resize dimensions. Test each
-            # candidate in memory (like the binary-search pass above) and write
-            # to disk only once, after the final size is chosen.
-            if output_file.stat().st_size > target_bytes:
-                buffer = io.BytesIO()
-                img.save(buffer, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
+            if buffer.tell() > target_bytes:
                 scale_factor = 0.9
+                scaled_img = img
                 while buffer.tell() > target_bytes:
-                    current_width, current_height = img.size
+                    current_width, current_height = scaled_img.size
                     new_width = int(current_width * scale_factor)
                     new_height = int(current_height * scale_factor)
 
                     if new_width < 10 or new_height < 10:
-                        break  # Stop if image gets too small
+                        break
 
-                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    scaled_img = scaled_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
                     buffer = io.BytesIO()
-                    img.save(buffer, "JPEG", quality=best_quality, optimize=True, **icc_kwargs)
+                    _save_pil(scaled_img, buffer, fmt, quality=best_quality)
 
-                with open(output_file, "wb") as f:
-                    f.write(buffer.getvalue())
+            with open(output_file, "wb") as f:
+                f.write(buffer.getvalue())
 
         else:
             raise ValueError(f"Unknown resize mode: {mode}")
@@ -317,17 +308,19 @@ def crop_image(input_path: str, output_dir: str,
         y: Y coordinate of the top-left corner.
         width: Width of the crop box.
         height: Height of the crop box.
-        quality: JPEG quality.
+        quality: Image quality.
 
     Returns:
         Path to the cropped image.
     """
     input_file = Path(input_path)
-    output_file = Path(output_dir) / branded_filename(input_file, "jpg")
+    fmt = input_file.suffix.lower().lstrip(".")
+    if fmt not in _FORMAT_EXT:
+        fmt = "jpg"
+    output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[fmt])
     
     with Image.open(input_file) as img:
-        img = _prepare_image(img)
-        icc_kwargs = _icc_profile_kwargs(img)
+        img = ImageOps.exif_transpose(img)
 
         # Ensure crop box is within bounds
         img_width, img_height = img.size
@@ -337,7 +330,7 @@ def crop_image(input_path: str, output_dir: str,
         lower = min(img_height, y + height)
 
         cropped_img = img.crop((x, y, right, lower))
-        cropped_img.save(output_file, "JPEG", quality=quality, optimize=True, **icc_kwargs)
+        _save_pil(cropped_img, output_file, fmt, quality=quality)
 
     return str(output_file)
 
