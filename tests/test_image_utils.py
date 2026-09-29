@@ -281,10 +281,11 @@ class TestAlphaFlattensToWhite:
             out_dir.mkdir()
             result = compress_image(str(src), str(out_dir), quality=quality)
             out = Path(result["output_path"])
-            assert out.suffix == ".webp"
+            assert out.suffix == ".png"
             assert result["compressed_size"] < result["original_size"]
             with Image.open(out) as encoded:
-                assert encoded.getpixel((0, 0))[3] == 0
+                rgba = encoded.convert("RGBA")
+                assert rgba.getpixel((0, 0))[3] == 0
             sizes.append(result["compressed_size"])
         assert sizes[0] != sizes[1]
 

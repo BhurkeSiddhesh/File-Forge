@@ -1393,7 +1393,7 @@ function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId, format = 'j
         return;
     }
     const q = Math.max(1, Math.min(100, Number(quality) || 80));
-    const mime = format === 'webp' ? 'image/webp' : 'image/jpeg';
+    const mime = format === 'webp' ? 'image/webp' : (format === 'png' ? 'image/png' : 'image/jpeg');
     const requestId = String(Number(wrap.dataset.requestId || 0) + 1);
     wrap.dataset.requestId = requestId;
     const url = URL.createObjectURL(file);
@@ -1423,9 +1423,9 @@ function ffPreviewJpegQuality(file, quality, imgId, labelId, wrapId, format = 'j
             const previewUrl = URL.createObjectURL(blob);
             imgEl.dataset.blobUrl = previewUrl;
             imgEl.src = previewUrl;
-            label.textContent = 'Visual sample at ' + q + '% quality. The sample is scaled for display; the download keeps the original dimensions. Actual size appears after processing.';
+            label.textContent = 'Preview (' + q + '%)';
             wrap.classList.remove('hidden');
-        }, mime, q / 100);
+        }, mime, mime === 'image/png' ? undefined : (q / 100));
     };
     probe.onerror = function () {
         URL.revokeObjectURL(url);
@@ -2860,9 +2860,9 @@ document.getElementById('compress-image-btn')?.addEventListener('click', (e) => 
     if (!showImageOptionPanel('compress-image-area')) return;
     ffSelectActionCard(e.currentTarget);
     if (selectedImageFile && compressImgQ) {
+        const fmt = /\.png$/i.test(selectedImageFile.name) ? 'png' : (/\.webp$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
         ffPreviewJpegQuality(selectedImageFile, compressImgQ.value,
-            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview',
-            /\.(png|webp)$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview', fmt);
     }
 });
 document.getElementById('convert-format-btn')?.addEventListener('click', (e) => {
@@ -2876,9 +2876,9 @@ const compressImgQ = document.getElementById('compress-image-quality');
 if (compressImgQ) compressImgQ.addEventListener('input', e => {
     document.getElementById('compress-image-quality-value').textContent = e.target.value;
     if (selectedImageFile) {
+        const fmt = /\.png$/i.test(selectedImageFile.name) ? 'png' : (/\.webp$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
         ffPreviewJpegQuality(selectedImageFile, e.target.value,
-            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview',
-            /\.(png|webp)$/i.test(selectedImageFile.name) ? 'webp' : 'jpeg');
+            'compress-image-preview-img', 'compress-image-preview-label', 'compress-image-preview', fmt);
     }
 });
 const convertFmtQ = document.getElementById('convert-format-quality');

@@ -354,7 +354,12 @@ def _save_pil(img: Image.Image, output_file: Path, fmt: str, quality: int = 90) 
         img = _flatten_to_rgb(img)
         img.save(output_file, pil_fmt, quality=quality, optimize=True, **icc_kwargs)
     elif pil_fmt == "PNG":
-        img.save(output_file, pil_fmt, optimize=True, **icc_kwargs)
+        if quality < 90 and img.mode in ("RGB", "RGBA"):
+            colors = max(16, min(256, int(quality * 2.56)))
+            img_to_save = img.quantize(colors=colors)
+        else:
+            img_to_save = img
+        img_to_save.save(output_file, pil_fmt, optimize=True, compress_level=9, **icc_kwargs)
     else:  # WEBP
         img.save(output_file, pil_fmt, quality=quality, method=6, **icc_kwargs)
 
@@ -382,12 +387,7 @@ def rotate_image(input_path: str, output_dir: str, angle: float, quality: int = 
 
 
 def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
-    """Compress at the requested quality, keeping the original if encoding grows it.
-
-    PNG is lossless, so its quality slider cannot affect the result. Encode PNG
-    as WebP instead; WebP also preserves transparency. The returned extension
-    always describes the bytes actually written.
-    """
+    """Compress at the requested quality, preserving the original format and keeping original if encoding grows it."""
     try:
         quality = int(quality)
     except (TypeError, ValueError):
@@ -399,7 +399,7 @@ def compress_image(input_path: str, output_dir: str, quality: int = 70) -> dict:
     fmt = input_file.suffix.lower().lstrip(".")
     if fmt not in _FORMAT_EXT:
         fmt = "jpg"
-    output_fmt = "webp" if fmt == "png" else fmt
+    output_fmt = fmt
     output_file = Path(output_dir) / branded_filename(input_file, _FORMAT_EXT[output_fmt])
 
     original_size = input_file.stat().st_size

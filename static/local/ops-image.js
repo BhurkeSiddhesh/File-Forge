@@ -291,9 +291,6 @@
 
         var file = only(fd);
         var fmt = formatOf(file.name);
-        // PNG's encoder ignores quality. WebP gives the slider a real effect
-        // while retaining alpha; use the original bytes if it cannot save space.
-        if (fmt === 'png') fmt = 'webp';
         var img = await decode(file);
         var blob = await encode(renderForFormat(img, img.naturalWidth, img.naturalHeight, fmt), fmt, quality);
         if (blob.size >= file.size) {

@@ -213,7 +213,7 @@ class TestApiCompressImage:
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert data["filename"].endswith(".webp")
+            assert data["filename"].endswith(".png")
             assert data["compressed_size"] < data["original_size"]
             downloaded = client.get(f"/api/download/{data['download_token']}")
             assert downloaded.status_code == 200
