@@ -243,18 +243,19 @@ def resize_image(input_path: str, output_dir: str, mode: str,
             target_bytes = target_size_kb * 1024
             import io
 
-            # Test initial save at high quality
-            buffer = io.BytesIO()
-            _save_pil(img, buffer, fmt, quality=quality)
-            if buffer.tell() <= target_bytes:
-                with open(output_file, "wb") as f:
-                    f.write(buffer.getvalue())
+            # First, try with high quality
+            _save_pil(img, output_file, fmt, quality=quality)
+            current_size = output_file.stat().st_size
+
+            if current_size <= target_bytes:
+                # Already under target with high quality
                 return str(output_file)
 
             best_quality = 30
             if fmt in ("jpg", "jpeg", "webp"):
                 min_quality = 30
                 max_quality = 95
+                best_quality = min_quality
 
                 while min_quality <= max_quality:
                     mid_quality = (min_quality + max_quality) // 2
@@ -268,10 +269,13 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                     else:
                         max_quality = mid_quality - 1
 
-            buffer = io.BytesIO()
-            _save_pil(img, buffer, fmt, quality=best_quality)
+            # Save with best quality found
+            _save_pil(img, output_file, fmt, quality=best_quality)
 
-            if buffer.tell() > target_bytes:
+            # If still too large, progressively resize dimensions in memory and write to disk once
+            if output_file.stat().st_size > target_bytes:
+                buffer = io.BytesIO()
+                _save_pil(img, buffer, fmt, quality=best_quality)
                 scale_factor = 0.9
                 scaled_img = img
                 while buffer.tell() > target_bytes:
@@ -286,8 +290,8 @@ def resize_image(input_path: str, output_dir: str, mode: str,
                     buffer = io.BytesIO()
                     _save_pil(scaled_img, buffer, fmt, quality=best_quality)
 
-            with open(output_file, "wb") as f:
-                f.write(buffer.getvalue())
+                with open(output_file, "wb") as f:
+                    f.write(buffer.getvalue())
 
         else:
             raise ValueError(f"Unknown resize mode: {mode}")
